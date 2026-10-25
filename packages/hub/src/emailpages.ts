@@ -1,7 +1,9 @@
 /**
- * Sign up with email, and let your AI write it: for people who use ChatGPT or Claude but not GitHub or Obsidian.
+ * Sign up with just an email (and let your AI fill it in, if you like): for people who don't use GitHub or Obsidian.
  *
- * 1. /start: copy a prompt into any AI, paste back the profile it writes, give an email address.
+ * 1. /start: an email address and, optionally, a name. That's the whole default path: the page starts as a simple
+ *    starter (name + "New on Caldera"). Optional on the same form: copy a prompt into any AI and paste back the profile
+ *    it writes, for a richer page from the start. Settings has the same prompt (and a plain name/headline form) later.
  * 2. We email a one-time link; opening it publishes the page and signs them in (the hub holds their key, as it does for
  *    GitHub sign-ups).
  * 3. Updates: Settings has a "What's new?" prompt; the answer pasted back updates the page and grows the city. A weekly
@@ -35,6 +37,8 @@ export interface Profile {
   /** an update's "this week" lines: [project, what happened] */
   worked?: [string, string][];
 }
+/** what a page made from just an email says until its owner adds more */
+export const STARTER_HEADLINE = "New on Caldera";
 const LIST_KEYS = ["links", "now", "projects", "timeline", "topics", "worked_on", "worked on"];
 
 /** Read the block an AI wrote (forgiving: code fences, bullets, bold keys, extra chatter around it). */
@@ -197,24 +201,28 @@ export function emailPages(c: EmailCtx) {
   const STYLE = `<style>.ep{max-width:720px;margin:0 auto;padding:28px 16px 64px}.ep h1{font-family:'Source Serif 4',Georgia,serif;font-size:clamp(1.6rem,3vw,2.2rem);margin:0 0 6px}.ep .lede{color:var(--text-muted);margin:0 0 20px}
 .ep .card{background:var(--bg-raised);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}.ep .n{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:13px;margin-right:8px}
 .ep h2{font-size:1.05rem;margin:0 0 8px;display:flex;align-items:center}.ep pre{white-space:pre-wrap;font:12.5px/1.5 'IBM Plex Mono',monospace;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;max-height:180px;overflow:auto;margin:8px 0}
-.ep textarea,.ep input[type=email]{width:100%;box-sizing:border-box;font:14px/1.5 'IBM Plex Mono',monospace;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px}.ep textarea{min-height:200px}
-.ep input[type=email]{font-family:inherit;font-size:15px}.ep .mut{color:var(--text-muted);font-size:13.5px}.ep .err{color:#E5484D}.ep .ok{color:#3FB97F}.ep .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.ep textarea,.ep input[type=email],.ep input[type=text]{width:100%;box-sizing:border-box;font:14px/1.5 'IBM Plex Mono',monospace;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px}.ep textarea{min-height:200px}
+.ep input[type=email],.ep input[type=text]{font-family:inherit;font-size:15px}.ep label.f{display:block;margin:12px 0 6px;font-weight:600}.ep label.f:first-of-type{margin-top:0}
+.ep details.rich{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}.ep details.rich summary{cursor:pointer;font-weight:600}.ep details.rich textarea{min-height:160px}.ep .mut{color:var(--text-muted);font-size:13.5px}.ep .err{color:#E5484D}.ep .ok{color:#3FB97F}.ep .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
 .ep button.btn{cursor:pointer}</style>`;
   const copyJs = `<script>document.querySelectorAll('[data-copy]').forEach(function(b){b.addEventListener('click',function(){var t=document.getElementById(b.getAttribute('data-copy')).textContent;var done=function(){var o=b.textContent;b.textContent='Copied';setTimeout(function(){b.textContent=o},1600)};try{navigator.clipboard.writeText(t).then(done,function(){prompt('Copy this',t)})}catch(e){prompt('Copy this',t)}})})</script>`;
 
-  function startPage(res: http.ServerResponse, msg = "", text = "", email = "", back = "", inv = "") {
+  function startPage(res: http.ServerResponse, msg = "", text = "", email = "", back = "", inv = "", name = "") {
     const to = back.match(/^\/messages\/@([a-z0-9-]+)$/)?.[1] || "";
-    c.page(res, msg.startsWith("ok:") ? 200 : 200, "Sign up with email", `${STYLE}<main class="ep"><h1>Make your page with ChatGPT or Claude</h1>
-<p class="lede">No GitHub or Obsidian needed. Your AI writes your profile; you paste it here and confirm your email. Change anything later the same way.</p>
+    c.page(res, 200, "Sign up with email", `${STYLE}<main class="ep"><h1>Make your Caldera page</h1>
+<p class="lede">No GitHub or Obsidian needed. Enter your email and we send you one link: open it and your page is live. Add your projects and story any time, by hand or with ChatGPT or Claude.</p>
 ${to ? `<p class="ok" role="status">Make your page, confirm your email, and you go straight to your conversation with <b>@${esc(to)}</b>. Already on Caldera? Enter just your email below for a sign-in link.</p>` : ""}
 ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(msg.replace(/^ok:/, ""))}</p>` : ""}
-<section class="card"><h2><span class="n">1</span>Copy this prompt into ChatGPT, Claude or any AI</h2><pre id="p-start">${esc(START_PROMPT)}</pre><div class="row"><button type="button" class="btn small" data-copy="p-start">Copy the prompt</button><span class="mut">It works best in a chat that already knows you.</span></div></section>
-<form method="post" action="/start" class="card">${back ? `<input type="hidden" name="back" value="${esc(back)}">` : ""}${inv ? `<input type="hidden" name="invite" value="${esc(inv)}">` : ""}<h2><span class="n">2</span>Paste what it writes back</h2>
-<label class="mut" for="pt">The block that starts with "name:"</label><textarea id="pt" name="text" maxlength="20000" placeholder="name: ...">${esc(text)}</textarea>
-<h2 style="margin-top:16px"><span class="n">3</span>Your email</h2><input type="email" name="email" autocomplete="email" required placeholder="you@example.com" value="${esc(email)}">
+<form method="post" action="/start" class="card">${back ? `<input type="hidden" name="back" value="${esc(back)}">` : ""}${inv ? `<input type="hidden" name="invite" value="${esc(inv)}">` : ""}
+<label class="f" for="em">Your email</label><input id="em" type="email" name="email" autocomplete="email" required placeholder="you@example.com" value="${esc(email)}">
+<label class="f" for="nm">Your name <span class="mut">(optional)</span></label><input id="nm" type="text" name="name" maxlength="80" autocomplete="name" placeholder="How your page should greet people" value="${esc(name)}">
 <p class="mut">We send one link to confirm. Open it and your page goes live. No password.</p>
+<details class="rich"${text.trim() ? " open" : ""}><summary>Optional: make it richer with ChatGPT or Claude</summary>
+<p class="mut">Your AI can write your headline, About, projects and timeline from what it already knows about you. Copy this prompt into it and paste its answer below. Or skip this: you can do it later from your page settings.</p>
+<pre id="p-start">${esc(START_PROMPT)}</pre><div class="row"><button type="button" class="btn small" data-copy="p-start">Copy the prompt</button><span class="mut">It works best in a chat that already knows you.</span></div>
+<label class="f" for="pt">Paste what it writes back <span class="mut">(the block that starts with "name:")</span></label><textarea id="pt" name="text" maxlength="20000" placeholder="name: ...">${esc(text)}</textarea></details>
 <div class="row"><button class="btn" type="submit">Make my page</button><span class="mut">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</span></div></form>
-<p class="mut">Already made your page this way? Enter just your email above (leave the box empty) and we send a sign-in link. Use GitHub? <a rel="nofollow" href="/auth/github${back || inv ? `?${[back ? `back=${encodeURIComponent(back)}` : "", inv ? `invite=${encodeURIComponent(inv)}` : ""].filter(Boolean).join("&")}` : ""}">Sign up with GitHub</a> instead: your repos become your city.</p></main>${copyJs}`);
+<p class="mut">Already have a page made with your email? Enter just your email above and we send a sign-in link. Use GitHub? <a rel="nofollow" href="/auth/github${back || inv ? `?${[back ? `back=${encodeURIComponent(back)}` : "", inv ? `invite=${encodeURIComponent(inv)}` : ""].filter(Boolean).join("&")}` : ""}">Sign up with GitHub</a> instead: your repos become your city.</p></main>${copyJs}`);
   }
 
   function settingsPage(res: http.ServerResponse, acct: any, msg = "") {
@@ -222,6 +230,13 @@ ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(
     c.page(res, 200, "Your page", `${STYLE}<main class="ep"><h1>Your page</h1>
 <p class="lede"><a href="/@${esc(acct.handle)}/">caldera.social/@${esc(acct.handle)}</a> &middot; <a href="/@${esc(acct.handle)}/city.html">your city</a> &middot; last updated ${esc(String(last || "").slice(0, 10))}</p>
 ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(msg.replace(/^ok:/, ""))}</p>` : ""}
+${!pr.about && !pr.projects?.length && !pr.now?.length ? `<section class="card" id="richer"><h2>Make your page richer</h2><p class="mut">Right now your page has just your name and headline. Copy this into ChatGPT or Claude (best in a chat that already knows you) and paste its answer below: it adds your About, projects, timeline and links, and every project becomes a building in your city.</p>
+<pre id="p-rich">${esc(START_PROMPT)}</pre><button type="button" class="btn small" data-copy="p-rich">Copy the prompt</button>
+<form method="post" action="/settings/page" style="margin-top:12px"><input type="hidden" name="do" value="replace"><textarea name="text" maxlength="20000" required placeholder="name: ..."></textarea><div class="row"><button class="btn" type="submit">Fill in my page</button></div></form></section>` : ""}
+<section class="card" id="basics"><h2>Name and headline</h2><form method="post" action="/settings/page"><input type="hidden" name="do" value="basics">
+<input type="text" name="name" maxlength="80" aria-label="Name" placeholder="Your name" value="${esc(pr.name || "")}">
+<input type="text" name="headline" maxlength="160" aria-label="Headline" placeholder="One line: what you do or build" value="${esc(pr.headline || "")}" style="margin-top:8px">
+<div class="row"><button class="btn small" type="submit">Save</button></div></form></section>
 <section class="card" id="update"><h2>What's new? Update your page in a minute</h2><p class="mut">Copy this into ChatGPT or Claude, then paste its answer below. Every project you mention grows its building in your city; this week's get lit windows.</p>
 <pre id="p-up">${esc(UPDATE_PROMPT)}</pre><button type="button" class="btn small" data-copy="p-up">Copy the update prompt</button>
 <form method="post" action="/settings/page" style="margin-top:12px"><input type="hidden" name="do" value="update"><textarea name="text" maxlength="20000" required placeholder="now:&#10;- ...&#10;worked_on:&#10;- Project | what I did"></textarea>
@@ -249,15 +264,20 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     if (p === "/start" && req.method === "GET") { startPage(res, "", "", "", okBack(url.searchParams.get("back")), okInv(url.searchParams.get("invite"))); return true; }
     if (p === "/start" && req.method === "POST") {
       if (!c.sameOrigin(req)) { startPage(res, "Wrong origin. Please try again."); return true; }
-      const f = await form(req), text = String(f.get("text") || ""), email = String(f.get("email") || "").trim().toLowerCase();
-      const back = okBack(f.get("back")), inv = okInv(f.get("invite")), again = (m: string) => startPage(res, m, text, email, back, inv);
+      const f = await form(req), text = String(f.get("text") || ""), email = String(f.get("email") || "").trim().toLowerCase(), nm = clean(f.get("name"), 80);
+      const back = okBack(f.get("back")), inv = okInv(f.get("invite")), again = (m: string) => startPage(res, m, text, email, back, inv, nm);
       if (!okEmail(email)) { again("That email doesn't look right."); return true; }
-      const pr = parseProfile(text), ex = q("SELECT handle FROM email_accounts WHERE email_hash=?").get(hash(email)) as any;
+      const pasted = parseProfile(text), ex = q("SELECT handle FROM email_accounts WHERE email_hash=?").get(hash(email)) as any;
       // the address already belongs to a GitHub or Obsidian member: one person, one page. They get the way back into
       // their own page instead (the screen says the same either way, so nobody learns who is a member)
       const other = ex ? null : c.memberByEmail?.(email) || null;
-      // a returning member can leave the box empty: that's a sign-in link
-      if (!ex && !other && !pr.name && !pr.headline && !pr.about) { again(text.trim() ? "We couldn't read that. Paste the whole block your AI wrote, starting with \"name:\"." : "Paste the profile your AI wrote first (step 2)."); return true; }
+      const readable = !!(pasted.name || pasted.headline || pasted.about);
+      // something pasted that we can't read: say so, rather than quietly making a starter page instead
+      if (!ex && !other && text.trim() && !readable) { again("We couldn't read that. Paste the whole block your AI wrote, starting with \"name:\", or empty the box to start with a simple page."); return true; }
+      // the default: nothing pasted, so a starter page (their name, or none yet) they fill in later from Settings.
+      // A returning member who pastes nothing gets a sign-in link; the name box is only for new pages.
+      const starter = !ex && !other && !readable;
+      const pr: Profile = starter ? { ...(nm ? { name: nm } : {}), headline: STARTER_HEADLINE } : !ex && nm && !pasted.name ? { ...pasted, name: nm } : pasted;
       if (c.tooMany("emailsignup:" + ipKey(req), 8) || c.tooMany("emailsignup:" + hash(email), 3)) { again("Too many tries. Wait an hour, then try again."); return true; }
       const sent = () => c.page(res, 200, "Check your email", `${STYLE}<main class="ep"><h1>Check your email</h1><p class="lede">We sent a link to <b>${esc(email)}</b>. Open it and your page goes live.</p><p class="mut">Nothing there in a minute? Check spam, or <a href="/start">try again</a>.</p></main>`);
       if (other) {
@@ -265,12 +285,12 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
         sent(); return true;
       }
       const tok = crypto.randomBytes(24).toString("base64url");
-      q("INSERT INTO email_pending VALUES (?,?,?,?,?)").run(hash(tok), c.seal(email), JSON.stringify(pr), Date.now() + 2 * DAY, new Date().toISOString());
+      q("INSERT INTO email_pending VALUES (?,?,?,?,?)").run(hash(tok), c.seal(email), JSON.stringify(starter ? { ...pr, _starter: 1 } : pr), Date.now() + 2 * DAY, new Date().toISOString());
       q("DELETE FROM email_pending WHERE expires < ?").run(Date.now());
       const link = `${pub}/start/confirm?t=${tok}${carry(back, inv)}`;
       try {
         await c.note({ to: email, subject: ex ? "Your Caldera sign-in link" : "Confirm your email to publish your Caldera page", title: ex ? "Sign in to Caldera" : "One click and your page is live",
-          html: `<p>${ex ? `Open this link to sign in as <b>@${esc(ex.handle)}</b> and update your page with what you pasted.` : `Open this link to confirm your email. Your page${pr.name ? ` for <b>${esc(pr.name)}</b>` : ""} goes live right away.`}</p><p><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">${ex ? "Sign in" : "Publish my page"}</a></p><p style="color:#777;font-size:13px">The link works once, for 48 hours. If you didn't ask for this, ignore this email.</p>`,
+          html: `<p>${ex ? `Open this link to sign in as <b>@${esc(ex.handle)}</b> and update your page with what you pasted.` : `Open this link to confirm your email. Your page${pr.name ? ` for <b>${esc(pr.name)}</b>` : ""} goes live right away.${starter ? " Add your projects and story whenever you like." : ""}`}</p><p><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">${ex ? "Sign in" : "Publish my page"}</a></p><p style="color:#777;font-size:13px">The link works once, for 48 hours. If you didn't ask for this, ignore this email.</p>`,
           text: `${ex ? "Sign in to Caldera" : "Confirm your email and your Caldera page goes live"}: ${link}\n\nThe link works once, for 48 hours. If you didn't ask for this, ignore this email.` });
       } catch (e: any) { again("We couldn't send the email: " + e.message); return true; }
       sent(); return true;
@@ -287,7 +307,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       const back = okBack(cf.get("back")), inv = okInv(cf.get("invite"));
       if (!row || row.expires < Date.now()) { c.page(res, 400, "Link expired", `${STYLE}<main class="ep"><h1>That link expired or was already used</h1><p><a class="btn" href="/start">Start again</a> &middot; <a href="/signin">Sign in</a></p></main>`); return true; }
       q("DELETE FROM email_pending WHERE token_hash=?").run(hash(t));
-      const email = c.unseal(row.email_sealed), pr = JSON.parse(row.content || "{}") as Profile;
+      const email = c.unseal(row.email_sealed), pr = JSON.parse(row.content || "{}") as Profile & { _starter?: number }, starter = !!pr._starter; delete pr._starter;
       let acct = q("SELECT * FROM email_accounts WHERE email_hash=?").get(hash(email)) as any, created = false;
       // the address became a GitHub or Obsidian member's after this link went out (or the link predates this check): the
       // link proves the address, so it signs in to THAT page; the pasted profile is only for email pages
@@ -297,11 +317,12 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       }
       if (!acct) {
         if (!c.allowNewProfile(req)) { c.page(res, 429, "One moment", `${STYLE}<main class="ep"><h1>Lots of people are joining right now</h1><p>Open the link again in a minute.</p></main>`); return true; }
-        const id = C.newIdentity(), handle = handleFor(pr.name || "", email), now = new Date().toISOString();
+        // a starter page with no name never gets a handle from the email address (that would publish part of it)
+        const id = C.newIdentity(), handle = handleFor(pr.name || (starter ? "member" : ""), email), now = new Date().toISOString();
         q("INSERT INTO email_accounts (profile_id, handle, email_hash, email_sealed, key_sealed, content, log, created, updated) VALUES (?,?,?,?,?,?,?,?,?)")
           .run(id.id, handle, hash(email), c.seal(email), c.seal(JSON.stringify(id)), JSON.stringify(pr), "[]", now, now);
         acct = q("SELECT * FROM email_accounts WHERE profile_id=?").get(id.id); created = true;
-      } else if (Object.keys(pr).length) {
+      } else if (Object.keys(pr).length && !starter) {   // a second, starter-only link never overwrites a page that exists
         const merged = merge(JSON.parse(acct.content || "{}"), pr);
         q("UPDATE email_accounts SET content=?, updated=? WHERE profile_id=?").run(JSON.stringify(merged), new Date().toISOString(), acct.profile_id);
         acct = q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id);
@@ -309,7 +330,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       c.rememberEmail(acct.profile_id, email);
       try { publish(acct); } catch (e: any) { c.page(res, 500, "Not yet", `${STYLE}<main class="ep"><h1>We couldn't publish your page</h1><p class="mut">${esc(e.message)}</p><p><a class="btn" href="/start">Try again</a></p></main>`); return true; }
       c.onPublished?.(acct.profile_id, created);
-      if (created) c.track?.(req, "email-created", inv ? "invite" : "");
+      if (created) c.track?.(req, "email-created", [inv ? "invite" : "", starter ? "starter" : ""].filter(Boolean).join(" "));
       // joined from someone's invite (e.g. their Message button): credit them, and the new member follows them
       if (created && inv && inv !== acct.handle) try {
         const inviter = c.recordReferral?.(acct.profile_id, inv, "email");
@@ -330,9 +351,16 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
         c.page(res, 200, "Deleted", `${STYLE}<main class="ep"><h1>Your page is deleted</h1><p class="lede">Your page, city and data are gone, and we've forgotten your email.</p></main>`); return true; }
       if (act === "nudge") { q("UPDATE email_accounts SET nudge_off=? WHERE profile_id=?").run(f.get("on") ? 0 : 1, acct.profile_id); settingsPage(res, q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id), f.get("on") ? "ok:Weekly reminder is on." : "ok:Weekly reminder is off."); return true; }
       if (c.tooMany("emailupdate:" + acct.profile_id, 30)) { settingsPage(res, acct, "That's a lot of updates for one hour."); return true; }
+      if (act === "basics") {   // the plain form: name and headline, no AI needed
+        const old: Profile = JSON.parse(acct.content || "{}"), name = clean(f.get("name"), 80), headline = clean(f.get("headline"), 160);
+        const next: Profile = { ...old, name: name || undefined, headline: headline || undefined };
+        q("UPDATE email_accounts SET content=?, updated=? WHERE profile_id=?").run(JSON.stringify(next), new Date().toISOString(), acct.profile_id);
+        try { publish(q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id)); } catch (e: any) { settingsPage(res, acct, "Saved, but publishing failed: " + e.message); return true; }
+        settingsPage(res, q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id), "ok:Saved. Your page is republished."); return true;
+      }
       const up = parseProfile(String(f.get("text") || ""));
       if (!Object.keys(up).length) { settingsPage(res, acct, "We couldn't read that. Paste the whole block your AI wrote."); return true; }
-      const old: Profile = JSON.parse(acct.content || "{}"), next = act === "replace" ? { ...up, projects: up.projects?.length ? up.projects : old.projects } : merge(old, up);
+      const old: Profile = JSON.parse(acct.content || "{}"), next = act === "replace" ? { ...up, name: up.name || old.name, projects: up.projects?.length ? up.projects : old.projects } : merge(old, up);
       const log: any[] = JSON.parse(acct.log || "[]"), ts = new Date().toISOString();
       for (const [project, what] of up.worked || []) log.push({ ts, project, what });
       for (const n of up.now || []) { const pj = (next.projects || []).find(x => n.toLowerCase().includes(x.name.toLowerCase())); if (pj && !(up.worked || []).some(w => w[0].toLowerCase() === pj.name.toLowerCase())) log.push({ ts, project: pj.name, what: n }); }

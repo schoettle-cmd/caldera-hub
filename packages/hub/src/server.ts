@@ -1804,9 +1804,10 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   }
   /** One-time "get your daily summary" strip on the owner's own page (until they subscribe or say not now). The page is
    *  sandboxed, so it acts through /v1/act with an owner token, like inline kudos. */
-  function welcomeBanner(handle: string, city = true): string {
+  function welcomeBanner(handle: string, city = true, emailPage = false): string {
     return `<div id="cb-wel" style="position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:9px 40px 9px 16px;background:#1A1530;border-bottom:1px solid #3A2F5C;font:500 13.5px/1.35 'IBM Plex Sans',Arial,sans-serif;color:#E6E1F5">`
       + (city ? `<span><b style="color:#fff">You're in. This is your city.</b> Each building is a repo, taller with more commits. Your page is already filled in; change anything later in Settings.</span>`
+        : emailPage ? `<span><b style="color:#fff">You're in. This is your page.</b> Add your projects and story whenever you like: each project becomes a building in your city. <a href="/settings#richer" style="color:#C9B8FF">Make it richer</a></span>`
         : `<span><b style="color:#fff">You're in. This is your page.</b> Push a public repo to GitHub and your city appears here within 6 hours. Change anything later in Settings.</span>`)
       + `<span style="display:inline-flex;gap:12px"><a href="/@${handle}/" style="color:#C9B8FF">Your page</a><a href="/world" style="color:#C9B8FF">Fly over other cities</a><a href="/settings" style="color:#C9B8FF">Settings</a></span>`
       + `<button type="button" aria-label="Close" onclick="this.parentNode.remove()" style="all:unset;cursor:pointer;position:absolute;top:8px;right:10px;padding:2px 6px;color:#9A93B5;font-size:18px;line-height:1">&times;</button></div>`;
@@ -1932,7 +1933,7 @@ body{overflow-x:hidden}.kd{max-width:440px;margin:0 auto;padding:22px 16px 40px}
 <form method="post" action="/signin/signup-email" style="margin:10px 0 0">${q2.split("&").filter(kv => /^(back|invite)=/.test(kv)).map(kv => { const [k, v = ""] = kv.split("="); return `<input type="hidden" name="${escAttr(k)}" value="${escAttr(decodeURIComponent(v))}">`; }).join("")}<label class="mut" style="font-size:13px;display:block;margin-bottom:6px" for="su-email">Not signed in to GitHub on this device? Get a sign-up link by email.</label><div class="row"><input id="su-email" type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com" style="flex:1;min-width:180px"><button class="btn small ghost" type="submit">Email me a link</button></div></form>
 <p class="mut" style="font-size:13px;margin-top:12px">With Obsidian your vault becomes a living profile (notes, a daily journal, your AI usage): install the Caldera plugin, publish your page, then ${after}.</p>
 <p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
-<div class="card"><h2>Already on Caldera?</h2><div class="row"><a rel="nofollow" class="btn small ghost" href="/auth/github${bq}" style="display:inline-flex;align-items:center;gap:7px">${GH_ICON}Sign in with GitHub</a></div><p class="mut" style="font-size:12.5px;margin-top:10px">Made your page in Obsidian? Open your page and tap <b>Sign in</b> in the bar at the top, then come back here. Made it with ChatGPT or Claude? <a href="/start${bq}">Email me a sign-in link</a>.</p></div>`;
+<div class="card"><h2>Already on Caldera?</h2><div class="row"><a rel="nofollow" class="btn small ghost" href="/auth/github${bq}" style="display:inline-flex;align-items:center;gap:7px">${GH_ICON}Sign in with GitHub</a></div><p class="mut" style="font-size:12.5px;margin-top:10px">Made your page in Obsidian? Open your page and tap <b>Sign in</b> in the bar at the top, then come back here. Made it with your email? <a href="/start${bq}">Email me a sign-in link</a>.</p></div>`;
   function signinGeneral(res: http.ServerResponse, back = "", req?: http.IncomingMessage) {
     const bq = /^\/(messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|alerts)$/.test(back) ? `?back=${encodeURIComponent(back)}` : "";   // come back to the page that asked (e.g. a conversation)
     // "Message" on someone's page, signed out: say why, offer sign-up first (credited to them), and land in the conversation after
@@ -1957,7 +1958,7 @@ ${signupCards(q2, `tap Message on @${e(h)}'s page again`, bq)}
     }
     signinPage(res, 200, "Sign in", `<h1>Sign in to Caldera</h1><p class="lede">Sign this browser in as the owner of your page. It stays signed in for a year.</p>
 <div class="card"><h2>Sign in with GitHub</h2><p class="mut">Works if you signed up with GitHub, or if your page lists your GitHub account in its links.</p><a rel="nofollow" class="btn" href="/auth/github${bq}">Sign in with GitHub</a><p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
-<div class="card"><h2>Made your page with ChatGPT or Claude?</h2><p class="mut">Enter your email on the start page (leave the profile box empty) and we send you a sign-in link.</p><a class="btn ghost" href="/start">Email me a sign-in link</a></div>
+<div class="card"><h2>Made your page with your email?</h2><p class="mut">Enter your email on the start page and we send you a sign-in link.</p><a class="btn ghost" href="/start">Email me a sign-in link</a></div>
 <div class="card"><h2>Made your page in Obsidian?</h2><p class="mut">Open your page and tap <b>Sign in</b> in the bar at the top for an email link or a code from Obsidian. Or in Obsidian, run <b>Caldera: Open my public page (as owner)</b>.</p></div>
 <h2 style="margin-top:22px">No page yet?</h2>
 ${signupCards(bq ? bq.slice(1) : "", `open this page again`, bq).split('\n<div class="card"><h2>Already on Caldera?')[0]}`);   // sign-in options are above
@@ -2312,7 +2313,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
             const stack = rel === "index.html" && prS ? B.stackCard(PUB(), prS) : "";
             html = html.replace(rowAt, h => h + socialRow(opts.publicUrl || "https://caldera.social", hd, soc, `/@${hd}/${rel === "index.html" ? "" : rel}`) + build + card + stack); }
           // just claimed (from /settings?welcome=1): one short line on the city, nothing else competing with it
-          const welcome = own && prS && (rel === "city.html" || rel === "index.html") && url.searchParams.get("welcome") ? welcomeBanner(m[1], rel === "city.html") : "";
+          const welcome = own && prS && (rel === "city.html" || rel === "index.html") && url.searchParams.get("welcome") ? welcomeBanner(m[1], rel === "city.html", !!EMP?.isEmailPage(prS.id)) : "";
           if (welcome) FUNNEL.track(req, "landed");
           const sum = welcome || (own && prS && (rel === "index.html" || rel === "city.html") && memberOf(req) === prS.id ? summaryBanner(prS.id, m[1]) : "");
           const out = /<body[^>]*>/i.test(html) ? html.replace(/<body[^>]*>/i, b => b + bar + sum) : bar + sum + html;
@@ -2529,8 +2530,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
             m = existingMemberMail(live, email, okB, startBack, inv);
           } else {
             m = { subject: "Your Caldera sign-up link", title: "Finish joining Caldera",
-              html: `<p>Open this on any device where you use GitHub. Your page and your city build themselves in about 10 seconds.</p>${btn(ghLink, "Continue with GitHub")}<p style="color:#777;font-size:13px">Read-only: your public GitHub profile and email. No access to your code or private repos.</p><p>No GitHub? <a href="${e(startLink)}">Make your page with ChatGPT or Claude</a>, or <a href="${e(pubB)}/#obsidian">use the Obsidian plugin</a>.</p><p style="color:#777;font-size:13px">If you didn't ask for this, ignore this email.</p>`,
-              text: `Finish joining Caldera. Open this on any device where you use GitHub:\n${ghLink}\n\nRead-only: your public GitHub profile and email. No access to your code or private repos.\n\nNo GitHub? Make your page with ChatGPT or Claude: ${startLink}\n\nIf you didn't ask for this, ignore this email.` };
+              html: `<p>Open this on any device where you use GitHub. Your page and your city build themselves in about 10 seconds.</p>${btn(ghLink, "Continue with GitHub")}<p style="color:#777;font-size:13px">Read-only: your public GitHub profile and email. No access to your code or private repos.</p><p>No GitHub? <a href="${e(startLink)}">Make your page with just your email</a>, or <a href="${e(pubB)}/#obsidian">use the Obsidian plugin</a>.</p><p style="color:#777;font-size:13px">If you didn't ask for this, ignore this email.</p>`,
+              text: `Finish joining Caldera. Open this on any device where you use GitHub:\n${ghLink}\n\nRead-only: your public GitHub profile and email. No access to your code or private repos.\n\nNo GitHub? Make your page with just your email: ${startLink}\n\nIf you didn't ask for this, ignore this email.` };
           }
           try { if (await mail.note({ to: email, ...m, src: "signup-email" })) FUNNEL.track(req, "email-sent", live ? "existing" : "new"); }
           catch (err: any) { console.error("signup mail", err?.message); }

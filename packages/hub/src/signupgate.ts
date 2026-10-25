@@ -33,7 +33,7 @@ var who=el('div','cg-who'),av;if(o.avatar){av=el('img','cg-av');av.src=o.avatar;
 var h=el('h2','cg-t');h.id='cg-t';h.textContent=o.title||'Join Caldera';who.appendChild(av);who.appendChild(h);box.appendChild(who);
 var p=el('p','cg-p'),b=el('b');b.textContent='Join free with GitHub.';p.appendChild(b);p.appendChild(document.createTextNode(' Read-only: your public profile and email, never your code. About 10 seconds.'));box.appendChild(p);
 var g=el('a','cg-gh');g.href=o.gh;g.rel='nofollow noopener';if(o.blank)g.target='_blank';g.innerHTML=GH;g.appendChild(document.createTextNode('Join free with GitHub'));box.appendChild(g);
-var alt=el('p','cg-alt');[[o.obsidian,'Use Obsidian?'],[o.start,'Start with ChatGPT or Claude'],[o.signin,'Already a member? Sign in']].forEach(function(a){if(!a[0])return;var l=el('a');l.href=a[0];l.rel='nofollow noopener';if(o.blank)l.target='_blank';l.textContent=a[1];alt.appendChild(l)});box.appendChild(alt);
+var alt=el('p','cg-alt');[[o.obsidian,'Use Obsidian?'],[o.start,'Start with just your email'],[o.signin,'Already a member? Sign in']].forEach(function(a){if(!a[0])return;var l=el('a');l.href=a[0];l.rel='nofollow noopener';if(o.blank)l.target='_blank';l.textContent=a[1];alt.appendChild(l)});box.appendChild(alt);
 ov.appendChild(box);ov.hidden=false;try{g.focus()}catch(e){}
 var k=o.kind||'join';if(typeof o.api==='string'&&!counted[k]){counted[k]=1;try{fetch(o.api+'/v1/funnel/gate',{method:'POST',headers:{'content-type':'text/plain'},body:k,keepalive:true}).catch(function(){})}catch(e){}}};
 window.calGate.close=close})();`;

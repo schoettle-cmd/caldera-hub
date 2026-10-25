@@ -95,3 +95,34 @@ test("signed out, tapping Message: sign-up page says why, GitHub first (no email
   const t3 = new URL(mails[mails.length - 1].text.match(/https?:\/\/\S+start\/confirm\?\S+/)[0]).searchParams.get("t");
   assert.equal((await form("/start/confirm", { t: t3, back: "//evil.example" })).headers.get("location"), "/@bo-test/?welcome=1");   // no repos, no city: their page, never a 404
 });
+
+test("one step: just an email (and a name) makes a starter page; make it richer later; no name never uses the address", async () => {
+  const NAV = { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15" };
+  const start = await (await fetch(base + "/start")).text();
+  assert.match(start, /Make your Caldera page/); assert.match(start, /name="name"/); assert.match(start, /<details class="rich">/, "the AI prompt is an optional, folded step");
+  hub.db.prepare("DELETE FROM funnel_events").run();
+  assert.match(await (await form("/start", { email: "sam@example.com", name: "Sam Rivera" })).text(), /Check your email/);
+  const m = mails[mails.length - 1]; assert.match(m.subject, /Confirm your email/); assert.match(m.html, /for <b>Sam Rivera<\/b> goes live right away/);
+  const tok = new URL(m.text.match(/https?:\/\/\S+start\/confirm\?\S+/)[0]).searchParams.get("t");
+  const c = await fetch(base + "/start/confirm", { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, ...NAV }, body: new URLSearchParams({ t: tok }).toString() });
+  assert.equal(c.status, 302); assert.equal(c.headers.get("location"), "/@sam-rivera/?welcome=1");
+  assert.deepEqual(hub.db.prepare("SELECT detail FROM funnel_events WHERE step='email-created'").all().map(r => r.detail), ["starter"]);
+  const cookie = (c.headers.getSetCookie?.() || [c.headers.get("set-cookie")]).map(x => x.split(";")[0]).join("; ");
+  const page = await (await fetch(base + "/@sam-rivera/", { headers: NAV })).text();
+  assert.match(page, /<h1 class="title">Sam Rivera/); assert.match(page, /New on Caldera/); assert.doesNotMatch(page, /Untitled|\$\{/);
+  assert.match(await (await fetch(base + "/@sam-rivera/?welcome=1", { headers: { ...NAV, cookie } })).text(), /Make it richer/, "the welcome points at the optional AI step");
+  // settings: the richer prompt first, and a plain name/headline form
+  const set = await (await fetch(base + "/settings", { headers: { cookie } })).text();
+  assert.match(set, /id="richer"/); assert.match(set, /name: &lt;my name&gt;/); assert.match(set, /value="New on Caldera"/);
+  assert.match(await (await form("/settings/page", { do: "basics", name: "Sam Rivera", headline: "I make ceramics" }, cookie)).text(), /Saved/);
+  assert.match(await (await fetch(base + "/@sam-rivera/", { headers: NAV })).text(), /I make ceramics/);
+  // the AI block fills it in later; a block without a name keeps the name
+  await form("/settings/page", { do: "replace", text: "headline: Potter\nabout: I throw pots.\nprojects:\n- Kiln Club | live | | A shared kiln" }, cookie);
+  const p2 = await (await fetch(base + "/@sam-rivera/", { headers: NAV })).text(); assert.match(p2, /Sam Rivera/); assert.match(p2, /I throw pots/);
+  assert.doesNotMatch(await (await fetch(base + "/settings", { headers: { cookie } })).text(), /id="richer"/, "filled in: no more nudge");
+  // no name: a neutral handle, never one made from the email address
+  await form("/start", { email: "jane.private.1987@example.com" });
+  const t2 = new URL(mails[mails.length - 1].text.match(/https?:\/\/\S+start\/confirm\?\S+/)[0]).searchParams.get("t");
+  const c2 = await form("/start/confirm", { t: t2 }); assert.match(c2.headers.get("location"), /^\/@member(-\d+)?\/\?welcome=1$/);
+  assert.ok(!hub.db.prepare("SELECT 1 FROM profiles WHERE handle LIKE 'jane%'").get());
+});
