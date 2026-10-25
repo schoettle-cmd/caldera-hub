@@ -5,6 +5,10 @@
  *
  * No cookie and nothing personal: a visitor is a one-day hash of IP + browser (like page views), so the same person is
  * counted once per step per day. Bots and crawlers aren't counted.
+ *
+ * Returns from email (and other tagged links): every link back to the hub in our emails carries ?src=<which email>
+ * (email.ts tagLinks, e.g. src=email-digest). A visit with a src is counted once per visitor per src per day, with
+ * whether they were a signed-in member, so the daily report can say how many people each email brought back.
  */
 import type http from "node:http";
 import crypto from "node:crypto";
@@ -48,6 +52,10 @@ export function funnel(c: { q: (sql: string) => any; ipOf: (req: http.IncomingMe
   // which members we saw on which day (signed in on the site, on their own page, or their Obsidian plugin talking to us):
   // "did yesterday's sign-ups come back today?"
   q(`CREATE TABLE IF NOT EXISTS member_days (owner TEXT, day TEXT, via TEXT, PRIMARY KEY (owner, day))`).run();
+  // arrivals from a tagged link (?src=email-digest, ...): one row per visitor per src per day; member = a signed-in
+  // member on any of that day's visits; path = where they first landed
+  q(`CREATE TABLE IF NOT EXISTS src_visits (day TEXT, vid TEXT, src TEXT, member INTEGER, path TEXT, ts TEXT, PRIMARY KEY (day, vid, src))`).run();
+  q(`CREATE INDEX IF NOT EXISTS src_visits_day ON src_visits(day, src)`).run();
   const seenMemo = new Set<string>();
   const vidOf = (req: http.IncomingMessage, day: string) => crypto.createHash("sha256").update(salt + "|funnel|" + day + "|" + c.ipOf(req) + "|" + String(req.headers["user-agent"] || "")).digest("hex").slice(0, 16);
   /** count this visitor at this step today (once per day per step) */
@@ -56,6 +64,16 @@ export function funnel(c: { q: (sql: string) => any; ipOf: (req: http.IncomingMe
       const ua = String(req.headers["user-agent"] || ""); if (!ua || c.botUa.test(ua) || looksAutomated(req)) return;
       const day = funnelDay();
       q("INSERT OR IGNORE INTO funnel_events VALUES (?,?,?,?,?)").run(day, vidOf(req, day), step, String(detail).slice(0, 80), new Date().toISOString());
+    } catch { /* counting never breaks a request */ }
+  }
+  /** a visit that came from a tagged link (?src=...): bots aren't counted, nor anything that isn't a plain tag */
+  function arrived(req: http.IncomingMessage, src: string, member: boolean, path = "") {
+    try {
+      const s = String(src || "").toLowerCase(); if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(s)) return;
+      const ua = String(req.headers["user-agent"] || ""); if (!ua || c.botUa.test(ua) || looksAutomated(req)) return;
+      const day = funnelDay();
+      q(`INSERT INTO src_visits VALUES (?,?,?,?,?,?) ON CONFLICT(day, vid, src) DO UPDATE SET member=MAX(member, excluded.member)`)
+        .run(day, vidOf(req, day), s, member ? 1 : 0, String(path).slice(0, 80), new Date().toISOString());
     } catch { /* counting never breaks a request */ }
   }
   /** note that a member was here today (once per member per day; cheap to call on every request) */
@@ -80,9 +98,12 @@ export function funnel(c: { q: (sql: string) => any; ipOf: (req: http.IncomingMe
         .map(m => ({ handle: m.handle, via: m.gh ? "GitHub" : "Obsidian", email: m.sub ? "subscribed" : m.sug === 1 ? "verified on file" : m.sug === 0 ? "unverified on file" : "none",
           // came back the next day (null while that day hasn't happened yet)
           back: next > funnelDay() || !tracked ? null : !!q("SELECT 1 FROM member_days WHERE owner=? AND day=?").get(m.id, next) }));
-      out.push({ day, counts, fails, members });
+      // came back from a tagged link, per src (email-digest, email-message, ...): unique visitors, and how many were members
+      const returns = (q("SELECT src, COUNT(*) visitors, SUM(member) members FROM src_visits WHERE day=? GROUP BY src ORDER BY visitors DESC, src").all(day) as any[])
+        .map(r => ({ src: r.src, visitors: r.visitors, members: r.members || 0 }));
+      out.push({ day, counts, fails, members, returns });
     }
     return out;
   }
-  return { track, seen, report };
+  return { track, seen, arrived, report };
 }

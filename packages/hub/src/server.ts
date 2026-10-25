@@ -2110,6 +2110,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
     guardLinks(req, res, [], () => headerFor(req, (() => { try { return new URL(req.url || "/", "http://hub").pathname; } catch { return "/"; } })()));
     try {
+      const wasHead = req.method === "HEAD";
       if (req.method === "HEAD") {   // link checkers (e.g. the Obsidian directory) probe with HEAD: answer like GET, without a body
         req.method = "GET"; const end = res.end.bind(res);
         (res as any).write = () => true; (res as any).end = (..._a: unknown[]) => end();
@@ -2119,6 +2120,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       // ids arrive percent-encoded ("cal%3A...") when a proxy passes the raw URI through; API routes match the decoded form
       const p = url.pathname.startsWith("/v1/") ? url.pathname.replace(/%3A/gi, ":") : url.pathname;
       if (req.method === "OPTIONS") return json(res, 204, {});
+      // came from one of our emails (or another tagged link: ?src=email-digest, ...): count the return, once per visitor per src per day
+      { const src = url.searchParams.get("src"); if (src && req.method === "GET" && !wasHead && !p.startsWith("/v1/")) FUNNEL.arrived(req, src, !!memberOf(req), p); }
       if (req.method === "GET" && p === "/manifest.webmanifest") { res.writeHead(200, { "content-type": "application/manifest+json", "cache-control": "public, max-age=3600", "access-control-allow-origin": "*" }); return res.end(MANIFEST); }   // * : sandboxed profile pages fetch it from an opaque origin
       if (req.method === "GET" && p === "/v1/me/badges") {   // the signed-in header polls this: unread messages + alerts, nothing else
         // the cookie on hub pages; the header's short-lived token on sandboxed pages (profiles, cities), which send no cookie

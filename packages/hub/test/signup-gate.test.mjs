@@ -109,3 +109,23 @@ test("a script claiming to be modern Chrome but sending no Sec-Fetch-Mode isn't 
   await send(CHROME + " real", { "sec-fetch-mode": "cors" });
   assert.equal(steps("gate").length, 1);
 });
+
+test("returns from email: ?src= is counted once per visitor per src per day, members flagged, bots and junk tags not", async () => {
+  hub.db.prepare("DELETE FROM src_visits").run();
+  const visit = (p, headers = NAV) => fetch(base + p, { headers, redirect: "manual" }).then(r => r.arrayBuffer());
+  await visit("/@mike/?src=email-digest"); await visit("/@mike/city.html?src=email-digest");   // same visitor, same email: one
+  await visit("/feed?src=email-message", { ...NAV, "user-agent": CHROME + " other" });
+  await visit("/@mike/?src=email-digest", { ...NAV, "user-agent": CHROME + " third" });
+  await visit("/@mike/?src=email-digest", { "user-agent": "Mozilla/5.0 (compatible; GoogleOther)" });   // crawler
+  await visit("/@mike/?src=%3Cscript%3E");   // not a tag
+  await fetch(base + "/@mike/?src=email-digest", { method: "HEAD", headers: { ...NAV, "user-agent": CHROME + " linkcheck" } });   // link checkers probe with HEAD
+  // a signed-in member coming back from their digest (and the same visitor later signed in counts as a member)
+  const crypto = await import("node:crypto"), t = crypto.randomBytes(16).toString("hex");
+  hub.db.prepare("INSERT INTO owner_sessions VALUES (?,?,?,?)").run(crypto.createHash("sha256").update(t).digest("hex"), ids.ana.id, new Date().toISOString(), Date.now() + 86_400_000);
+  await visit("/feed?src=email-digest", { ...NAV, "user-agent": CHROME + " ana", cookie: "cal_own=" + t });
+  await visit("/feed?src=email-message", { ...NAV, "user-agent": CHROME + " other", cookie: "cal_own=" + t });
+  const today = hub.admin["funnel-report"](1).pop().returns;
+  assert.deepEqual(today, [{ src: "email-digest", visitors: 3, members: 1 }, { src: "email-message", visitors: 1, members: 1 }]);
+  assert.equal(hub.db.prepare("SELECT path FROM src_visits WHERE src='email-digest' ORDER BY ts LIMIT 1").get().path, "/@mike/", "where they landed first");
+  assert.ok(hub.db.prepare("SELECT 1 FROM member_days WHERE owner=?").get(ids.ana.id), "and the member counts as back today");
+});
