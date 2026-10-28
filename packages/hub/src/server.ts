@@ -3060,7 +3060,15 @@ if (import.meta.url === `file://${process.argv[1]}` && /server\.js$/.test(proces
   const tg = process.env.CALDERA_TELEGRAM_TOKEN, chat = process.env.CALDERA_TELEGRAM_CHAT, site = process.env.CALDERA_PUBLIC_URL || "https://caldera.social";
   const resend = process.env.CALDERA_RESEND_KEY, mailTo = process.env.CALDERA_NOTIFY_EMAIL, mailFrom = process.env.CALDERA_NOTIFY_FROM || "Caldera <inbox@caldera.social>";
   const warn = (what: string) => (r: Response) => { if (!r.ok) console.error(what + " notify failed", r.status); };
+  // CALDERA_NOTIFY_LOG (2026-10-28, Mike: no per-profile emails): append each owner alert as one JSON line to a shared
+  // alerts log (DIRECTOR /opt/statsbot/alerts.jsonl, read by the 8:30am Morning brief) instead of emailing it.
+  const alertLog = process.env.CALDERA_NOTIFY_LOG;
+  const logAlert = (subject: string) => {
+    try { fs.appendFileSync(alertLog!, JSON.stringify({ ts: new Date().toISOString(), source: "caldera", level: "info", text: subject.replace(/ \(\d+ total\)$/, ""), link: "" }) + "\n"); }
+    catch (err) { console.error("alert log error", String(err)); }
+  };
   const sendAlert = (subject: string, text: string) => {
+    if (alertLog) return logAlert(subject);
     if (tg && chat) fetch(`https://api.telegram.org/bot${tg}/sendMessage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }) })
       .then(warn("telegram")).catch(err => console.error("telegram notify error", String(err)));
     if (resend && mailTo) fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + resend, "content-type": "application/json" }, body: JSON.stringify({ from: mailFrom, to: [mailTo], subject, text }) })
@@ -3068,7 +3076,7 @@ if (import.meta.url === `file://${process.argv[1]}` && /server\.js$/.test(proces
   };
   // a launch can bring hundreds of sign-ups: the first 10 a day arrive one by one, the rest as one email an hour
   const alerts = makeAlertBatcher(sendAlert, site);
-  const onEvent: HubOptions["onEvent"] = (tg && chat) || (resend && mailTo) ? (ev) => alerts.event(ev) : undefined;
+  const onEvent: HubOptions["onEvent"] = alertLog || (tg && chat) || (resend && mailTo) ? (ev) => alerts.event(ev) : undefined;
   if (onEvent) setInterval(() => alerts.flush(), 3600_000).unref?.();
   const hub = createHub({ garden: process.env.CALDERA_GARDEN === "1", dataDir: process.env.CALDERA_DATA || "./data", port: Number(process.env.PORT || 8787), publicUrl: process.env.CALDERA_PUBLIC_URL || "",
     siteDir: process.env.CALDERA_SITE || undefined, trustProxy: process.env.CALDERA_TRUST_PROXY === "1", onEvent, founder: process.env.CALDERA_FOUNDER || undefined, repoJob: process.env.CALDERA_REPO_JOB !== "0", tagJob: process.env.CALDERA_TAG_JOB !== "0", llmKey: process.env.CALDERA_OPENROUTER_KEY || undefined,
