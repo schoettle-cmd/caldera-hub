@@ -7,6 +7,10 @@
 .home-hero h1 { font-size: clamp(42px, 5.4vw, 74px); text-wrap: balance; }
 .home-hero .lead { max-width: 560px; }
 .hh-cta .btn { min-width: 0; }
+/* 2026-10-28: try-before-sign-up in the hero (a /gh preview leads ~9 in 10 viewers to the sign-up gate; the homepage alone ~1 in 20) */
+.hh-try { margin: 22px 0 18px; max-width: 520px; padding: 14px; border: 1px solid var(--line-strong); border-radius: 16px; background: color-mix(in srgb, var(--accent, #6d4aff) 8%, transparent); }
+.hh-try label { display: block; color: var(--text-strong); font-weight: 600; font-size: 15px; margin-bottom: 8px; }
+.hh-try .em-row input { min-width: 0; font-size: 16px; } /* 16px: iOS does not zoom on focus */
 .hh-city { position: relative; display: block; border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--line-strong); background: #080b14; box-shadow: 0 24px 60px -24px rgba(0, 0, 0, .55); transition: transform .2s, border-color .2s; }
 .hh-city:hover { transform: translateY(-2px); border-color: var(--accent); text-decoration: none; }
 .hh-city img { display: block; width: 100%; height: auto; aspect-ratio: 1200 / 630; object-fit: cover; }
