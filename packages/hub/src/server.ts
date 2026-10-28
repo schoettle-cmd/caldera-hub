@@ -33,6 +33,7 @@ import { tools } from "./tools";
 import { listings, type Lookup, type safeGet } from "./listings";
 import { mapPanel } from "./mapprompt";
 import { ghPreview } from "./ghpreview";
+import { liveGen, liveClient } from "./livegen";
 export { cleanText, renderText } from "./messages";
 import { emailer, type Mail, type You } from "./email";
 export { tagLinks } from "./email";
@@ -61,7 +62,7 @@ const MAX_BODY = 12 * 1024 * 1024;
 const RESERVED = new Set(["admin", "api", "www", "caldera", "help", "support", "root", "hub", "v1", "about", "login", "settings", "official", "team", "security", "obsidian", "me", "auth", "setup"]);
 const SECURITY_HEADERS = { "x-content-type-options": "nosniff", "referrer-policy": "strict-origin-when-cross-origin", "x-frame-options": "DENY" };
 // User-uploaded profile pages run in a sandbox: unique origin, no access to the hub's origin, no forms, no top navigation.
-const PROFILE_CSP = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox; default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; manifest-src 'self'; base-uri 'none'; form-action 'none'";
+const PROFILE_CSP = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; manifest-src 'self'; base-uri 'none'; form-action 'none'";
 // The city page may also poll the hub for live traffic on the owner's sites (same hub only).
 const cityCsp = (...origins: string[]) => PROFILE_CSP + `; connect-src 'self' ${origins.filter(Boolean).join(" ")}`.trimEnd();
 const originOf = (u?: string) => { try { return u ? new URL(u).origin : ""; } catch { return ""; } };
@@ -377,6 +378,16 @@ export function createHub(opts: HubOptions) {
   const modOf = (handle: string | null, id?: string) => q("SELECT * FROM moderation WHERE handle=? OR (id IS NOT NULL AND id=?)").get(handle || "", id || "") as any;
   const body = (pr: any) => { try { return JSON.parse(pr.manifest).body || {}; } catch { return {}; } };
   const listed = (pr: any) => body(pr).listed !== false && !modOf(pr.handle, pr.id);
+  // living portraits (livegen.ts): each member's photo as a short motion loop, remade only when the photo changes
+  const LIVE = liveGen({ db, dataDir: opts.dataDir, isModerated: (h: string) => !!modOf(h) });
+  const livePhoto = (pr: any) => {
+    if (!pr?.handle) return;
+    const rel = String(body(pr).photos?.avatar || "").replace(/^\.?\//, ""), dir = path.join(opts.dataDir, "profiles", pr.handle), f = rel ? path.join(dir, path.normalize(rel)) : "";
+    try { LIVE.check(pr.handle, rel || null, f && f.startsWith(dir + path.sep) ? f : null); } catch (e: any) { console.error("[live] check", pr.handle, e?.message); }
+  };
+  const liveSweep = () => { for (const pr of q("SELECT * FROM profiles").all() as any[]) livePhoto(pr); };
+  if (process.env.FAL_KEY) { setTimeout(liveSweep, 20_000).unref?.(); setInterval(liveSweep, 15 * 60_000).unref?.(); }   // GitHub/email-built pages included
+  const withLive = (html: string) => { const sc = liveClient(LIVE.map()); return sc && !html.includes("window.__calLive") ? (/<\/body>/i.test(html) ? html.replace(/<\/body>(?![\s\S]*<\/body>)/i, sc + "</body>") : html + sc) : html; };
   const areFriends = (a: string, b: string) => !!q("SELECT 1 FROM friends WHERE a=? AND b=?").get(a, b);
   /** Following: a signed friend request (from Obsidian, or signed by the hub for GitHub sign-ups) or a follow tapped on the
    *  web by an Obsidian member that their plugin hasn't signed yet. Two people who follow each other are friends. */
@@ -861,7 +872,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     else html = html.replace(/<body[^>]*>/i, b => b + head);
     if (!html.includes("/assets/site.css")) html = html.replace(/<head>/i, `<head><link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css">`);
     if (!html.includes("/assets/site.js")) html = html.replace(/<\/body>/i, `<script src="/assets/site.js" defer></script></body>`);
-    return html;
+    return withLive(html);
   }
   async function worldPreview(): Promise<Buffer> {
     if (worldPng && Date.now() - worldPng.at < 10 * 60_000) return worldPng.png;
@@ -888,6 +899,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     FEED?.erase(id); MSG?.erase(id); CHAT?.erase(id); GUIDE?.erase(id); TOOLS?.erase(id); GIFTS?.erase(id); EMP?.erase(id); PM.erase(id);
     q("DELETE FROM alerts WHERE target=?").run(id); q("DELETE FROM handle_aliases WHERE id=?").run(id);
     const pr = profile(id);
+    if (pr?.handle) LIVE.drop(pr.handle);
     if (pr?.handle) { fs.rmSync(path.join(opts.dataDir, "profiles", pr.handle), { recursive: true, force: true }); fs.rmSync(path.join(opts.dataDir, "cards", pr.handle + ".png"), { force: true }); q("DELETE FROM page_views WHERE handle=?").run(pr.handle); q("DELETE FROM garden_tombstones WHERE handle=?").run(pr.handle); }
     for (const r of q("SELECT key FROM traffic_sites WHERE owner=?").all(id) as any[]) q("DELETE FROM traffic WHERE key=?").run(r.key);
     try { q("DELETE FROM merged_sites WHERE key IN (SELECT key FROM traffic_sites WHERE owner=?)").run(id); } catch { /* no merges yet */ }
@@ -1075,7 +1087,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     alertDelete: (id: string) => ({ id, deleted: alerts.remove(id) }),
     alertList: () => alerts.list().map(a => ({ id: a.id, title: a.title, pinned: !!a.pinned, audience: a.audience, ts: a.ts, version: a.version, reads: (q("SELECT COUNT(*) n FROM alert_reads WHERE alert_id=?").get(a.id) as any).n })),
     list: () => q("SELECT * FROM moderation ORDER BY at DESC").all(),
-    hide(handle: string, reason = "") { const pr = byHandle(handle); q("INSERT OR REPLACE INTO moderation VALUES (?,?,?,?,?)").run(handle, pr?.id || null, "hidden", reason, now()); return { hidden: handle, id: pr?.id || null }; },
+    hide(handle: string, reason = "") { LIVE.drop(handle); const pr = byHandle(handle); q("INSERT OR REPLACE INTO moderation VALUES (?,?,?,?,?)").run(handle, pr?.id || null, "hidden", reason, now()); return { hidden: handle, id: pr?.id || null }; },
     unhide(handle: string) { q("DELETE FROM moderation WHERE handle=?").run(handle); return { restored: handle }; },
     remove(handle: string, reason = "") { const pr = byHandle(handle); if (pr) erase(pr.id); q("INSERT OR REPLACE INTO moderation VALUES (?,?,?,?,?)").run(handle, pr?.id || null, "removed", reason, now()); return { removed: handle, id: pr?.id || null }; },
     block(handle: string, reason = "") { q("INSERT OR REPLACE INTO moderation VALUES (?,?,?,?,?)").run(handle, null, "blocked", reason, now()); return { blocked: handle }; },
@@ -1164,7 +1176,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     }
     if (!html.includes("Heatmap sizing (2026-10-12)") && html.includes('class="heat-box"')) html = html.replace(/<\/head>/i, HEAT_FIX + "</head>");   // pages built before 0.5.1
     if (html.includes('class="side-inner"')) html = html.replace(/<\/head>/i, "<style>.side-inner{scrollbar-width:none}.side-inner::-webkit-scrollbar{display:none}</style></head>");   // side menus scroll without a visible bar, whatever version built the page
-    return html;
+    return withLive(html);
   }
 
   // ---------------------------------------------------------------- live traffic on the owner's own sites
@@ -2229,11 +2241,26 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         if (file.startsWith(root + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) {
           const ext = path.extname(file).toLowerCase();
           res.writeHead(200, { "content-type": MIME[ext] || (ext === ".zip" ? "application/zip" : "application/octet-stream"), "cache-control": "public, max-age=600" });
-          if (ext === ".html") return res.end(fs.readFileSync(file, "utf8"));   // whole, so off-site links get their new-window rewrite
+          if (ext === ".html") return res.end(withLive(fs.readFileSync(file, "utf8")));   // whole, so off-site links get their new-window rewrite
           return fs.createReadStream(file).pipe(res);
         }
       }
       if (req.method === "GET" && p === "/") return json(res, 200, { name: "Caldera Hub", protocol: C.PROTOCOL_VERSION });
+      // living portraits: /live/<handle>.mp4|webp (?v=<photo hash>, so cached for a year); Range for Safari's video
+      { const lm = p.match(/^\/live\/([a-z0-9-]+)\.(mp4|webp)$/);
+        if (req.method === "GET" && lm) {
+          const h = lm[1]!, f = lm[2] === "mp4" ? LIVE.files(h).mp4 : LIVE.files(h).webp;
+          if (modOf(h)) { LIVE.drop(h); res.writeHead(410, { "content-type": "text/plain" }); return res.end("gone"); }
+          if (!LIVE.map()[h] || !fs.existsSync(f)) { res.writeHead(404, { "content-type": "text/plain", "cache-control": "no-cache" }); return res.end("not found"); }
+          const size = fs.statSync(f).size, type = lm[2] === "mp4" ? "video/mp4" : "image/webp", base = { "content-type": type, "cache-control": "public, max-age=31536000, immutable", "accept-ranges": "bytes", "x-robots-tag": "noindex" };
+          const rg = String(req.headers.range || "").match(/^bytes=(\d*)-(\d*)$/);
+          if (rg && (rg[1] || rg[2])) {
+            let a = rg[1] ? +rg[1] : size - +rg[2]!, b = rg[1] && rg[2] ? Math.min(+rg[2], size - 1) : size - 1; if (a < 0) a = 0;
+            if (a >= size || a > b) { res.writeHead(416, { "content-range": `bytes */${size}` }); return res.end(); }
+            res.writeHead(206, { ...base, "content-range": `bytes ${a}-${b}/${size}`, "content-length": b - a + 1 }); return fs.createReadStream(f, { start: a, end: b }).pipe(res);
+          }
+          res.writeHead(200, { ...base, "content-length": size }); return fs.createReadStream(f).pipe(res);
+        } }
 
       if (req.method === "POST" && p === "/v1/envelopes") {
         const env = await readBody(req);
@@ -2259,6 +2286,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           fs.writeFileSync(path.join(dir, clean), Buffer.from(String(b64data), "base64"));
         }
         fs.writeFileSync(path.join(dir, "caldera.json"), JSON.stringify(body.manifest));
+        setTimeout(() => livePhoto(byHandle(handle)), 1500).unref?.();   // new or changed photo -> its living portrait
         return json(res, 200, { ok: true, url: `${opts.publicUrl || ""}/@${handle}/` });
       }
 
