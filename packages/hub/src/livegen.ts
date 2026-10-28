@@ -138,10 +138,12 @@ export function liveClient(m: Record<string, LiveEntry>): string {
 if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;
 function who(img){var s=img.getAttribute('src')||'';if(!s||/^data:/.test(s))return null;try{var u=new URL(s,location.href);if(u.host!==location.host)return null;var x=u.pathname.match(/^\\/@([a-z0-9-]+)\\/(.+)$/);if(!x)return null;var e=L[x[1]];return e&&decodeURIComponent(x[2])===e.a?x[1]:null}catch(_){return null}}
 function swap(img){if(img.__cl)return;var h=who(img);if(!h)return;img.__cl=1;var v=L[h].v,cs=getComputedStyle(img),r=img.getBoundingClientRect();
-var w=r.width?r.width+'px':cs.width,ht=r.height?r.height+'px':cs.height;
+var w=/px$/.test(cs.width)&&parseFloat(cs.width)?cs.width:r.width+'px',ht=/px$/.test(cs.height)&&parseFloat(cs.height)?cs.height:r.height+'px';
 var vid=document.createElement('video');vid.muted=true;vid.defaultMuted=true;vid.loop=true;vid.autoplay=true;vid.playsInline=true;
 vid.setAttribute('muted','');vid.setAttribute('playsinline','');vid.setAttribute('aria-hidden','true');vid.poster=img.currentSrc||img.src;vid.preload='auto';
-vid.className=(img.className||'')+' cal-live';vid.style.cssText=img.style.cssText+';width:'+w+';height:'+ht+';max-width:100%;object-fit:cover;object-position:'+cs.objectPosition+';border-radius:'+cs.borderRadius+';display:'+(cs.display==='inline'?'inline-block':cs.display)+';vertical-align:'+cs.verticalAlign;
+vid.className=(img.className||'')+' cal-live';var K=['position','top','right','bottom','left','z-index','margin-top','margin-right','margin-bottom','margin-left','border-top','border-right','border-bottom','border-left','box-shadow','transform','float','align-self','justify-self','flex','outline','vertical-align','background-color'],st='';
+for(var i=0;i<K.length;i++){var val=cs.getPropertyValue(K[i]);if(val)st+=K[i]+':'+val+';'}
+vid.style.cssText=st+img.style.cssText+';box-sizing:'+cs.boxSizing+';width:'+w+';height:'+ht+';max-width:100%;object-fit:'+(cs.objectFit==='fill'?'cover':cs.objectFit)+';object-position:'+cs.objectPosition+';border-radius:'+cs.borderRadius+';display:'+(cs.display==='inline'?'inline-block':cs.display);
 vid.src='/live/'+h+'.mp4?v='+v;var fell=false;
 function fb(){if(fell||!vid.parentNode)return;fell=true;var a=document.createElement('img');a.className=vid.className;a.alt=img.alt||'';a.style.cssText=vid.style.cssText;
 a.onerror=function(){if(a.parentNode)a.parentNode.replaceChild(img,a)};a.src='/live/'+h+'.webp?v='+v;vid.parentNode.replaceChild(a,vid)}
