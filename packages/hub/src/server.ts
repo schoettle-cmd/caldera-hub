@@ -39,7 +39,7 @@ import { emailer, type Mail, type You } from "./email";
 export { tagLinks } from "./email";
 import { weatherService, dayStats, ownerSetup, extrasScript } from "./cityextra";
 import { buildWorld, foldLive, worldPage, type World, type WorldMemberIn } from "./world";
-import { citySnapshot, applyPrivateMode, rewriteCityPage, type CityData } from "../../../../caldera/packages/plugin/src/city";
+import { citySnapshot, applyPrivateMode, rewriteCityPage, upgradeCityScript, type CityData } from "../../../../caldera/packages/plugin/src/city";
 import { mentionSearch } from "./mentions.js";
 import { privateModes, scrubPrivateLive } from "./privatemode";
 import { profileMeta } from "./seometa";
@@ -2343,6 +2343,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const bar = calderaBar(opts.publicUrl || "https://caldera.social", m[1], own, soc && (inPage || rel === "index.html" || rel === "city.html") ? { ...soc, inPage } : undefined,
             own && prS ? bellFor(prS.id) : viewer ? bellFor(memberOf(req)) : "");
           html = liveBlocks(m[1], rel, html);
+          if (rel === "city.html") html = upgradeCityScript(html);   // hosted cities get the current renderer (LEGO build intro) without a republish
           if (prS && !privCity) html = privatePage(prS, rel, html);   // private repos: anonymous or hidden, whatever version built the page
           html = rewriteFriendLinks(html, m[1], viewer, !!own);
           if (prS && rel === "index.html") html = realLeaderboard(html, prS, !!own);
@@ -2964,6 +2965,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       const headers = { "content-type": own ? "text/html; charset=utf-8" : MIME[path.extname(file).toLowerCase()] || "application/octet-stream", "content-security-policy": PROFILE_CSP };
       if (!own && path.extname(file).toLowerCase() !== ".html") { res.writeHead(200, headers); return fs.createReadStream(file).pipe(res); }
       let html = own || liveBlocks(mine, rel, fs.readFileSync(file, "utf8"));
+      if (rel === "city.html") html = upgradeCityScript(html);
       if (pub && !own && pr) html = privatePage(pr, rel, html);   // "Public view" shows exactly what visitors get
       const ago = (iso: string) => { const mn = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000)); return mn < 60 ? `${mn} min ago` : mn < 2880 ? `${Math.floor(mn / 60)} h ago` : `${Math.floor(mn / 1440)} days ago`; };
       // the same bar as the public page signed in as owner: [Public view | Private view] in the same place, account menu on the right
