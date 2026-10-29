@@ -23,7 +23,7 @@ import { cityArt, cardSvg, postCardSvg, toPng, groupPage, ogTags } from "./cards
 import { feed, sentenceText, postTags } from "./feed";
 import { newsToday } from "./news";
 import { gifts } from "./gifts";
-import { funnel, BOT_UA } from "./funnel";
+import { funnel, BOT_UA, funnelDay } from "./funnel";
 import { HOME_TEST, homeArm, showcaseHome, SAVE_TEST, saveArm } from "./hometest";
 import { GATE_CSS, GATE_JS, okGateKind } from "./signupgate";
 import { emailPages } from "./emailpages";
@@ -1518,6 +1518,7 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   const autoOff = (pr: any) => { const b = body(pr); return b.autoConnectGithub === false || b.autoConnectRepos === false; };
   const circleHooks: { joined?: (id: string) => void; signedIn?: (id: string) => void } = {};
   const FUNNEL = funnel({ q, ipOf, botUa: BOT_UA });
+  q("CREATE TABLE IF NOT EXISTS email_clicks (owner TEXT, day TEXT, src TEXT, PRIMARY KEY (owner, day, src))").run();
   const GH = github({ listings: () => LISTINGS, track: (req, step, detail) => FUNNEL.track(req, step, detail), accountOk: ext.githubAccountOk, privateMode: PM, searchPref: { on: searchable, set: (o: string, on: boolean) => q("INSERT OR REPLACE INTO search_prefs VALUES (?,?,?)").run(o, on ? 1 : 0, now()) }, q, seal, unseal, accept, erase, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", privateUrl: opts.privateUrl,
     json, readBody, allowNewProfile, byHandle, reserved: TAKEN, fetch: opts.githubFetch,
     merge: (from: string, into: string, reason: string) => mergeProfiles(from, into, reason), memberByEmail: (e: string) => memberByEmail(e), freshenMs: opts.githubFetch ? 0 : undefined,
@@ -2157,6 +2158,12 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       // ids arrive percent-encoded ("cal%3A...") when a proxy passes the raw URI through; API routes match the decoded form
       const p = url.pathname.startsWith("/v1/") ? url.pathname.replace(/%3A/gi, ":") : url.pathname;
       if (req.method === "OPTIONS") return json(res, 204, {});
+      // email click-through per member (2026-10-29): our emails tag every link ?src=email-<kind>; a signed-in member who
+      // arrives through one is recorded once per day per kind, so the Features tab can measure whether the daily summary
+      // brings people back (caldera-agg reads email_clicks). Counting never breaks a request.
+      if (req.method === "GET" && /^email-[a-z-]{1,30}$/.test(url.searchParams.get("src") || "")) {
+        try { const who = memberOf(req); if (who) q("INSERT OR IGNORE INTO email_clicks VALUES (?,?,?)").run(who, funnelDay(), url.searchParams.get("src")); } catch { /* best effort */ }
+      }
       if (req.method === "GET" && p === "/manifest.webmanifest") { res.writeHead(200, { "content-type": "application/manifest+json", "cache-control": "public, max-age=3600", "access-control-allow-origin": "*" }); return res.end(MANIFEST); }   // * : sandboxed profile pages fetch it from an opaque origin
       if (req.method === "GET" && p === "/v1/me/badges") {   // the signed-in header polls this: unread messages + alerts, nothing else
         // the cookie on hub pages; the header's short-lived token on sandboxed pages (profiles, cities), which send no cookie
