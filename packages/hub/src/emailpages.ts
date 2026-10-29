@@ -19,6 +19,7 @@ import path from "node:path";
 import * as C from "@caldera/core";
 import { renderProfile, type ProfileData } from "../../../../caldera/packages/plugin/src/render";
 import { cityData, type CityRepo } from "../../../../caldera/packages/plugin/src/city";
+import { cleanImage } from "./images";
 
 const DAY = 86_400_000;
 const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -149,6 +150,10 @@ export function emailPages(c: EmailCtx) {
     return out;
   }
 
+  // the member's uploaded photo (Mike 2026-10-29, Kim Kistler: email accounts had no way to add one). Kept outside the page
+  // folder so every rebuild picks it up, same as GitHub sign-ups.
+  const photoDir = (id: string) => path.join(c.dataDir, "uploads", "email", id.replace(/[^A-Za-z0-9]/g, "_"));
+  const photoOf = (id: string): { file: string; ext: string } | null => { for (const ext of ["jpg", "png", "webp"]) { const f = path.join(photoDir(id), `photo.${ext}`); if (fs.existsSync(f)) return { file: f, ext }; } return null; };
   /** build and publish the page and city from what they've told us */
   function publish(acct: any): string {
     const pr: Profile = JSON.parse(acct.content || "{}"), log: { ts: string; project: string; what: string }[] = JSON.parse(acct.log || "[]");
@@ -178,10 +183,12 @@ export function emailPages(c: EmailCtx) {
       projects: (pr.projects || []).map(x => ({ name: x.name, status: x.status || x.about, url: x.url || "", commits: log.filter(l => l.project.toLowerCase() === x.name.toLowerCase()).length || undefined })),
       city, source: "Caldera",
     } as ProfileData;
-    const files = renderProfile(p);
+    const ph = photoOf(acct.profile_id); if (ph) { p.avatar = `img/photo.${ph.ext}`; p.icon = p.avatar; }
+    const files = renderProfile(p) as Record<string, any>;
+    if (ph) files[p.avatar!] = fs.readFileSync(ph.file);
     const listed = Date.parse(acct.created) < now - 3 * DAY || c.hasFollower(acct.profile_id);
     const manifest = C.sign(id, "profile.manifest", { name, handle, boxKey: id.boxPublic, headline: p.headline, links: p.links, sections: Object.keys(p.sections).filter(k => (p.sections as any)[k]),
-      stats: p.stats, topics: (pr.topics || []).map(t => [t, 1]), asks: [], offers: [], listed, page: "index.html", updated: p.updated, hosted: "email" });
+      stats: p.stats, topics: (pr.topics || []).map(t => [t, 1]), asks: [], offers: [], listed, page: "index.html", updated: p.updated, hosted: "email", ...(ph ? { photos: { avatar: p.avatar } } : {}) });
     const r = c.accept(manifest); if (r.status !== 200) throw new Error(r.body?.error || "couldn't publish");
     const dir = path.join(c.dataDir, "profiles", handle);
     fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(path.join(dir, "assets"), { recursive: true });
@@ -229,6 +236,9 @@ ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(
 <section class="card"><h2>Rewrite the whole page</h2><p class="mut">Run the first prompt again and paste the full block: it replaces your name, headline, About, projects, timeline and links. Your city keeps its history.</p>
 <pre id="p-start">${esc(START_PROMPT)}</pre><button type="button" class="btn small" data-copy="p-start">Copy the full prompt</button>
 <form method="post" action="/settings/page" style="margin-top:12px"><input type="hidden" name="do" value="replace"><textarea name="text" maxlength="20000" required placeholder="name: ..."></textarea><div class="row"><button class="btn small" type="submit">Replace my page</button></div></form></section>
+<section class="card" id="photo"><h2>Your photo</h2><div class="row" style="align-items:center;gap:14px">${photoOf(acct.profile_id) ? `<img src="/@${esc(acct.handle)}/img/photo.${photoOf(acct.profile_id)!.ext}?v=${Date.now()}" alt="" width="64" height="64" style="border-radius:50%;object-fit:cover;border:1px solid var(--line)">` : ""}
+<label class="btn small" style="cursor:pointer">${photoOf(acct.profile_id) ? "Replace photo" : "Upload a photo"}<input type="file" accept="image/jpeg,image/png,image/webp" id="ph-in" style="display:none"></label><span class="mut" id="ph-st">JPG, PNG or WebP, up to 3 MB. Shows on your page and next to your messages.</span></div>
+<script>(function(){var i=document.getElementById('ph-in'),st=document.getElementById('ph-st');i.addEventListener('change',function(){var f=i.files&&i.files[0];if(!f)return;if(f.size>3*1024*1024){st.textContent='That image is over 3 MB.';return;}st.textContent='Uploading\u2026';var r=new FileReader();r.onload=function(){fetch('/settings/photo',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({data:String(r.result).split(',')[1]})}).then(function(x){return x.json()}).then(function(j){if(j.ok){location.href='/settings?photo=1#photo'}else st.textContent=j.error||'Upload failed.'}).catch(function(){st.textContent='Upload failed.'})};r.readAsDataURL(f)})})();</script></section>
 <section class="card"><h2>Weekly reminder</h2><form method="post" action="/settings/page"><input type="hidden" name="do" value="nudge"><label><input type="checkbox" name="on" ${acct.nudge_off ? "" : "checked"} onchange="this.form.submit()"> Email me the update prompt when I haven't updated in a week</label></form></section>
 <section class="card"><h2>Make your city live</h2><p class="mut">Got a website? Put its line in your site's shared layout (or ask your AI to) and real visitors walk into that project's building as they arrive. Call <code>caldera('signup')</code> when someone signs up and the building lights up.</p>
 ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").all(acct.profile_id) as any[]).map(x => `<p class="mut" style="margin:10px 0 2px"><b>${esc(x.project)}</b></p><pre id="s-${esc(x.key)}">${esc(trackTag(pub, x.key))}</pre><button type="button" class="btn small ghost" data-copy="s-${esc(x.key)}">Copy</button>`).join("") || `<p class="mut">Add a project in an update and its snippet appears here.</p>`}
@@ -320,10 +330,25 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       const hasCity = fs.existsSync(path.join(c.dataDir, "profiles", acct.handle, "city.html"));   // no repos yet: their page, not a 404
       res.writeHead(302, { location: back || `/@${acct.handle}/${hasCity ? "city.html" : ""}?welcome=1`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true;
     }
+    if (p === "/settings/photo" && req.method === "POST") {
+      const acct = acctOf(c.memberOf(req)), J = (st: number, b: any) => { res.writeHead(st, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(b)); };
+      if (!acct) { J(401, { error: "Sign in first." }); return true; }
+      if (!c.sameOrigin(req)) { J(403, { error: "wrong origin" }); return true; }
+      if (c.tooMany("email-photo:" + acct.profile_id, 20)) { J(429, { error: "Too many uploads. Try again in an hour." }); return true; }
+      const ch: Buffer[] = []; let n = 0; for await (const x of req) { n += (x as Buffer).length; if (n > 6_000_000) { J(413, { error: "That image is too big (3 MB max)." }); return true; } ch.push(x as Buffer); }
+      let b: any = null; try { b = JSON.parse(Buffer.concat(ch).toString("utf8")); } catch { /* bad body */ }
+      if (!b || typeof b.data !== "string") { J(400, { error: "Choose an image." }); return true; }
+      const img = cleanImage(Buffer.from(b.data, "base64")); if (!img.ok) { J(400, { error: img.error }); return true; }
+      const dir = photoDir(acct.profile_id); fs.mkdirSync(dir, { recursive: true });
+      for (const ext of ["jpg", "png", "webp"]) fs.rmSync(path.join(dir, `photo.${ext}`), { force: true });
+      fs.writeFileSync(path.join(dir, `photo.${img.ext}`), img.data);
+      try { publish(q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id)); } catch (e: any) { J(502, { error: "Saved, but republishing failed: " + e.message }); return true; }
+      J(200, { ok: true }); return true;
+    }
     if (p === "/settings/page" || ((p === "/settings" || p === "/me") && req.method === "GET")) {
       const acct = acctOf(c.memberOf(req));
       if (!acct) { if (p === "/settings/page") { res.writeHead(302, { location: "/signin" }); res.end(); return true; } return false; }   // not an email page: the usual settings
-      if (req.method === "GET") { settingsPage(res, acct); return true; }
+      if (req.method === "GET") { settingsPage(res, acct, url && url.searchParams && url.searchParams.get("photo") ? "ok:Your photo is up and your page is republished." : ""); return true; }
       if (!c.sameOrigin(req)) { settingsPage(res, acct, "Wrong origin."); return true; }
       const f = await form(req), act = f.get("do");
       if (act === "delete") {
