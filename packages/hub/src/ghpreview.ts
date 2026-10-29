@@ -18,6 +18,9 @@ export interface GhPreviewCtx {
   memberOf: (login: string) => string | null;
   /** a member's public city (already projected by their private-repos setting) */
   memberCity: (handle: string) => CityData | null;
+  /** preview "save my city" A/B (save1): "a" control, "b" email box, null for crawlers; and the funnel counter */
+  saveArm?: (req: http.IncomingMessage) => "a" | "b" | null;
+  track?: (req: http.IncomingMessage, step: "save-a" | "save-b") => void;
   pause?: number;
 }
 interface Preview { org?: boolean; login: string; name: string; bio: string; html_url: string; fetched: string; city: CityData; repos: number; commits: number }
@@ -166,12 +169,15 @@ ${seeForm("", true)}<p class="ghp-ex">Try: ${ex.map(l => `<a href="/gh/${l}">@${
   function snippet(target: string, img: string, label: string): string {
     return `[![${label}](${img})](${target})`;
   }
-  function previewPage(p: Preview, back: string): string {
+  // save1 "b" arm (Mike 2026-10-29: a gentler first step than GitHub sign-in): email yourself the city at the moment you
+  // like it. Posts to the email sign-up route (same bot trap); the email carries the city link, the claim button and the badge.
+  const saveForm = (login: string) => `<form class="ghp-save" method="post" action="/signin/signup-email"><input type="hidden" name="city" value="${esc(login)}"><span style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden" aria-hidden="true"><input type="text" name="website" tabindex="-1" autocomplete="off"></span><label for="ghp-se">Not ready to sign up? Save your city: we'll email you the link and your README badge.</label><span class="ghp-se-row"><input id="ghp-se" type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com"><button class="ghp-btn ghost" type="submit">Email me my city</button></span></form>`;
+  function previewPage(p: Preview, back: string, save = false): string {
     const hub = c.hub(), url = `${hub}/gh/${p.login}`, who = p.name && p.name !== p.login ? `${p.name} (@${p.login})` : `@${p.login}`;
     let html = renderCity({ name: p.name || p.login, github: p.html_url, theme: "dark" }, p.city);
     const md = snippet(url, `${url}/badge.svg?style=card`, "My GitHub city on Caldera"), share = `${who}'s public GitHub as a living city`;
     // above the city: one short line + the claim button, so the city itself is on the first screen (phones too)
-    const top = `<section class="ghp-top" aria-label="About this preview"><span class="ghp-pill">Preview</span><span class="ghp-top-t"><b>@${esc(p.login)}'s public GitHub as a city.</b> <span class="ghp-mut">Not on Caldera yet.</span></span>${p.org ? `<a class="ghp-btn ghost" href="#ghp-md">Put it on your site</a>` : `<a rel="nofollow" class="ghp-btn" href="/auth/github?back=${encodeURIComponent(back)}">Is this you? Claim it with GitHub</a>`}</section>`;
+    const top = `<section class="ghp-top" aria-label="About this preview"><span class="ghp-pill">Preview</span><span class="ghp-top-t"><b>@${esc(p.login)}'s public GitHub as a city.</b> <span class="ghp-mut">Not on Caldera yet.</span></span>${p.org ? `<a class="ghp-btn ghost" href="#ghp-md">Put it on your site</a>` : `<a rel="nofollow" class="ghp-btn" href="/auth/github?back=${encodeURIComponent(back)}">Is this you? Claim it with GitHub</a>`}${save && !p.org ? saveForm(p.login) : ""}</section>`;
     // under the city: the README badge in plain view (the main way a city spreads), sharing, another lookup, the fine print
     const below = `<section class="ghp-banner ghp-below" aria-label="Share this city">
 <div class="ghp-badge open">${p.org ? `<h2 class="ghp-h">Put this city in your README or careers page</h2><p class="ghp-mut">Paste this into the org profile README (github.com/${esc(p.login)}/.github, profile/README.md) or link it from your engineering or careers page. It stays up to date on its own.</p>` : `<h2 class="ghp-h">Put this city in your GitHub README</h2><p class="ghp-mut">Paste this into your profile README (github.com/${esc(p.login)}/${esc(p.login)}). It stays up to date on its own.</p>`}<img src="/gh/${esc(p.login)}/badge.svg?style=card" alt="GitHub city badge" width="420" height="92"><pre id="ghp-md">${esc(md)}</pre><button class="ghp-btn" type="button" data-copy-el="ghp-md">Copy Markdown</button> <span class="ghp-mut">A smaller one: <code>/badge.svg</code> without <code>?style=card</code>.</span></div>
@@ -241,7 +247,9 @@ ${seeForm("", true)}<p class="ghp-ex">Try: ${ex.map(l => `<a href="/gh/${l}">@${
     }
     if (!g.ok) { send(res, g.status, "text/html; charset=utf-8", notFound(login, g.why), "no-cache", { "content-security-policy": CSP }); return true; }
     if (g.p.login !== login) { res.writeHead(301, { location: `/gh/${g.p.login}` }); res.end(); return true; }   // canonical case
-    send(res, 200, "text/html; charset=utf-8", previewPage(g.p, `/gh/${g.p.login}`), "public, max-age=600", { "content-security-policy": CSP }); return true;
+    const arm = c.saveArm ? c.saveArm(req) : null;
+    if (arm && c.track) c.track(req, arm === "b" ? "save-b" : "save-a");
+    send(res, 200, "text/html; charset=utf-8", previewPage(g.p, `/gh/${g.p.login}`, arm === "b"), c.saveArm ? "private, max-age=0" : "public, max-age=600", { "content-security-policy": CSP }); return true;
   }
   return { route, memberBadge, get, badgeSnippet: (handle: string) => snippet(`${c.hub()}/@${handle}/city.html`, `${c.hub()}/@${handle}/badge.svg?style=card`, "My GitHub city on Caldera") };
 }
@@ -259,6 +267,7 @@ const PAGE_CSS = `.ghp-top{display:flex;flex-wrap:wrap;align-items:center;gap:8p
 .ghp-form.big{max-width:520px;padding:6px 6px 6px 18px}.ghp-form.big input,.ghp-form.big .ghp-at{font-size:15px}.ghp-form:focus-within{border-color:#8B6CF6}
 .ghp-banner{margin:0 0 22px;padding:16px 18px;border:1px solid #3A2F5C;border-radius:14px;background:linear-gradient(180deg,#1C1730,#18161F);display:flex;flex-direction:column;gap:12px}
 .ghp-b-top{color:var(--text,#D6D6DC);line-height:1.5}.ghp-b-top b{color:var(--text-strong,#F2F2F5)}.ghp-pill{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:999px;background:#2A2440;color:#B9A6FF;font:600 11px 'IBM Plex Sans',Arial,sans-serif;text-transform:uppercase;letter-spacing:.06em;vertical-align:2px}
+.ghp-save{flex:1 1 100%;margin:4px 0 0}.ghp-save label{display:block;font-size:13px;color:var(--text-muted,#9A9AA6);margin:0 0 6px}.ghp-se-row{display:flex;flex-wrap:wrap;gap:8px}.ghp-se-row input{flex:1 1 200px;min-width:0;background:var(--bg-raised,#1C1C21);color:var(--text-strong,#F2F2F5);border:1px solid var(--line-strong,#3A3A44);border-radius:999px;padding:8px 14px;font:inherit}
 .ghp-mut{color:var(--text-muted,#9A9AA6)}.ghp-b-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.ghp-share{display:inline-flex;flex-wrap:wrap;gap:8px}
 .ghp-btn{display:inline-flex;align-items:center;min-height:34px;padding:0 14px;border-radius:999px;background:#6D4AE8;color:#fff!important;border:1px solid #6D4AE8;font:600 13px 'IBM Plex Sans',Arial,sans-serif;text-decoration:none!important;cursor:pointer;white-space:nowrap}
 .ghp-btn.ghost{background:transparent;border-color:var(--line-strong,#3A3A44);color:var(--text,#E6E6EA)!important}.ghp-btn:hover{filter:brightness(1.1)}.ghp-b-see .ghp-form{margin:0;max-width:420px}

@@ -35,3 +35,7 @@ export function showcaseHome(html: string): string | null {
   }
   return out;
 }
+
+/** preview "save my city" A/B (save1): independent of home1 (different salt), same one-day visitor hash */
+export const SAVE_TEST = "save1";
+export const saveArm = (vid: string): "a" | "b" => (crypto.createHash("sha256").update(SAVE_TEST + "|" + vid).digest()[0]! & 1 ? "b" : "a");

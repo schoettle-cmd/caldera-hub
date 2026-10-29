@@ -74,3 +74,32 @@ test("/gh/<login> of a member goes to their real city; member badges; fresh buil
     assert.equal(last, 429, "21st fresh build in an hour from one visitor waits");
   } finally { S.hub.server.close(); }
 });
+
+test("save1: the 'b' arm shows 'Email me my city'; the email carries the city link, claim button and badge; arms counted", async () => {
+  const sent = [], d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-save-"));
+  let hub;
+  try {
+    hub = createHub({ dataDir: d, publicUrl: "http://hub.test", githubFetch: fake, limits: { newProfilesPerDay: 100 }, email: { send: async m => { sent.push(m); } } });
+    const base = "http://127.0.0.1:" + await hub.listen(0);
+    const NAV = { "sec-fetch-mode": "navigate", "sec-fetch-site": "none", accept: "text/html" };
+    const CH = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
+    await fetch(base + "/gh/octo", { headers: { "user-agent": "Mozilla/5.0" }, redirect: "manual" });   // the stub answers /users/octo; caches Octo
+    let a = 0, b = 0, bUa = "";
+    for (let i = 0; i < 20; i++) {
+      const r = await fetch(base + "/gh/Octo", { headers: { ...NAV, "user-agent": CH + " s" + i } }); assert.equal(r.status, 200);
+      assert.equal(r.headers.get("cache-control"), "private, max-age=0");
+      const h = await r.text(); assert.match(h, /Claim it with GitHub/);
+      if (h.includes("Email me my city")) { b++; bUa = CH + " s" + i; assert.match(h, /name="city" value="Octo"/); assert.match(h, /name="website"/); } else a++;
+    }
+    assert.ok(a > 0 && b > 0, JSON.stringify({ a, b }));
+    const rows = Object.fromEntries(hub.db.prepare("SELECT step, COUNT(*) n FROM funnel_events WHERE step IN ('save-a','save-b') GROUP BY step").all().map(r => [r.step, r.n]));
+    assert.equal(rows["save-a"], a); assert.equal(rows["save-b"], b);
+    const bot = await (await fetch(base + "/gh/Octo", { headers: { "user-agent": "Googlebot/2.1" } })).text();
+    assert.doesNotMatch(bot, /Email me my city/);
+    const r = await fetch(base + "/signin/signup-email", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: "http://hub.test", ...NAV, "user-agent": bUa }, body: new URLSearchParams({ email: "dev@person.dev", city: "Octo", website: "" }).toString() });
+    assert.match(await r.text(), /Your city is on its way/);
+    assert.equal(sent.length, 1); assert.match(sent[0].subject, /Your GitHub city: @Octo/);
+    assert.match(sent[0].text, /http:\/\/hub\.test\/gh\/Octo/); assert.match(sent[0].text, /auth\/github\?back=%2Fgh%2FOcto/); assert.match(sent[0].text, /badge\.svg\?style=card/);
+    assert.deepEqual(hub.db.prepare("SELECT detail FROM funnel_events WHERE step='email-start'").all().map(x => x.detail), ["city"]);
+  } finally { hub?.server.close(); fs.rmSync(d, { recursive: true, force: true }); }
+});

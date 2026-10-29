@@ -24,7 +24,7 @@ import { feed, sentenceText, postTags } from "./feed";
 import { newsToday } from "./news";
 import { gifts } from "./gifts";
 import { funnel, BOT_UA } from "./funnel";
-import { HOME_TEST, homeArm, showcaseHome } from "./hometest";
+import { HOME_TEST, homeArm, showcaseHome, SAVE_TEST, saveArm } from "./hometest";
 import { GATE_CSS, GATE_JS, okGateKind } from "./signupgate";
 import { emailPages } from "./emailpages";
 import { messages } from "./messages";
@@ -2133,6 +2133,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
     return ghMembers.map.get(login.toLowerCase()) || null;
   };
   const GHP = ghPreview({ dataDir: opts.dataDir, hub: () => hubUrl(), fetch: opts.githubFetch || fetch, token: () => GH.anyToken(), header: HEADER_MARK, tooMany, ipOf,
+    saveArm: (req) => { const v = FUNNEL.vid(req); return v ? saveArm(v) : null; }, track: (req, step) => FUNNEL.track(req, step, SAVE_TEST),
     memberOf: memberOfLogin, memberCity: (h: string) => { const pr = byHandle(h); return pr && !modOf(pr.handle, pr.id) ? publicCityOf(h) : null; }, pause: opts.githubFetch ? 0 : 150 });
 
   // the big footer from the site build (assets/footer.html), re-read when the site is redeployed
@@ -2579,6 +2580,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const f = await form(), email = String(f.get("email") || "").trim().toLowerCase().slice(0, 200);
           const back = String(f.get("back") || ""), okB = /^\/(messages|messages\/@[a-z0-9-]+|feed|feed\/p\/[0-9a-f]{12}|people|world|@[a-z0-9-]+\/)$/.test(back) ? back : "";
           const inv = String(f.get("invite") || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 31);
+          const city = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(String(f.get("city") || "")) ? String(f.get("city")) : "";   // save1 "Email me my city"
           const e = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
           if (!/^[^\s@<>"']{1,64}@[^\s@<>"']+\.[a-z]{2,}$/i.test(email)) { signinPage(res, 400, "Sign up", `<h1>That email doesn't look right</h1><p><a class="btn" href="/#install">Go back</a></p>`); return; }
           // Bot trap (Oct 29: 185 sign-up emails sent on Oct 28 with 0 accounts made, from many addresses). A real form
@@ -2591,7 +2593,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
             return;
           }
           if (tooMany("signup-mail-ip:" + ip, 6) || tooMany("signup-mail:" + mail.hashOf(email), 3)) { signinPage(res, 429, "Sign up", `<h1>Too many tries</h1><p class="lede">Wait an hour, then try again. Or <a href="/auth/github" rel="nofollow">sign up with GitHub</a> on this device.</p>`); return; }
-          FUNNEL.track(req, "email-start", okB ? "from " + okB.split("/").slice(0, 2).join("/") : "");
+          FUNNEL.track(req, "email-start", city ? "city" : okB ? "from " + okB.split("/").slice(0, 2).join("/") : "");
           const pubB = (opts.publicUrl || "https://caldera.social").replace(/\/$/, ""), qs = (o: Record<string, string>) => { const s = new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString(); return s ? "?" + s : ""; };
           const startBack = /^\/(messages|messages\/@[a-z0-9-]+|feed|people|world)$/.test(okB) ? okB : "";
           const ghLink = `${pubB}/auth/github${qs({ back: okB, invite: inv })}`, startLink = `${pubB}/start${qs({ back: startBack, invite: inv })}`;
@@ -2601,13 +2603,20 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           let m: { subject: string; title: string; html: string; text: string };
           if (live) {
             m = existingMemberMail(live, email, okB, startBack, inv);
+          } else if (city) {
+            const cityUrl = `${pubB}/gh/${city}`, claim = `${pubB}/auth/github${qs({ back: "/gh/" + city })}`;
+            const md = `[![My GitHub city on Caldera](${cityUrl}/badge.svg?style=card)](${cityUrl})`;
+            m = { subject: `Your GitHub city: @${city}`, title: "Your GitHub city",
+              html: `<p>Here is <b>@${e(city)}</b>'s public GitHub as a living city. It refreshes every day.</p>${btn(cityUrl, "Open my city")}<p>Want it to come alive, with live visitors to your sites, your AI agents over the repos they're working in, and developers who build the same things? Claim it with GitHub (about 30 seconds, read-only):</p>${btn(claim, "Claim my city with GitHub")}<p style="color:#777;font-size:13px">Read-only: your public GitHub profile and email. No access to your code or private repos.</p><p>Put it in your GitHub README (it stays up to date):</p><pre style="white-space:pre-wrap;word-break:break-all;background:#f4f4f6;padding:10px;border-radius:8px;font-size:12px">${e(md)}</pre><p style="color:#777;font-size:13px">If you didn't ask for this, ignore this email.</p>`,
+              text: `Your GitHub city: ${cityUrl}\n\nClaim it with GitHub (about 30 seconds, read-only): ${claim}\n\nPut it in your README:\n${md}\n\nIf you didn't ask for this, ignore this email.` };
           } else {
             m = { subject: "Your Caldera sign-up link", title: "Finish joining Caldera",
               html: `<p>Open this on any device where you use GitHub. Your page and your city build themselves in about 10 seconds.</p>${btn(ghLink, "Continue with GitHub")}<p style="color:#777;font-size:13px">Read-only: your public GitHub profile and email. No access to your code or private repos.</p><p>No GitHub? <a href="${e(startLink)}">Make your page with ChatGPT or Claude</a>, or <a href="${e(pubB)}/#obsidian">use the Obsidian plugin</a>.</p><p style="color:#777;font-size:13px">If you didn't ask for this, ignore this email.</p>`,
               text: `Finish joining Caldera. Open this on any device where you use GitHub:\n${ghLink}\n\nRead-only: your public GitHub profile and email. No access to your code or private repos.\n\nNo GitHub? Make your page with ChatGPT or Claude: ${startLink}\n\nIf you didn't ask for this, ignore this email.` };
           }
-          try { if (await mail.note({ to: email, ...m, src: "signup-email" })) FUNNEL.track(req, "email-sent", live ? "existing" : "new"); }
+          try { if (await mail.note({ to: email, ...m, src: "signup-email" })) FUNNEL.track(req, "email-sent", live ? "existing" : city ? "city" : "new"); }
           catch (err: any) { console.error("signup mail", err?.message); }
+          if (city) { signinPage(res, 200, "Check your email", `<h1>Your city is on its way</h1><p class="lede">We sent <b>@${e(city)}</b>'s city to <b>${e(email)}</b>, with the link, your README badge and a one-click way to claim it.</p><p><a class="btn" href="/gh/${e(city)}">Back to the city</a></p><p class="mut">Nothing there in a minute? Check spam.</p>`); return; }
           signinPage(res, 200, "Check your email", `<h1>Check your email</h1><p class="lede">We sent a link to <b>${e(email)}</b>. Open it on any device where you use GitHub, or start without GitHub from the same email.</p><p class="mut">Nothing there in a minute? Check spam, or <a href="/#install">try again</a>.</p>`);
           return;
         }
