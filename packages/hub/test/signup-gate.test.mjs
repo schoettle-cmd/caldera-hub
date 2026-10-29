@@ -109,3 +109,12 @@ test("a script claiming to be modern Chrome but sending no Sec-Fetch-Mode isn't 
   await send(CHROME + " real", { "sec-fetch-mode": "cors" });
   assert.equal(steps("gate").length, 1);
 });
+
+test("email sign-up link: bots get the same page but no email (no Origin, filled hidden field)", async () => {
+  sent.length = 0;
+  const noOrigin = await fetch(base + "/signin/signup-email", { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": CHROME + " b1" }, body: new URLSearchParams({ email: "victim1@x.dev" }).toString() });
+  assert.equal(noOrigin.status, 200); assert.match(await noOrigin.text(), /Check your email/);
+  const trap = await form("/signin/signup-email", { email: "victim2@x.dev", website: "http://spam.example" }, { "user-agent": CHROME + " b2" });
+  assert.equal(trap.status, 200); assert.match(await trap.text(), /Check your email/);
+  assert.equal(sent.length, 0);
+});
