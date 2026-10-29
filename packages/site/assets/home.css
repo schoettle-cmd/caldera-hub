@@ -14,6 +14,12 @@
 .hh-city { position: relative; display: block; border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--line-strong); background: #080b14; box-shadow: 0 24px 60px -24px rgba(0, 0, 0, .55); transition: transform .2s, border-color .2s; }
 .hh-city:hover { transform: translateY(-2px); border-color: var(--accent); text-decoration: none; }
 .hh-city img { display: block; width: 100%; height: auto; aspect-ratio: 1200 / 630; object-fit: cover; }
+/* live city in the hero (Mike 2026-10-29): Mike's real city in mini mode builds itself brick by brick on load; the card
+   image shows underneath until the frame paints. Clicks go to the full city (the frame ignores the pointer). */
+.hh-frame { position: relative; display: block; aspect-ratio: 1200 / 630; background: #010207; }
+.hh-frame img { position: absolute; inset: 0; height: 100%; }
+.hh-live-city { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; opacity: 0; transition: opacity .35s; background: transparent; }
+.hh-live-city.on { opacity: 1; }
 .hh-cap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 11px 16px; border-top: 1px solid rgba(140, 170, 220, .18); background: #0b1020; color: #E8EEF8; font-size: 13.5px; }
 .hh-cap b { color: #9CC4FF; font-weight: 600; margin-left: auto; white-space: nowrap; }
 .hh-live { width: 8px; height: 8px; border-radius: 50%; background: #4FB89A; box-shadow: 0 0 0 0 rgba(79, 184, 154, .6); animation: hhpulse 2.4s ease-out infinite; flex: none; }

@@ -39,7 +39,8 @@
       <p class="fine">GitHub takes about 30 seconds, needs no install, and is read-only: your public profile and email, never your code. Obsidian runs on your device, and nothing leaves your vault unless you choose it. <a href="/@mike/">See a live profile</a> &middot; <a href="/people">Browse people</a> &middot; <a href="/gh"><b>See any GitHub as a city</b></a></p>
     </div>
     <a class="hh-city" href="/@mike/city.html" aria-label="Open a live Caldera city">
-      <img src="/@mike/card.png" width="1200" height="630" alt="A Caldera city: districts are projects, buildings are repos, lit windows are this week's commits" loading="eager">
+      <span class="hh-frame"><img src="/@mike/card.png" width="1200" height="630" alt="A Caldera city: districts are projects, buildings are repos, lit windows are this week's commits" loading="eager"><iframe class="hh-live-city" src="/@mike/city.html#mini" title="Mike's live Caldera city building itself" loading="eager" tabindex="-1" aria-hidden="true" scrolling="no"></iframe></span>
+      <script>(function(){var f=document.querySelector('.hh-live-city');if(!f)return;function on(){setTimeout(function(){f.classList.add('on')},120)}if(f.contentDocument&&f.contentDocument.readyState==='complete'&&f.contentDocument.URL!=='about:blank')on();else f.addEventListener('load',on)})();</script>
       <span class="hh-cap"><span class="hh-live" aria-hidden="true"></span>A real city, live. Districts are projects, buildings are repos. <b>Walk in &rarr;</b></span>
     </a>
   </section>
