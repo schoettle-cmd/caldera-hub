@@ -37,7 +37,7 @@ test("anonymous bar links to /signin; the sign-in page lists the right ways in",
   const html = await (await fetch(`${base}/@mike/`, { headers: UA })).text();
   assert.match(html, /href="https:\/\/hub\.test\/signin\?h=mike"/); assert.match(html, /Get started/);
   const si = await (await fetch(base + "/signin?h=mike")).text();
-  assert.match(si, /Email me a sign-in link/); assert.match(si, /Pair from Obsidian/); assert.doesNotMatch(si, /Sign in with GitHub/);
+  assert.match(si, /Email me a code/); assert.match(si, /Pair from Obsidian/); assert.doesNotMatch(si, /Continue with GitHub/);
   assert.match(await (await fetch(base + "/signin?h=cy")).text(), /no confirmed summary email/);
   assert.equal((await fetch(base + "/signin?h=nobody")).status, 404);
 });
@@ -45,10 +45,11 @@ test("anonymous bar links to /signin; the sign-in page lists the right ways in",
 test("email sign-in: same answer for right and wrong addresses, link only to the confirmed one, button page, single use", async () => {
   const wrong = await (await form("/signin/email", { h: "mike", email: "someone@else.org" })).text();
   const right = await (await form("/signin/email", { h: "mike", email: "Mike@RealMail.org" })).text();
-  const msg = /If that&#39;s the email on this page|If that's the email on this page/;
+  const msg = /Check your email/;
   assert.match(wrong, msg); assert.match(right, msg);
   await new Promise(r => setTimeout(r, 50));
   assert.equal(sent.length, 1, "only the matching address gets mail"); assert.equal(sent[0].to, "mike@realmail.org");
+  assert.match(sent[0].subject, /^Your Caldera code: \d{6}$/, "the code is in the subject");
   const link = sent[0].text.match(/https:\/\/hub\.test(\/signin\/link\?c=[\w-]+)/)[1], c = new URL(base + link).searchParams.get("c");
   const show = await fetch(base + link); assert.equal(show.status, 200); assert.equal(show.headers.get("set-cookie"), null, "GET never signs in (mail scanners)");
   const use = await form("/signin/link", { c }); assert.equal(use.status, 303); assert.equal(use.headers.get("location"), "/@mike/");
@@ -67,7 +68,7 @@ test("email sign-in links expire", async () => {
 
 test("email sign-in is rate limited per page", async () => {
   let limited = false;
-  for (let i = 0; i < 8; i++) if (/Too many tries/.test(await (await form("/signin/email", { h: "ana", email: "x@realmail.org" })).text())) limited = true;
+  for (let i = 0; i < 8; i++) if (/Too many/.test(await (await form("/signin/email", { h: "ana", email: "x@realmail.org" })).text())) limited = true;
   assert.ok(limited);
 });
 
@@ -104,3 +105,4 @@ test("uploaded images: magic bytes checked, metadata stripped", () => {
   assert.ok(!r.data.includes("GPS-SECRET")); assert.ok(r.data.includes("JFIF"));
   assert.equal(cleanImage(Buffer.alloc(3 * 1024 * 1024 + 10, 0xff)).ok, false);
 });
+

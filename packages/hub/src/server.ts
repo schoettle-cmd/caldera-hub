@@ -27,6 +27,7 @@ import { funnel, BOT_UA, funnelDay } from "./funnel";
 import { HOME_TEST, homeArm, showcaseHome, SAVE_TEST, saveArm } from "./hometest";
 import { GATE_CSS, GATE_JS, okGateKind } from "./signupgate";
 import { emailPages } from "./emailpages";
+import { signinCodes, codeMail } from "./signincode";
 import { messages } from "./messages";
 import { chat, CHAT_CSS, CHAT_JS } from "./chat";
 import { setupGuide } from "./setupguide";
@@ -1513,13 +1514,16 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
     return { boards, posts };
   }
   const mail = emailer({ q, seal, unseal, hub: opts.publicUrl || "https://caldera.social", pepper: PRIV_KEY, send: opts.email?.send, resendKey: opts.email?.resendKey, digest: digestFor, network: networkFor, news: opts.email?.schedule ? () => newsToday(q) : undefined, rank: { active: d => ext.digestActive(d), subject: d => ext.digestSubject(d) } });
+  const CODES = signinCodes(q, e => mail.hashOf(e));   // "Email me a code" (sign-in standard, 2026-10-29)
   if (opts.email?.schedule) mail.schedule();
 
   const autoOff = (pr: any) => { const b = body(pr); return b.autoConnectGithub === false || b.autoConnectRepos === false; };
   const circleHooks: { joined?: (id: string) => void; signedIn?: (id: string) => void } = {};
   const FUNNEL = funnel({ q, ipOf, botUa: BOT_UA });
   q("CREATE TABLE IF NOT EXISTS email_clicks (owner TEXT, day TEXT, src TEXT, PRIMARY KEY (owner, day, src))").run();
-  const GH = github({ listings: () => LISTINGS, track: (req, step, detail) => FUNNEL.track(req, step, detail), accountOk: ext.githubAccountOk, privateMode: PM, searchPref: { on: searchable, set: (o: string, on: boolean) => q("INSERT OR REPLACE INTO search_prefs VALUES (?,?,?)").run(o, on ? 1 : 0, now()) }, q, seal, unseal, accept, erase, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", privateUrl: opts.privateUrl,
+  // the sign-in standard's shared event names, next to the GitHub funnel steps they mirror
+  const AUTH_OF: Record<string, "auth_start" | "auth_ok" | "auth_fail"> = { click: "auth_start", "click-ext": "auth_start", signin: "auth_ok", fail: "auth_fail" };
+  const GH = github({ listings: () => LISTINGS, track: (req, step, detail) => { FUNNEL.track(req, step, detail); const a = AUTH_OF[step]; if (a) FUNNEL.track(req, a, step === "fail" ? detail : "github"); }, accountOk: ext.githubAccountOk, privateMode: PM, searchPref: { on: searchable, set: (o: string, on: boolean) => q("INSERT OR REPLACE INTO search_prefs VALUES (?,?,?)").run(o, on ? 1 : 0, now()) }, q, seal, unseal, accept, erase, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", privateUrl: opts.privateUrl,
     json, readBody, allowNewProfile, byHandle, reserved: TAKEN, fetch: opts.githubFetch,
     merge: (from: string, into: string, reason: string) => mergeProfiles(from, into, reason), memberByEmail: (e: string) => memberByEmail(e), freshenMs: opts.githubFetch ? 0 : undefined,
     siteNav: () => siteHeader(),
@@ -1971,6 +1975,16 @@ body{overflow-x:hidden}.kd{max-width:440px;margin:0 auto;padding:22px 16px 40px}
 <p class="mut" style="font-size:13px;margin-top:12px">With Obsidian your vault becomes a living profile (notes, a daily journal, your AI usage): install the Caldera plugin, publish your page, then ${after}.</p>
 <p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
 <div class="card"><h2>Already on Caldera?</h2><div class="row"><a rel="nofollow" class="btn small ghost" href="/auth/github${bq}" style="display:inline-flex;align-items:center;gap:7px">${GH_ICON}Sign in with GitHub</a></div><p class="mut" style="font-size:12.5px;margin-top:10px">Made your page in Obsidian? Open your page and tap <b>Sign in</b> in the bar at the top, then come back here. Made it with ChatGPT or Claude? <a href="/start${bq}">Email me a sign-in link</a>.</p></div>`;
+  // ---- "Email me a code" screens (sign-in standard, 2026-10-29): the same form, check-your-email page and code box everywhere
+  const SIGNIN_BACK = /^\/(messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|alerts)$/;
+  const signinBack = (b: string) => SIGNIN_BACK.test(b) ? b : "";
+  const CODE_OR = `<div class="mut" style="display:flex;align-items:center;gap:10px;margin:16px 0 12px"><span style="flex:1;height:1px;background:currentColor;opacity:.25"></span>or<span style="flex:1;height:1px;background:currentColor;opacity:.25"></span></div>`;
+  const codeForm = (h: string, back: string) => `<form method="post" action="/signin/email">${h ? `<input type="hidden" name="h" value="${escAttr(h)}">` : ""}${back ? `<input type="hidden" name="back" value="${escAttr(back)}">` : ""}<input type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com" aria-label="Email"><button class="btn small" type="submit">Email me a code</button></form>`;
+  function codeSent(res: http.ServerResponse, email: string, back: string, note = "") {
+    signinPage(res, 200, "Check your email", `${note ? `<div class="card">${escAttr(note)}</div>` : ""}<h1>Check your email</h1><p class="lede">${email ? `If <b>${escAttr(email)}</b> belongs to a Caldera page, we sent it a 6-digit code.` : "Enter the 6-digit code from your email."} Enter it here to sign in on this device.</p>
+${email ? `<form method="post" action="/signin/code"><input type="hidden" name="email" value="${escAttr(email)}">${back ? `<input type="hidden" name="back" value="${escAttr(back)}">` : ""}<input name="code" required autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 \\-]*" maxlength="7" placeholder="123 456" aria-label="6-digit code" autofocus style="font-size:22px;letter-spacing:.12em;max-width:12ch"><button class="btn" type="submit">Sign in</button></form>` : ""}
+<p class="mut">The code works once, for 15 minutes. You can also tap the link in the email. Nothing there in a minute? Check spam, or <a href="/signin">try again</a>.</p>`);
+  }
   function signinGeneral(res: http.ServerResponse, back = "", req?: http.IncomingMessage) {
     const bq = /^\/(messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|alerts)$/.test(back) ? `?back=${encodeURIComponent(back)}` : "";   // come back to the page that asked (e.g. a conversation)
     // "Message" on someone's page, signed out: say why, offer sign-up first (credited to them), and land in the conversation after
@@ -1994,8 +2008,8 @@ ${signupCards(q2, `tap Message on @${e(h)}'s page again`, bq)}
       return;
     }
     signinPage(res, 200, "Sign in", `<h1>Sign in to Caldera</h1><p class="lede">Sign this browser in as the owner of your page. It stays signed in for a year.</p>
-<div class="card"><h2>Sign in with GitHub</h2><p class="mut">Works if you signed up with GitHub, or if your page lists your GitHub account in its links.</p><a rel="nofollow" class="btn" href="/auth/github${bq}">Sign in with GitHub</a><p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
-<div class="card"><h2>Made your page with ChatGPT or Claude?</h2><p class="mut">Enter your email on the start page (leave the profile box empty) and we send you a sign-in link.</p><a class="btn ghost" href="/start">Email me a sign-in link</a></div>
+<div class="card"><a rel="nofollow" class="btn" href="/auth/github${bq}" style="display:inline-flex;align-items:center;gap:8px">${GH_ICON}Continue with GitHub</a>
+${CODE_OR}${codeForm("", signinBack(back))}<p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
 <div class="card"><h2>Made your page in Obsidian?</h2><p class="mut">Open your page and tap <b>Sign in</b> in the bar at the top for an email link or a code from Obsidian. Or in Obsidian, run <b>Caldera: Open my public page (as owner)</b>.</p></div>
 <h2 style="margin-top:22px">No page yet?</h2>
 ${signupCards(bq ? bq.slice(1) : "", `open this page again`, bq).split('\n<div class="card"><h2>Already on Caldera?')[0]}`);   // sign-in options are above
@@ -2003,11 +2017,11 @@ ${signupCards(bq ? bq.slice(1) : "", `open this page again`, bq).split('\n<div c
   function signinHome(res: http.ServerResponse, pr: any, note = "") {
     const e = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
     const h = pr.handle as string, hosted = hostedOf(pr.id), hasEmail = mail.hasConfirmed(pr.id);
-    const emailCard = `<div class="card"><h2>Email me a sign-in link</h2>${hasEmail
-      ? `<p class="mut">Type the email your daily Caldera summary goes to. We'll send a link that works once, for 15 minutes.</p><form method="post" action="/signin/email"><input type="hidden" name="h" value="${e(h)}"><input type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com"><button class="btn small" type="submit">Send the link</button></form>`
-      : `<p class="mut">This page has no confirmed summary email yet, so there's nowhere to send a link. ${hosted ? "Sign in with GitHub instead, and add your email on your account page for next time." : "Pair this device from Obsidian below, then turn on the daily summary email in Caldera settings for next time."}</p>`}</div>`;
+    const emailCard = `<div class="card">${hasEmail || hosted
+      ? `${hosted ? "" : `<p class="mut">Type the email your daily Caldera summary goes to.</p>`}${codeForm(h, "")}`
+      : `<p class="mut">This page has no confirmed summary email yet, so there's nowhere to send a code. Pair this device from Obsidian below, then turn on the daily summary email in Caldera settings for next time.</p>`}</div>`;
     const ghLogin = hosted ? "" : GH.ghLoginsOf(pr)[0] || "";   // a page made in Obsidian that lists its GitHub account
-    const ghCard = hosted || ghLogin ? `<div class="card"><h2>Sign in with GitHub</h2><p class="mut">${hosted ? "This page was made with GitHub. Sign in with the same GitHub account." : `Sign in as <b>${e(ghLogin)}</b>, the GitHub account linked on this page.`}</p><a rel="nofollow" class="btn" href="/auth/github?h=${encodeURIComponent(h)}">Sign in with GitHub</a><p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>` : "";
+    const ghCard = hosted || ghLogin ? `<div class="card"><p class="mut">${hosted ? "This page was made with GitHub. Sign in with the same GitHub account." : `Sign in as <b>${e(ghLogin)}</b>, the GitHub account linked on this page.`}</p><a rel="nofollow" class="btn" href="/auth/github?h=${encodeURIComponent(h)}" style="display:inline-flex;align-items:center;gap:8px">${GH_ICON}Continue with GitHub</a><p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>${CODE_OR}` : "";
     const pairCard = hosted ? "" : `<div class="card" id="pair"><h2>Pair from Obsidian</h2><p class="mut">On a computer with your vault: in Obsidian, open the command palette and run <b>Caldera: Sign in another device</b> (or the key button in the My profile tab), then type the code shown here.</p>
 <div id="pair-box"><button class="btn small" type="button" id="pair-go">Show a code</button></div></div>`;
     const js = hosted ? "" : `(function(){var b=document.getElementById('pair-go');if(!b)return;b.addEventListener('click',function(){b.disabled=true;
@@ -2570,18 +2584,33 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const pr = byHandle((url.searchParams.get("h") || "").toLowerCase()); if (!pr || modOf(pr.handle, pr.id)) { signinPage(res, 404, "Sign in", `<h1>No such page</h1><p><a href="/people">Find people</a></p>`); return; }
           signinHome(res, pr); return;
         }
-        if (req.method === "POST" && p === "/signin/email") {
-          const f = await form(), pr = byHandle(String(f.get("h") || "").toLowerCase()), email = String(f.get("email") || "").trim().slice(0, 200);
-          if (!pr || modOf(pr.handle, pr.id)) { signinPage(res, 404, "Sign in", `<h1>No such page</h1>`); return; }
-          if (tooMany("email-ip:" + ip, 10) || tooMany("email-h:" + pr.handle, 5)) { signinHome(res, pr, "Too many tries. Wait an hour, or pair from Obsidian."); return; }
-          if (mail.matches(pr.id, email)) {   // only the page's confirmed summary address ever gets a link; the answer is the same either way
-            const code = crypto.randomBytes(24).toString("base64url");
-            q("DELETE FROM signin_links WHERE expires < ?").run(Date.now());
-            q("INSERT INTO signin_links VALUES (?,?,?)").run(hashToken(code), pr.id, Date.now() + 15 * 60_000);
-            const link = `${(opts.publicUrl || "").replace(/\/$/, "")}/signin/link?c=${encodeURIComponent(code)}`;
-            void mail.sendSignin(pr.id, pr.handle, link).catch((e: any) => console.error("signin mail", e?.message));
+        // "Email me a code" (sign-in standard): one email with a 6-digit code and a link, to an address that belongs to a
+        // live page (memberByEmail: confirmed summary, verified GitHub/sign-up address, or an email page). With ?h= only that
+        // page. The answer on screen is the same whether or not anyone got mail, so nobody learns who is a member.
+        if (req.method === "POST" && (p === "/signin/email" || p === "/signin/code/send")) {
+          const f = await form(), email = String(f.get("email") || "").trim().toLowerCase().slice(0, 200), h = String(f.get("h") || "").toLowerCase(), back = signinBack(String(f.get("back") || ""));
+          const pr = h ? byHandle(h) : null;
+          if (h && (!pr || modOf(pr.handle, pr.id))) { signinPage(res, 404, "Sign in", `<h1>No such page</h1>`); return; }
+          if (!/^[^\s@<>"']{1,64}@[^\s@<>"']+\.[a-z]{2,}$/i.test(email)) { codeSent(res, "", back, "That email doesn't look right. Go back and try again."); return; }
+          FUNNEL.track(req, "auth_start", "code");
+          if (tooMany("email-ip:" + ip, 10) || tooMany("code-em:" + mail.hashOf(email), 5, 30 * 60_000) || (pr && tooMany("email-h:" + pr.handle, 5))) { codeSent(res, email, back, "Too many codes asked for. Use the newest email, or wait a while and try again."); return; }
+          const live = memberByEmail(email), who = pr ? (mail.matches(pr.id, email) || live?.id === pr.id ? pr : null) : live;
+          if (who?.handle) {
+            const { token, code } = CODES.issue(who.id, email), link = `${(opts.publicUrl || "").replace(/\/$/, "")}/signin/link?c=${encodeURIComponent(token)}`;
+            void mail.note({ to: email, ...codeMail("Caldera", code, link, "@" + who.handle), src: "signin-code" }).then(ok => { if (ok) FUNNEL.track(req, "auth_code_sent"); }).catch((e: any) => console.error("signin mail", e?.message));
           }
-          signinHome(res, pr, "If that's the email on this page, a sign-in link is on its way. It works once, for 15 minutes. Check your spam folder too."); return;
+          codeSent(res, email, back); return;
+        }
+        if (req.method === "POST" && p === "/signin/code") {
+          const f = await form(), email = String(f.get("email") || "").trim().toLowerCase().slice(0, 200), back = signinBack(String(f.get("back") || ""));
+          if (tooMany("code-try-ip:" + ip, 30)) { codeSent(res, email, back, "Too many tries from this network. Wait a while, or tap the link in the email."); return; }
+          const r = email ? CODES.useCode(email, f.get("code")) : "none", pr = r !== "bad" && r !== "none" ? profile(r) : null;
+          if (!pr?.handle) {
+            FUNNEL.track(req, "auth_fail", r === "bad" ? "wrong code" : "no code waiting");
+            codeSent(res, email, back, r === "bad" ? "That code didn't work. Check the newest email from Caldera and try again." : "That code expired or was already used. Ask for a new one."); return;
+          }
+          FUNNEL.track(req, "auth_ok", "code");
+          res.writeHead(303, { location: back || `/@${pr.handle}/`, "set-cookie": startOwner(pr.id), "cache-control": "no-store" }); return res.end();
         }
         // "Not signed in to GitHub on this device? Get a sign-up link by email." One email that works on any device: continue
         // with GitHub there, or start without GitHub. Someone who already has a page gets a way back into THAT page instead
@@ -2634,10 +2663,11 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const c = req.method === "POST" ? String((await form()).get("c") || "") : url.searchParams.get("c") || "";
           const row = c ? q("SELECT * FROM signin_links WHERE code_hash=?").get(hashToken(c)) as any : null;
           const pr = row && row.expires > Date.now() ? profile(row.owner) : null;
-          if (!pr?.handle) { signinPage(res, 400, "Link expired", `<h1>That link expired</h1><p class="mut">Sign-in links work once, for 15 minutes. Ask for a new one from the "Owner? Sign in" link at the top of your page.</p>`); return; }
+          if (!pr?.handle) { signinPage(res, 400, "Link expired", `<h1>That link expired</h1><p class="mut">Sign-in links work once, for 15 minutes. <a href="/signin">Ask for a new code</a>.</p>`); return; }
           const e = (v: string) => v.replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]!));
           if (req.method === "GET") { signinPage(res, 200, "Sign in", `<h1>Sign in as @${e(pr.handle)}</h1><p class="lede">Sign this browser in as the owner of the page. It stays signed in for a year; "Sign out" in the bar at the top of your page ends it.</p><form method="post" action="/signin/link"><input type="hidden" name="c" value="${e(c)}"><button class="btn" type="submit">Sign in on this device</button></form>`); return; }
-          q("DELETE FROM signin_links WHERE code_hash=?").run(row.code_hash);
+          q("DELETE FROM signin_links WHERE code_hash=?").run(row.code_hash); CODES.linkUsed(row.code_hash);   // the code dies with the link
+          FUNNEL.track(req, "auth_ok", "link");
           res.writeHead(303, { location: `/@${pr.handle}/`, "set-cookie": startOwner(pr.id), "cache-control": "no-store" }); return res.end();
         }
         if (req.method === "POST" && p === "/signin/pair") {

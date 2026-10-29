@@ -11,7 +11,7 @@
 import type http from "node:http";
 import crypto from "node:crypto";
 
-export const STEPS = ["view", "preview", "gate", "click", "back", "created", "signin", "fail", "landed", "email-start", "email-sent", "email-created", "gh-return", "click-ext", "home-a", "home-b", "save-a", "save-b"] as const;
+export const STEPS = ["view", "preview", "gate", "click", "back", "created", "signin", "fail", "landed", "email-start", "email-sent", "email-created", "gh-return", "click-ext", "home-a", "home-b", "save-a", "save-b", "auth_start", "auth_code_sent", "auth_ok", "auth_fail"] as const;
 /** Crawlers, link previewers and scripts: never counted in the funnel or page views. Real browsers never match.
  *  Many crawlers ignore robots.txt and follow sign-up links (Meta's AI agents, GoogleOther, BigBug): named here. */
 export const BOT_UA = /bot|crawl|spider|slurp|preview|fetch|curl|wget|python|node|headless|monitor|lighthouse|facebookexternalhit|facebookcatalog|embedly|discord|slack|telegram|whatsapp|externalagent|webindexer|googleother|google-inspectiontool|google-extended|bigbug|wrendex|scrapy|httpx|axios|okhttp|go-http|java\/|libwww|ia_archiver|barkrowler|dataprovider|petalsearch|yisou|sogou|seznam|ahrefs|semrush|mj12|bytespider|claude-user|claude-searchbot|anthropic-ai|perplexity|ccbot|cohere|diffbot|timpi|imagesift|omgili|youbot|qwant|yandex|baidu|meta-/i;
