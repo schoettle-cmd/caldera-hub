@@ -195,6 +195,10 @@ export function messages(c: MsgCtx) {
   const offSig = (id: string) => (c.sign ? c.sign("msg-email-off:" + id) : "").slice(0, 32);
   const offUrl = (id: string) => `${hub}/v1/messages/email-off?o=${encodeURIComponent(id)}&s=${offSig(id)}`;
   let sweeping = false;
+  // A send that fails (Resend's 10/second limit is shared by every app on the account, so a burst elsewhere can still
+  // 429 after the mailer's own retries) is tried again on later sweeps: 2, 10, then 30 minutes later, then dropped.
+  // In memory only: a restart simply forgets pending retries.
+  const RETRY_MIN = [2, 10, 30], retries = new Map<string, { tries: number; next: number }>();
   async function sweepAlerts(delayMs = 60_000): Promise<number> {
     if (!c.mailAlert || sweeping) return 0; sweeping = true; let sent = 0;
     try {
@@ -209,14 +213,25 @@ export function messages(c: MsgCtx) {
       }
       for (const x of by.values()) {
         if (x.last.status === "ignored" || emailOff(x.owner) || blocked(x.owner, x.sender)) continue;
+        const rk = x.owner + " " + x.sender, rt = retries.get(rk);
+        if (rt && rt.next > nowMs) continue;
         const prev = (q("SELECT ts FROM msg_emailed WHERE owner=? AND sender=?").get(x.owner, x.sender) as any)?.ts;
-        if (prev && (prev > gap || prev >= x.last.ts)) continue;
+        if (!rt && prev && (prev > gap || prev >= x.last.ts)) continue;
         const fresh = prev ? (q("SELECT COUNT(*) n FROM msg_messages m JOIN msg_threads t ON t.id=m.thread WHERE (t.a=? OR t.b=?) AND m.sender=? AND m.read_at IS NULL AND m.ts > ?").get(x.owner, x.owner, x.sender, prev) as any).n : x.n;
         const pr = c.profile(x.sender), mine = c.profile(x.owner); if (!usable(pr) || !usable(mine)) continue;
         q("INSERT OR REPLACE INTO msg_emailed VALUES (?,?,?)").run(x.owner, x.sender, new Date().toISOString());   // before sending: a failure never repeats every minute
         const text = open(x.last.body).replace(/\s+/g, " ").trim();
         try { if (await c.mailAlert(x.owner, { handle: pr.handle, name: pr.name || pr.handle, preview: text.length > 200 ? text.slice(0, 199) + "\u2026" : text, count: fresh || 1, request: x.request, url: `${hub}/messages/@${pr.handle}`, off: offUrl(x.owner) })) sent++; }
-        catch (e: any) { console.error("message email", e?.message); }
+        catch (e: any) {
+          const tries = (rt?.tries || 0) + 1;
+          if (tries > RETRY_MIN.length) { retries.delete(rk); console.error("message email (gave up)", e?.message); }
+          else {   // undo the mark so the retry counts the same messages, and try again later
+            if (prev) q("UPDATE msg_emailed SET ts=? WHERE owner=? AND sender=?").run(prev, x.owner, x.sender); else q("DELETE FROM msg_emailed WHERE owner=? AND sender=?").run(x.owner, x.sender);
+            retries.set(rk, { tries, next: nowMs + RETRY_MIN[tries - 1]! * 60_000 }); console.error("message email (retry in " + RETRY_MIN[tries - 1] + " min)", e?.message);
+          }
+          continue;
+        }
+        retries.delete(rk);
       }
     } finally { sweeping = false; }
     return sent;

@@ -92,6 +92,10 @@ export function github(ctx: GhCtx) {
   q(`CREATE TABLE IF NOT EXISTS gh_accounts (gh_id INTEGER PRIMARY KEY, login TEXT, profile_id TEXT, handle TEXT, key_sealed TEXT, token_sealed TEXT,
       installation TEXT, edits TEXT, cache TEXT, created TEXT, refreshed TEXT, claimed TEXT, claim_code TEXT, claim_expires INTEGER)`).run();
   q("CREATE TABLE IF NOT EXISTS gh_sessions (token TEXT PRIMARY KEY, gh_id INTEGER, expires INTEGER)").run();
+  // reconnect: when GitHub refused this account's refresh token (it expired or was revoked). Until the member signs in
+  // with GitHub again the account is skipped by refreshes and checks (no retry every page view); reconnect_mailed = the
+  // one reconnect email, if it went out (server.ts, CALDERA_RECONNECT_MAIL).
+  for (const col of ["reconnect TEXT", "reconnect_mailed TEXT"]) { try { q(`ALTER TABLE gh_accounts ADD COLUMN ${col}`).run(); } catch { /* exists */ } }
   // GitHub sign-in for profiles that already exist (made in Obsidian): a GitHub login is linked to the profile whose signed
   // manifest lists https://github.com/<login>. No hosted profile is made for these; the link only grants the owner cookie.
   q("CREATE TABLE IF NOT EXISTS gh_links (gh_id INTEGER PRIMARY KEY, login TEXT, profile_id TEXT, ts TEXT)").run();
@@ -178,8 +182,14 @@ export function github(ctx: GhCtx) {
   async function tokenFor(acct: any): Promise<string> {
     const t = JSON.parse(ctx.unseal(acct.token_sealed));
     if (!t.expires || t.expires > Date.now() + 120_000) return t.access;
-    if (!t.refresh) throw new Error("GitHub sign-in expired");
-    const n = await exchange({ grant_type: "refresh_token", refresh_token: t.refresh });
+    const dead = (why: string) => {
+      if (!acct.reconnect) { q("UPDATE gh_accounts SET reconnect=? WHERE gh_id=? AND reconnect IS NULL").run(new Date().toISOString(), acct.gh_id); console.error("github reconnect needed", acct.login, why); }
+      acct.reconnect = acct.reconnect || "now"; const e = new Error("GitHub sign-in expired: reconnect needed") as Error & { reconnect?: boolean }; e.reconnect = true; return e;
+    };
+    if (!t.refresh) throw dead("no refresh token");
+    let n: Awaited<ReturnType<typeof exchange>>;
+    try { n = await exchange({ grant_type: "refresh_token", refresh_token: t.refresh }); }
+    catch (e: any) { if (/refresh token .*(incorrect|expired|revoked)|bad_refresh_token/i.test(String(e?.message))) throw dead(e.message); throw e; }
     q("UPDATE gh_accounts SET token_sealed=? WHERE gh_id=?").run(ctx.seal(JSON.stringify(n)), acct.gh_id);
     return n.access;
   }
@@ -426,8 +436,8 @@ export function github(ctx: GhCtx) {
   // refreshed IS NULL and is picked up here (first pass 30 s after start)
   const refreshDue = async () => {
     if (!app()) return;
-    const due = q("SELECT * FROM gh_accounts WHERE claimed IS NULL AND (refreshed IS NULL OR refreshed < ?) LIMIT 5").all(new Date(Date.now() - 6 * 3600_000).toISOString()) as any[];
-    for (const a of due) { try { await queuedBuild(a); } catch (e: any) { q("UPDATE gh_accounts SET refreshed=? WHERE gh_id=?").run(new Date().toISOString(), a.gh_id); console.error("github refresh", a.login, e.message); } }
+    const due = q("SELECT * FROM gh_accounts WHERE claimed IS NULL AND reconnect IS NULL AND (refreshed IS NULL OR refreshed < ?) LIMIT 5").all(new Date(Date.now() - 6 * 3600_000).toISOString()) as any[];
+    for (const a of due) { try { await queuedBuild(a); } catch (e: any) { q("UPDATE gh_accounts SET refreshed=? WHERE gh_id=?").run(new Date().toISOString(), a.gh_id); if (!e.reconnect) console.error("github refresh", a.login, e.message); } }
   };
   const timer = setInterval(refreshDue, 10 * 60_000); timer.unref?.();
 
@@ -436,7 +446,7 @@ export function github(ctx: GhCtx) {
   const lastCheck = new Map<number, number>();
   async function freshen(profileId: string): Promise<boolean> {
     if (!app()) return false;
-    const acct = q("SELECT * FROM gh_accounts WHERE profile_id=? AND claimed IS NULL AND token_sealed<>''").get(profileId) as any; if (!acct) return false;
+    const acct = q("SELECT * FROM gh_accounts WHERE profile_id=? AND claimed IS NULL AND reconnect IS NULL AND token_sealed<>''").get(profileId) as any; if (!acct) return false;
     const now = Date.now(), every = ctx.freshenMs ?? 10 * 60_000; if (every && (lastCheck.get(acct.gh_id) || 0) > now - every) return false;
     lastCheck.set(acct.gh_id, now); if (lastCheck.size > 20_000) lastCheck.clear();
     try {
@@ -451,7 +461,7 @@ export function github(ctx: GhCtx) {
         void queuedBuild({ ...acct, cache: JSON.stringify(cache) }).catch((e: any) => console.error("github freshen", acct.login, e.message));
         return true;
       }
-    } catch (e: any) { console.error("github freshen check", acct.login, e.message); }
+    } catch (e: any) { if (!e.reconnect) console.error("github freshen check", acct.login, e.message); }
     return false;
   }
   const firstPass = setTimeout(refreshDue, 30_000); firstPass.unref?.();
@@ -782,7 +792,7 @@ ${sug.length ? `<p style="margin:.8em 0 .3em">People you might know:</p>${sug.ma
         }
         if (acct && acct.claimed) { page(res, 200, "Moved to Obsidian", `<h1>This profile now lives in your vault</h1><p>Edit it from Caldera in Obsidian. <a href="${esc(pub)}/@${esc(acct.handle)}/">Your page</a></p>`); return true; }
         if (acct) {
-          q("UPDATE gh_accounts SET token_sealed=?, login=? WHERE gh_id=?").run(ctx.seal(JSON.stringify(tok)), me.login, me.id);
+          q("UPDATE gh_accounts SET token_sealed=?, login=?, reconnect=NULL WHERE gh_id=?").run(ctx.seal(JSON.stringify(tok)), me.login, me.id);   // signing in again reconnects
           ctx.track?.(req, "signin"); startSession(res, me.id); ctx.social?.circle?.signedIn(acct.profile_id); await captureEmail(acct.profile_id, tok.access, me); done(backTo || "/me"); return true;
         }
         // new account: only a brand-new, completely empty GitHub account is held back (bots); new developers are welcome
@@ -1018,7 +1028,7 @@ ${sug.length ? `<p style="margin:.8em 0 .3em">People you might know:</p>${sug.ma
   /** Any hosted member's GitHub token, for reading PUBLIC repo data (contributors) in background jobs; null if none works. */
   async function anyToken(): Promise<string | null> {
     if (!app()) return null;
-    for (const acct of q("SELECT * FROM gh_accounts WHERE claimed IS NULL AND token_sealed<>'' ORDER BY refreshed DESC LIMIT 5").all() as any[]) {
+    for (const acct of q("SELECT * FROM gh_accounts WHERE claimed IS NULL AND reconnect IS NULL AND token_sealed<>'' ORDER BY refreshed DESC LIMIT 5").all() as any[]) {
       try { return await tokenFor(acct); } catch { /* expired: try the next one */ }
     }
     return null;

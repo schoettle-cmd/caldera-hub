@@ -252,3 +252,25 @@ test("Feed in the nav counts what's new since the member last opened the feed (n
     assert.equal(await feedN("bo"), 1, "another pair's friendship counts; one bo is part of doesn't");
   } finally { hub.server.close(); fs.rmSync(d, { recursive: true, force: true }); }
 });
+
+test("a message email that fails (Resend 429) is retried on a later sweep instead of being lost", async () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-msgretry-")); const sent = []; let fail = 1;
+  const hub = createHub({ dataDir: d, publicUrl: "http://hub.test", limits: { newProfilesPerDay: 100 }, email: { send: async m => { if (fail-- > 0) throw new Error("email send failed (429): Too many requests"); sent.push(m); } } });
+  const base = "http://127.0.0.1:" + await hub.listen(0); const realNow = Date.now;
+  try {
+    const post = (p, body) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
+    const ids = { ana: C.newIdentity(), bo: C.newIdentity() };
+    for (const [h, id] of Object.entries(ids)) await post(`/v1/profiles/${id.id}/bundle`, { manifest: C.sign(id, "profile.manifest", { name: h.toUpperCase(), handle: h, boxKey: id.boxPublic }), files: { "index.html": Buffer.from(`<html><head></head><body><h1 class="title">${h}</h1></body></html>`).toString("base64") } });
+    hub.db.prepare("UPDATE profiles SET created=?").run("2026-01-01T00:00:00.000Z");
+    const A = ids.ana.id, B = ids.bo.id;
+    for (const [x, y] of [[A, B], [B, A]]) hub.db.prepare("INSERT OR IGNORE INTO friends (a, b, ts) VALUES (?,?,?)").run(x, y, new Date().toISOString());
+    hub.mail.suggest(A, "ana@realmail.dev", true, "github");
+    hub.messages.send(B, "ana", "Are you around later?");
+    assert.equal(await hub.messages.sweepAlerts(0), 0); assert.equal(sent.length, 0, "the first send failed");
+    assert.equal(await hub.messages.sweepAlerts(0), 0, "not retried right away");
+    Date.now = () => realNow() + 3 * 60_000;
+    assert.equal(await hub.messages.sweepAlerts(0), 1, "retried after 2 minutes");
+    assert.equal(sent.length, 1); assert.match(sent[0].subject, /BO \(@bo\) sent you a message on Caldera/);
+    assert.equal(await hub.messages.sweepAlerts(0), 0, "and only once");
+  } finally { Date.now = realNow; hub.server.close(); }
+});

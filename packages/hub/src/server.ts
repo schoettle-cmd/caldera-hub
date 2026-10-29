@@ -57,7 +57,7 @@ export interface HubOptions { dataDir: string; port?: number; publicUrl?: string
   privatePort?: number; privateUrl?: string;
   /** Handle of the founder: every new profile starts out as their friend (MySpace's Tom). */ founder?: string; tailnetOwners?: Record<string, string>; githubFetch?: typeof fetch; /** tests: stand-ins for DNS and fetching listed apps and websites */ listingsLookup?: Lookup; listingsGet?: typeof safeGet; /** run the shared-repo friendship job every 6 hours (the server binary turns it on; tests call it directly) */ repoJob?: boolean; /** read members' public GitHub signals into "what they're building" tags every 12 hours */ tagJob?: boolean; /** OpenRouter key for the tag normalising pass (rules only without it) */ llmKey?: string; onEvent?: (e: { type: "signup" | "delete"; handle?: string; name?: string; total: number }) => void; limits?: { perMinute?: number; writesPerMinute?: number; newProfilesPerDay?: number; newProfilesPerMinute?: number };
   /** daily summary emails: Resend key (production) or a send hook (tests); schedule starts the daily job */
-  email?: { resendKey?: string; send?: (m: Mail) => Promise<void>; schedule?: boolean }; }
+  email?: { resendKey?: string; send?: (m: Mail) => Promise<void>; schedule?: boolean; reconnect?: boolean }; }
 
 const MAX_BODY = 12 * 1024 * 1024;
 const RESERVED = new Set(["admin", "api", "www", "caldera", "help", "support", "root", "hub", "v1", "about", "login", "settings", "official", "team", "security", "obsidian", "me", "auth", "setup"]);
@@ -3046,7 +3046,27 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   setTimeout(() => { try { promptPrivateChoice(); } catch (e: any) { console.error("private repos prompt", e?.message); } }, 15_000).unref?.();
   setTimeout(() => { try { const n = offerNamed(); if (n) console.log("offered named private repos to", n); } catch (e: any) { console.error("named offer", e?.message); } }, 20_000).unref?.();
 
-  return { ext, server, privateServer, db, admin, mail, feed: FEED!, messages: MSG!, guide: GUIDE, offerNamed: () => offerNamed(), digestFor, networkFor, feedReady, headerItems, privateModes: PM, promptPrivateChoice, act: { token: (v: string, h: string, ttl?: number) => actToken(v, h, ttl), read: readAct },
+  // ---- reconnect email (Mike 2026-10-29: members whose GitHub sign-in died stop getting a city that updates). One email per
+  // member, ever, to members flagged by github.ts (gh_accounts.reconnect) with a confirmed or GitHub-verified address.
+  // OFF unless CALDERA_RECONNECT_MAIL=1 (or opts.email.reconnect in tests): member emails need Mike's OK first.
+  async function reconnectSweep(max = 20): Promise<number> {
+    const rows = q(`SELECT g.gh_id, g.profile_id, p.handle FROM gh_accounts g JOIN profiles p ON p.id=g.profile_id
+      WHERE g.reconnect IS NOT NULL AND g.reconnect_mailed IS NULL AND g.claimed IS NULL AND p.handle IS NOT NULL LIMIT ?`).all(max) as any[];
+    let n = 0;
+    for (const r of rows) {
+      if (modOf(r.handle, r.profile_id)) continue;
+      q("UPDATE gh_accounts SET reconnect_mailed=? WHERE gh_id=?").run(new Date().toISOString(), r.gh_id);   // before sending: never twice
+      try { if (await mail.sendReconnect(r.profile_id, r.handle)) n++; } catch (e: any) { console.error("reconnect mail", r.handle, e?.message); }
+    }
+    return n;
+  }
+  const reconnectOn = opts.email?.reconnect ?? process.env.CALDERA_RECONNECT_MAIL === "1";
+  if (reconnectOn && opts.email?.resendKey) { const t = setInterval(() => { reconnectSweep().then(n => { if (n) console.log("reconnect mail sent", n); }).catch(e => console.error("reconnect mail", e?.message)); }, 3600_000); t.unref?.(); }
+  /** counts only, for the operator: flagged accounts, and how many of them have an address the email could go to */
+  const reconnectStats = () => { const rows = q("SELECT profile_id FROM gh_accounts WHERE reconnect IS NOT NULL AND reconnect_mailed IS NULL AND claimed IS NULL").all() as any[];
+    return { flagged: rows.length, reachable: rows.filter(r => mail.reconnectTo(r.profile_id)).length }; };
+
+  return { reconnect: { sweep: (max?: number) => reconnectOn ? reconnectSweep(max) : Promise.resolve(0), stats: reconnectStats, compose: mail.reconnectCompose }, ext, server, privateServer, db, admin, mail, feed: FEED!, messages: MSG!, guide: GUIDE, offerNamed: () => offerNamed(), digestFor, networkFor, feedReady, headerItems, privateModes: PM, promptPrivateChoice, act: { token: (v: string, h: string, ttl?: number) => actToken(v, h, ttl), read: readAct },
     listen: (port = opts.port || 8787, host = process.env.CALDERA_HOST || "127.0.0.1") => new Promise<number>(r => server.listen(port, host, () => r((server.address() as any).port))),
     listenPrivate: (port = opts.privatePort || 0) => new Promise<number>(r => privateServer.listen(port, "127.0.0.1", () => r((privateServer.address() as any).port))) };
 }

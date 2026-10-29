@@ -202,7 +202,8 @@ export function emailer(ctx: EmailCtx) {
           headers: { authorization: "Bearer " + ctx.resendKey, "content-type": "application/json", "user-agent": "Mozilla/5.0 (caldera-hub)" },
           body: JSON.stringify({ from: ctx.from || "Caldera <hello@caldera.social>", reply_to: ctx.replyTo || "hello@caldera.social", to: [m.to], subject: m.subject, html: m.html, text: m.text, headers: m.headers }) });
         if (r.ok) return;
-        if (r.status === 429 && attempt < 4) { await sleep(Math.max(1000 * (Number(r.headers.get("retry-after")) || 0), 500 * 2 ** attempt)); continue; }
+        // the 10/second limit is per Resend account, shared with the other apps on it, so back off longer (1-16s)
+        if (r.status === 429 && attempt < 5) { await sleep(Math.max(1000 * (Number(r.headers.get("retry-after")) || 0), 1000 * 2 ** attempt)); continue; }
         throw new Error(`email send failed (${r.status}): ${(await r.text()).slice(0, 200)}`);
       }
     });
@@ -478,7 +479,7 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
   }
   /** One click from an invite email: that address never gets another Caldera email (the hash goes on the suppression list). */
   function inviteUnsub(id: string): boolean {
-    const r = q("SELECT hash FROM invites_sent WHERE id=?").get(id) as any; if (!r) return false;
+    const r = (q("SELECT hash FROM invites_sent WHERE id=?").get(id) || q("SELECT hash FROM oneoff_mail WHERE id=?").get(id)) as any; if (!r) return false;
     q("INSERT OR REPLACE INTO email_suppress VALUES (?,?,?)").run(r.hash, "invite-unsubscribed", new Date().toISOString()); return true;
   }
 
@@ -497,10 +498,30 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
     return true;
   }
 
+  // ---- one reconnect email when a member's GitHub sign-in died (their city stopped updating). To their confirmed summary
+  // address, else their GitHub-verified one; never to a suppressed address. Its unsubscribe link suppresses the address
+  // (same one-click route as invites). Composed separately so the exact email can be previewed before it is turned on.
+  q("CREATE TABLE IF NOT EXISTS oneoff_mail (id TEXT PRIMARY KEY, kind TEXT, owner TEXT, hash TEXT, ts TEXT)").run();
+  const reconnectTo = (owner: string) => { const r = row(owner); let to = r && r.confirmed ? addr(r) : ""; if (!to) { const s = suggestion(owner); if (s?.verified) to = s.email; } return to && !suppressed(to) ? to : ""; };
+  function reconnectCompose(handle: string, link: string, unsub: string) {
+    const subject = "Your Caldera city stopped updating: reconnect GitHub";
+    const html = shell("Your city stopped updating", `<p style="margin:0 0 12px">GitHub's sign-in for Caldera expired on your account, so your city at <a href="${esc(hub)}/@${esc(handle)}/" style="color:#6E4FE0">caldera.social/@${esc(handle)}</a> stopped picking up new repos and commits. Your page and city are still there.</p><p style="margin:0 0 12px">One click reconnects it:</p><p style="margin:18px 0"><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">Reconnect GitHub</a></p><p style="margin:0 0 12px;color:#55525E;font-size:13px">Read-only, same as before: your public GitHub profile and email. Caldera can't see your code or private repos.</p><p style="margin:16px 0 0;color:#8A8794;font-size:12px">This is a one-time email. <a href="${esc(unsub)}" style="color:#8A8794">Don't email me again</a>. Caldera is run by mjonesone, LLC.</p>`);
+    const text = ascii(`GitHub's sign-in for Caldera expired on your account, so your city at ${hub}/@${handle}/ stopped picking up new repos and commits. Your page and city are still there.\n\nReconnect GitHub (one click): ${link}\n\nRead-only, same as before: your public GitHub profile and email. Caldera can't see your code or private repos.\n\n--\nThis is a one-time email. Don't email me again: ${unsub}\nCaldera is run by mjonesone, LLC. Privacy: ${hub}/privacy`);
+    return { subject, html, text };
+  }
+  async function sendReconnect(owner: string, handle: string): Promise<boolean> {
+    const to = reconnectTo(owner); if (!to) return false;
+    const id = crypto.randomBytes(18).toString("base64url"), unsub = `${hub}/v1/email/invite-unsub?t=${id}`;
+    q("INSERT INTO oneoff_mail VALUES (?,?,?,?,?)").run(id, "reconnect", owner, hashOf(to), new Date().toISOString());
+    const m = reconnectCompose(handle, `${hub}/auth/github?back=${encodeURIComponent(`/@${handle}/`)}`, unsub);
+    await send({ to, src: "email-reconnect", subject: m.subject, html: m.html, text: m.text, headers: { "List-Unsubscribe": `<${unsub}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } });
+    return true;
+  }
+
   /** a plain one-off email in the Caldera shell (sign-up links, weekly update nudges) */
   async function note(m: { to: string; subject: string; title: string; html: string; text: string; headers?: Record<string, string>; src?: string }) {
     if (!m.to || suppressed(m.to)) return false;
     await send({ to: m.to, subject: ascii(m.subject), html: shell(esc(m.title), m.html), text: ascii(m.text), headers: m.headers, src: m.src }); return true;
   }
-  return { note, subscribe, confirm, messageAlert, unsubToken, unsubscribe, status, runDigest, schedule, page, compose, isActive: (d: DigestData) => rank.active(d), hashOf, suggest, suggestion, promptFor, dismissPrompt, matches, hasConfirmed, sendSignin, sendInvite, inviteBlock, inviteUnsub, invitesToday: (inviter: string) => (q("SELECT COUNT(*) n FROM invites_sent WHERE inviter=? AND ts > ?").get(inviter, new Date(Date.now() - DAY).toISOString()) as any).n as number, inviteCap: INVITES_PER_DAY };
+  return { reconnectCompose, reconnectTo: (owner: string) => !!reconnectTo(owner), sendReconnect, note, subscribe, confirm, messageAlert, unsubToken, unsubscribe, status, runDigest, schedule, page, compose, isActive: (d: DigestData) => rank.active(d), hashOf, suggest, suggestion, promptFor, dismissPrompt, matches, hasConfirmed, sendSignin, sendInvite, inviteBlock, inviteUnsub, invitesToday: (inviter: string) => (q("SELECT COUNT(*) n FROM invites_sent WHERE inviter=? AND ts > ?").get(inviter, new Date(Date.now() - DAY).toISOString()) as any).n as number, inviteCap: INVITES_PER_DAY };
 }

@@ -9,6 +9,7 @@
  *                                  email sign-in and website keys into <into>, erase <from>, and redirect /@from/ to /@into/
  *   ... merges | aliases           past merges / merged-away handles that redirect
  *   ... gh-remove | gh-restore <login>  take a non-member's caldera.social/gh/<login> preview down (removal request) or back
+ *   ... reconnect-stats            counts only: members whose GitHub sign-in died, and how many have an address to email
  * Alerts, the GitHub circle job and other operator commands live in caldera.social's private tools.
  */
 import fs from "node:fs";
@@ -35,6 +36,7 @@ const clean = (h: string) => h.toLowerCase().replace(/^@/, "");
 const hub = createHub({ dataDir: process.env.CALDERA_DATA || "./data" });
 const a = hub.admin as any;
 try {
+  if (cmd === "reconnect-stats") { out(hub.reconnect.stats()); process.exit(0); }
   if (cmd === "merge") {
     const [, from, into, ...why] = argv;
     if (!from || !into) usage();
