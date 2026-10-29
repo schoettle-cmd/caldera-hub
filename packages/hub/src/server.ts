@@ -1751,7 +1751,10 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   /** The Caldera member signed in on this browser: an owner cookie (any page) or a GitHub sign-up's session. */
   function memberOf(req: http.IncomingMessage): string | null {
     const o = ownerOf(req); if (o && profile(o)) { FUNNEL.seen(o, "site"); return o; }
-    const a = GH.account(req), id = a && !a.claimed && a.profile_id && profile(a.profile_id) ? a.profile_id : null; if (id) FUNNEL.seen(id, "site"); return id;
+    // a GitHub sign-in counts even after the page moved into Obsidian ("claimed"): the account then points at the member's
+    // vault page, and web features (messages, kudos, follows) are hub-side, so no vault key is needed (Mike 2026-10-29: a
+    // member who moved to Obsidian signed in with GitHub, landed on /me, but Messages kept sending her to sign in)
+    const a = GH.account(req), id = a && a.profile_id && profile(a.profile_id) ? a.profile_id : null; if (id) FUNNEL.seen(id, "site"); return id;
   }
   /** Views as people count them: one per visitor per day, bots and the owner's own visits never recorded. */
   const viewsOf = (handle: string, since = "") => (q("SELECT COUNT(DISTINCT visitor || substr(ts,1,10)) n FROM page_views WHERE handle=? AND ts > ?").get(handle, since) as any).n as number;
