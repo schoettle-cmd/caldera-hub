@@ -24,6 +24,7 @@ import { feed, sentenceText, postTags } from "./feed";
 import { newsToday } from "./news";
 import { gifts } from "./gifts";
 import { funnel, BOT_UA } from "./funnel";
+import { HOME_TEST, homeArm, showcaseHome } from "./hometest";
 import { GATE_CSS, GATE_JS, okGateKind } from "./signupgate";
 import { emailPages } from "./emailpages";
 import { messages } from "./messages";
@@ -2240,6 +2241,13 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         if (!path.extname(file) && fs.existsSync(file + ".html")) file += ".html";
         if (file.startsWith(root + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) {
           const ext = path.extname(file).toLowerCase();
+          if (ext === ".html" && rel === "index.html" && p === "/") {   // homepage message A/B (hometest.ts); crawlers get control
+            const v = FUNNEL.vid(req), arm = v ? homeArm(v) : "a", page = fs.readFileSync(file, "utf8");
+            const b = arm === "b" ? showcaseHome(page) : null;
+            if (v) FUNNEL.track(req, b ? "home-b" : "home-a", HOME_TEST);
+            res.writeHead(200, { "content-type": MIME[ext] || "text/html; charset=utf-8", "cache-control": "private, max-age=0" });
+            return res.end(withLive(b || page));
+          }
           res.writeHead(200, { "content-type": MIME[ext] || (ext === ".zip" ? "application/zip" : "application/octet-stream"), "cache-control": "public, max-age=600" });
           if (ext === ".html") return res.end(withLive(fs.readFileSync(file, "utf8")));   // whole, so off-site links get their new-window rewrite
           return fs.createReadStream(file).pipe(res);

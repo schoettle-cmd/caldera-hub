@@ -11,7 +11,7 @@
 import type http from "node:http";
 import crypto from "node:crypto";
 
-export const STEPS = ["view", "preview", "gate", "click", "back", "created", "signin", "fail", "landed", "email-start", "email-sent", "email-created", "gh-return", "click-ext"] as const;
+export const STEPS = ["view", "preview", "gate", "click", "back", "created", "signin", "fail", "landed", "email-start", "email-sent", "email-created", "gh-return", "click-ext", "home-a", "home-b"] as const;
 /** Crawlers, link previewers and scripts: never counted in the funnel or page views. Real browsers never match.
  *  Many crawlers ignore robots.txt and follow sign-up links (Meta's AI agents, GoogleOther, BigBug): named here. */
 export const BOT_UA = /bot|crawl|spider|slurp|preview|fetch|curl|wget|python|node|headless|monitor|lighthouse|facebookexternalhit|facebookcatalog|embedly|discord|slack|telegram|whatsapp|externalagent|webindexer|googleother|google-inspectiontool|google-extended|bigbug|wrendex|scrapy|httpx|axios|okhttp|go-http|java\/|libwww|ia_archiver|barkrowler|dataprovider|petalsearch|yisou|sogou|seznam|ahrefs|semrush|mj12|bytespider|claude-user|claude-searchbot|anthropic-ai|perplexity|ccbot|cohere|diffbot|timpi|imagesift|omgili|youbot|qwant|yandex|baidu|meta-/i;
@@ -95,5 +95,10 @@ export function funnel(c: { q: (sql: string) => any; ipOf: (req: http.IncomingMe
     }
     return out;
   }
-  return { track, seen, report, prune };
+  /** today's visitor hash for this request (the same one track() stores), or null for crawlers and scripts */
+  function vid(req: http.IncomingMessage): string | null {
+    const ua = String(req.headers["user-agent"] || ""); if (!ua || c.botUa.test(ua) || looksAutomated(req)) return null;
+    return vidOf(req, funnelDay());
+  }
+  return { track, seen, report, prune, vid };
 }
