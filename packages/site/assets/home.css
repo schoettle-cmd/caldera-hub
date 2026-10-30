@@ -48,6 +48,16 @@
 .gh-steps li { margin: 3px 0; }
 .gh-start .fine { margin: 0; }
 
+/* Hero on desktop (Mike 2026-10-30, "fix it"): the city was a small card floating mid-column with the page glow off to its
+   side. City column larger and level with the headline, glow centered behind the city. */
+@media (min-width: 901px) {
+  .home-hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: 40px; align-items: start; }
+  .home-hero::before { display: none; }
+  .hh-city { margin-top: 42px; overflow: visible; }
+  .hh-city::before { content: ""; position: absolute; inset: -18% -12%; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 30%, transparent), transparent); filter: blur(24px); z-index: -1; pointer-events: none; }
+  .hh-frame { border-radius: var(--radius-lg) var(--radius-lg) 0 0; overflow: hidden; }
+  .hh-cap { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+}
 @media (max-width: 900px) {
   .home-hero { grid-template-columns: 1fr; gap: 28px; padding: 56px 0 44px; }
   .door-grid { grid-template-columns: 1fr; }
