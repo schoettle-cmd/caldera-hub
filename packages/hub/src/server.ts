@@ -24,7 +24,7 @@ import { feed, sentenceText, postTags } from "./feed";
 import { newsToday } from "./news";
 import { gifts } from "./gifts";
 import { funnel, BOT_UA, funnelDay } from "./funnel";
-import { HOME_TEST, homeArm, showcaseHome, SAVE_TEST, saveArm } from "./hometest";
+import { HOME_TEST, homeArm, armHome, SAVE_TEST, saveArm } from "./hometest";
 import { GATE_CSS, GATE_JS, okGateKind } from "./signupgate";
 import { emailPages } from "./emailpages";
 import { signinCodes, codeMail } from "./signincode";
@@ -2268,8 +2268,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const ext = path.extname(file).toLowerCase();
           if (ext === ".html" && rel === "index.html" && p === "/") {   // homepage message A/B (hometest.ts); crawlers get control
             const v = FUNNEL.vid(req), arm = v ? homeArm(v) : "a", page = fs.readFileSync(file, "utf8");
-            const b = arm === "b" ? showcaseHome(page) : null;
-            if (v) FUNNEL.track(req, b ? "home-b" : "home-a", HOME_TEST);
+            const b = armHome(page, arm);
+            if (v) FUNNEL.track(req, (b ? "h2-" + arm : "h2-a") as any, HOME_TEST);
             res.writeHead(200, { "content-type": MIME[ext] || "text/html; charset=utf-8", "cache-control": "private, max-age=0" });
             return res.end(withLive(b || page));
           }
