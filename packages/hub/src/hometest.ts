@@ -65,3 +65,6 @@ export function armHome(html: string, arm: string): string | null {
 /** preview "save my city" A/B (save1): independent of home1 (different salt), same one-day visitor hash */
 export const SAVE_TEST = "save1";
 export const saveArm = (vid: string): "a" | "b" => (crypto.createHash("sha256").update(SAVE_TEST + "|" + vid).digest()[0]! & 1 ? "b" : "a");
+
+/** developer-door test jd1 (Oct 31): GitHub first vs email first; same one-day visitor hash */
+export const devArm = (vid: string): "a" | "b" => (crypto.createHash("sha256").update("jd1|" + vid).digest()[0]! & 1 ? "b" : "a");

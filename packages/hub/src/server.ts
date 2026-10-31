@@ -24,7 +24,7 @@ import { feed, sentenceText, postTags } from "./feed";
 import { newsToday } from "./news";
 import { gifts } from "./gifts";
 import { funnel, BOT_UA, funnelDay } from "./funnel";
-import { HOME_TEST, homeArm, armHome, SAVE_TEST, saveArm } from "./hometest";
+import { devArm, HOME_TEST, homeArm, armHome, SAVE_TEST, saveArm } from "./hometest";
 import { GATE_CSS, GATE_JS, okGateKind } from "./signupgate";
 import { emailPages } from "./emailpages";
 import { joinModule, gateScript } from "./join";
@@ -2090,7 +2090,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
 
   const emailPage = (res: http.ServerResponse, status: number, title: string, body: string) => { res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" });
     res.end(navify(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} - Caldera</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"></head><body>${body}</body></html>`)); };
-  JOIN = joinModule({ q, ipOf, page: emailPage, memberOf, byHandle, track: (req, step) => FUNNEL.track(req, step as any) });
+  JOIN = joinModule({ q, ipOf, page: emailPage, memberOf, byHandle, track: (req, step) => FUNNEL.track(req, step as any), devArm: (req) => { const v = FUNNEL.vid(req); return v ? devArm(v) : null; } });
   EMP = emailPages({ q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
     startOwner, memberOf, sameOrigin, allowNewProfile, tooMany, note: (m) => mail.note(m),
     page: emailPage,
@@ -2210,7 +2210,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         const me = memberOf(req), pr = me ? profile(me) : null;
         res.writeHead(302, { location: pr?.handle ? `/@${pr.handle}/city.html` : "/signin", "cache-control": "no-store" }); return res.end(); }
       if (/^\/(join(\/go)?|v1\/gate\/ev)$/.test(p) && await JOIN!.route(req, res, url, p)) return;   // the profile-type selector + touchpoint counts
-      if (/^\/(start(\/confirm)?|settings(\/page|\/photo|\/typed|\/typed\/img)?|me|join\/(designer|business))$/.test(p) && await EMP!.route(req, res, url, p)) return;   // email pages (falls through for everyone else)   // email pages (falls through for everyone else)
+      if (/^\/(start(\/confirm)?|settings(\/page|\/photo|\/typed|\/typed\/img)?|me|join\/(designer|business|developer))$/.test(p) && await EMP!.route(req, res, url, p)) return;   // email pages (falls through for everyone else)   // email pages (falls through for everyone else)
       if (/^\/(auth\/github|me$|me\/upload$|settings$|settings\/(status|claim)$|alerts$|v1\/github\/)/.test(p) && await GH.route(req, res, url)) return;
       if (/^\/(feed(\/|$)|v1\/feed$|v1\/posts|v1\/comments\/|v1\/me\/notices$)/.test(p) && await FEED!.route(req, res, url, p)) return;
       if (p.startsWith("/v1/gifts") && await GIFTS!.route(req, res, p)) return;
@@ -3149,7 +3149,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   const reconnectStats = () => { const rows = q("SELECT profile_id FROM gh_accounts WHERE reconnect IS NOT NULL AND reconnect_mailed IS NULL AND claimed IS NULL").all() as any[];
     return { flagged: rows.length, reachable: rows.filter(r => mail.reconnectTo(r.profile_id)).length }; };
 
-  return { reconnect: { sweep: (max?: number) => reconnectOn ? reconnectSweep(max) : Promise.resolve(0), stats: reconnectStats, compose: mail.reconnectCompose }, ext, server, privateServer, db, admin, mail, feed: FEED!, messages: MSG!, guide: GUIDE, offerNamed: () => offerNamed(), digestFor, networkFor, feedReady, headerItems, privateModes: PM, promptPrivateChoice, act: { token: (v: string, h: string, ttl?: number) => actToken(v, h, ttl), read: readAct },
+  return { stuckClaim: (o: any) => EMP.stuckClaim(o), reconnect: { sweep: (max?: number) => reconnectOn ? reconnectSweep(max) : Promise.resolve(0), stats: reconnectStats, compose: mail.reconnectCompose }, ext, server, privateServer, db, admin, mail, feed: FEED!, messages: MSG!, guide: GUIDE, offerNamed: () => offerNamed(), digestFor, networkFor, feedReady, headerItems, privateModes: PM, promptPrivateChoice, act: { token: (v: string, h: string, ttl?: number) => actToken(v, h, ttl), read: readAct },
     listen: (port = opts.port || 8787, host = process.env.CALDERA_HOST || "127.0.0.1") => new Promise<number>(r => server.listen(port, host, () => r((server.address() as any).port))),
     listenPrivate: (port = opts.privatePort || 0) => new Promise<number>(r => privateServer.listen(port, "127.0.0.1", () => r((privateServer.address() as any).port))) };
 }

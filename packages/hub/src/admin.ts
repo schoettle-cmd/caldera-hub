@@ -9,6 +9,7 @@
  *                                  email sign-in and website keys into <into>, erase <from>, and redirect /@from/ to /@into/
  *   ... merges | aliases           past merges / merged-away handles that redirect
  *   ... gh-remove | gh-restore <login>  take a non-member's caldera.social/gh/<login> preview down (removal request) or back
+ *   ... stuck-claim [--send] [backup.sqlite ...]  unconfirmed sign-ups: counts, or email each a claim link once
  *   ... reconnect-stats            counts only: members whose GitHub sign-in died, and how many have an address to email
  * Alerts, the GitHub circle job and other operator commands live in caldera.social's private tools.
  */
@@ -36,6 +37,10 @@ const clean = (h: string) => h.toLowerCase().replace(/^@/, "");
 const hub = createHub({ dataDir: process.env.CALDERA_DATA || "./data" });
 const a = hub.admin as any;
 try {
+  if (cmd === "stuck-claim") {   // dry run by default; --send emails each person once; other args are sqlite backup files
+    const paths = argv.slice(1).filter(x => !x.startsWith("--")), send = argv.includes("--send");
+    out(await (hub as any).stuckClaim({ send, paths, skipFrom: "2026-10-28", skipTo: "2026-10-30" })); process.exit(0);
+  }
   if (cmd === "reconnect-stats") { out(hub.reconnect.stats()); process.exit(0); }
   if (cmd === "merge") {
     const [, from, into, ...why] = argv;

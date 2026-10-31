@@ -18,7 +18,7 @@ export const TOUCHPOINTS = ["header", "home-designer", "home-business", "home", 
   "gift", "invite", "people-blur", "bar-feed", "bar-people", "bar-world", "bar-city", "bar-gardens", "bar-group", "world-card", "people-cta", "link-messages", "link-install", "link-github", "messages", "signin-page", "direct"] as const;
 export const okTp = (v: unknown) => (TOUCHPOINTS as readonly string[]).includes(String(v)) ? String(v) : "";
 export const EVENTS = ["shown", "click", "door", "signup"] as const;
-export type Door = "code" | "obsidian" | "designer" | "business";
+export type Door = "code" | "obsidian" | "designer" | "business" | "email";
 export const PROFILE_TYPES = ["developer", "designer", "business"] as const;
 export type ProfileType = typeof PROFILE_TYPES[number];
 export const okType = (v: unknown): ProfileType | "" => (PROFILE_TYPES as readonly string[]).includes(String(v)) ? String(v) as ProfileType : "";
@@ -46,6 +46,8 @@ export interface JoinCtx {
   page: (res: http.ServerResponse, status: number, title: string, body: string) => void;
   memberOf: (req: http.IncomingMessage) => string | null;
   track?: (req: http.IncomingMessage, step: string) => void;
+  /** developer-door test jd1: "a" GitHub first (control), "b" email first; null for crawlers */
+  devArm?: (req: http.IncomingMessage) => "a" | "b" | null;
   byHandle: (h: string) => any;
 }
 
@@ -87,18 +89,19 @@ export function joinModule(c: JoinCtx) {
 .jn-sel{outline:3px solid currentColor;outline-offset:3px}</style>`;
 
   const doorHref = (door: Door, tp: string, from: string) => `/join/go?door=${door}${tp ? `&tp=${tp}` : ""}${from ? `&from=${from}` : ""}`;
-  function selectorPage(res: http.ServerResponse, tp: string, from: string, pre: string) {
+  function selectorPage(req: http.IncomingMessage, res: http.ServerResponse, tp: string, from: string, pre: string) {
     const who = from ? c.byHandle(from) : null, nm = who?.name || (from ? "@" + from : "");
     const T = TYPE_THEME;
+    const arm = c.devArm?.(req) || null, emailFirst = arm === "b"; if (arm) c.track?.(req, "jd-" + arm);
     const door = (k: ProfileType, title: string, body: string, steps: string[], icon: string, btns: string) => `<div class="jn-door${pre === k ? " jn-sel" : ""}" id="door-${k}" style="background:${T[k].surface};border-color:${T[k].line};color:${T[k].ink}">
 <div class="jn-ic" style="background:${T[k].ground}">${icon}</div><h2>${title}</h2><p style="color:${T[k].mut}">${body}</p><ol>${steps.map(s => `<li>${s}</li>`).join("")}</ol><div class="jn-btns">${btns}</div></div>`;
     const svg = (col: string, d: string) => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
     c.page(res, 200, "Create your profile", `${JOIN_CSS}<main class="jn"><div class="jn-head"><p class="jn-eb">Get your own page</p><h1>What do you make?</h1>
 <p class="jn-lede">Your answer sets your page's look, what it shows and how your city gets built. You can change it later.</p>${nm ? `<p class="jn-for">You'll be able to follow and message <b>${esc(nm)}</b> once your profile is up.</p>` : ""}</div>
 <div class="jn-grid">
-${door("developer", "I write code", "Your repos become a city. Your activity, stack and agents show up on your page.", ["Sign in with GitHub (read-only)", "We build your city from public repos", "Add Obsidian later for a living profile"],
+${door("developer", "I write code", "Your repos become a city. Your activity, stack and agents show up on your page.", emailFirst ? ["Start with your email", "Your page goes live when you confirm", "Connect GitHub later and your repos become your city"] : ["Sign in with GitHub (read-only)", "We build your city from public repos", "Add Obsidian later for a living profile"],
       svg(T.developer.accent, '<polyline points="8 6 3 12 8 18"></polyline><polyline points="16 6 21 12 16 18"></polyline>'),
-      `<a class="jn-b" rel="nofollow" href="${doorHref("code", tp, from)}" style="background:${T.developer.ink};color:${T.developer.ground}">Sign up with GitHub</a><a class="jn-b" href="${doorHref("obsidian", tp, from)}" style="border:1px solid ${T.developer.accent};color:#CFC7FF">Install for Obsidian</a><a class="jn-alt" href="/start${from ? `?invite=${from}` : ""}">No GitHub? Start with email and ChatGPT or Claude</a>`)}
+      (emailFirst ? `<a class="jn-b" href="${doorHref("email", tp, from)}" style="background:${T.developer.ink};color:${T.developer.ground}">Start with email</a><a class="jn-b" rel="nofollow" href="${doorHref("code", tp, from)}" style="border:1px solid ${T.developer.accent};color:#CFC7FF">Sign up with GitHub</a>` : `<a class="jn-b" rel="nofollow" href="${doorHref("code", tp, from)}" style="background:${T.developer.ink};color:${T.developer.ground}">Sign up with GitHub</a>`) + `<a class="jn-b" href="${doorHref("obsidian", tp, from)}" style="border:1px solid ${T.developer.accent};color:#CFC7FF">Install for Obsidian</a><a class="jn-alt" href="/start${from ? `?invite=${from}` : ""}">No GitHub? Start with email and ChatGPT or Claude</a>`)}
 ${door("designer", "I design", "Your portfolio becomes your page. Each project becomes a building in your city.", ["Start with your email", "Add your work: images, case studies, links", "Mark yourself open for work (optional)"],
       svg(T.designer.accent, '<path d="M12 19l7-7 3 3-7 7-3-3z"></path><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path><path d="M2 2l7.586 7.586"></path><circle cx="11" cy="11" r="2"></circle>'),
       `<a class="jn-b" href="${doorHref("designer", tp, from)}" style="background:${T.designer.accent};color:#2A1216">Start with email</a>`)}
@@ -114,13 +117,13 @@ ${door("business", "I build companies", "Your companies become your city. Show w
       if (c.memberOf(req) && !url.searchParams.get("preview")) { res.writeHead(302, { location: from ? `/@${from}/` : "/me", "cache-control": "no-store" }); res.end(); return true; }
       if (tp) { record(req, tp, "click"); res.setHeader("set-cookie", `${TP_COOKIE}=${tp}; Path=/; Max-Age=${30 * 86400}; SameSite=Lax; Secure`); }
       else if (!cookieTp(req)) record(req, "direct", "click");
-      selectorPage(res, tp, from, pre); return true;
+      selectorPage(req, res, tp, from, pre); return true;
     }
     if (p === "/join/go" && req.method === "GET") {
       const door = String(url.searchParams.get("door") || "") as Door, tp = okTp(url.searchParams.get("tp")) || cookieTp(req) || "direct", from = okHandle(url.searchParams.get("from"));
       const to = door === "code" ? `/auth/github${from ? `?invite=${from}` : ""}` : door === "obsidian" ? `/${from ? `?invite=${from}` : ""}#obsidian`
-        : door === "designer" ? `/join/designer${from ? `?invite=${from}` : ""}` : door === "business" ? `/join/business${from ? `?invite=${from}` : ""}` : "/join";
-      if (["code", "obsidian", "designer", "business"].includes(door)) { record(req, tp, "door"); c.track?.(req, "door-" + door); }
+        : door === "designer" ? `/join/designer${from ? `?invite=${from}` : ""}` : door === "business" ? `/join/business${from ? `?invite=${from}` : ""}` : door === "email" ? `/join/developer${from ? `?invite=${from}` : ""}` : "/join";
+      if (["code", "obsidian", "designer", "business", "email"].includes(door)) { record(req, tp, "door"); c.track?.(req, "door-" + door); }
       res.writeHead(302, { location: to, "cache-control": "no-store" }); res.end(); return true;
     }
     // touchpoint events from pages (gate shown): "tp:ev", any origin (hosted pages are sandboxed: Origin null), no cookie

@@ -14,13 +14,14 @@
 import type http from "node:http";
 import { trackTag } from "./hookpin.js";
 import crypto from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { renderProfile, type ProfileData } from "../../../../caldera/packages/plugin/src/render";
 import { cityData, type CityRepo } from "../../../../caldera/packages/plugin/src/city";
 import { cleanImage } from "./images";
-import { type Typed, type Kind, okKind, typedProjects, typedIndex, typedEditor, typedSignupForm, applyTyped, list, newId } from "./typed";
+import { type Typed, type Kind, type SignupKind, okKind, typedProjects, typedIndex, typedEditor, typedSignupForm, applyTyped, list, newId } from "./typed";
 import { TYPE_LIMITS } from "./join";
 
 const DAY = 86_400_000;
@@ -113,7 +114,7 @@ export interface EmailCtx {
   /** remember the confirmed address so message alerts and the daily summary can reach them */
   rememberEmail: (owner: string, email: string) => void;
   /** count a sign-up funnel step (funnel.ts) */
-  track?: (req: http.IncomingMessage, step: "email-created" | "gh-return" | "typed-form" | "typed-sent" | "typed-bot", detail?: string) => void;
+  track?: (req: http.IncomingMessage, step: "confirm-open" | "form-submit" | "email-created" | "gh-return" | "typed-form" | "typed-sent" | "typed-bot", detail?: string) => void;
   /** delete the member and everything tied to them (the hub's own erase) */
   eraseProfile: (id: string) => void;
   onPublished?: (id: string, created: boolean) => void;
@@ -340,9 +341,9 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     }
 
     // ---- Designer and Business sign-up (2026-10-30): a short form instead of the AI prompt; the same confirm link
-    const tm = p.match(/^\/join\/(designer|business)$/);
+    const tm = p.match(/^\/join\/(designer|business|developer)$/);
     if (tm) {
-      const kind = tm[1] as Kind, page = (st: number, o: Parameters<typeof typedSignupForm>[1]) => c.page(res, st, kind === "designer" ? "Designer profile" : "Business profile", typedSignupForm(kind, { stamp: c.seal("ts:" + (Date.now() - 4000)), ...o }));
+      const kind = tm[1] as SignupKind, page = (st: number, o: Parameters<typeof typedSignupForm>[1]) => c.page(res, st, kind === "developer" ? "Developer profile" : kind === "designer" ? "Designer profile" : "Business profile", typedSignupForm(kind, { stamp: c.seal("ts:" + (Date.now() - 4000)), ...o }));
       if (req.method === "GET") { c.track?.(req, "typed-form", kind); page(200, { inv: okInv(url.searchParams.get("invite")), stamp: c.seal("ts:" + Date.now()) }); return true; }
       if (req.method !== "POST") return false;
       const f = await form(req), o = { name: clean(f.get("name"), 80), headline: clean(f.get("headline"), 160), email: String(f.get("email") || "").trim().toLowerCase(), a: String(f.get("a") || "").slice(0, 300), b: clean(f.get("b"), 80), inv: okInv(f.get("invite")) };
@@ -360,8 +361,9 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
         c.page(res, 200, "Check your email", `${STYLE}<main class="ep"><h1>Check your email</h1><p class="lede">We sent a link to <b>${esc(o.email)}</b>. Open it and your page goes live.</p><p class="mut">Nothing there in a minute? Check spam, or <a href="/join/${kind}">try again</a>.</p></main>`); return true;
       }
       if (c.tooMany("emailsignup:" + ipKey(req), 8) || c.tooMany("emailsignup:" + hash(o.email), 3)) { page(429, { ...o, msg: "Too many tries. Wait an hour, then try again." }); return true; }
-      const pr: Profile = { kind, name: o.name, headline: o.headline || undefined };
-      if (kind === "designer") { pr.disciplines = list(o.a); pr.work = []; }
+      const pr: Profile = { ...(kind === "developer" ? {} : { kind: kind as Kind }), name: o.name, headline: o.headline || undefined };   // developer = the plain page, GitHub adds the city later
+      if (kind === "developer") { /* nothing else to ask */ }
+      else if (kind === "designer") { pr.disciplines = list(o.a); pr.work = []; }
       else { const co = clean(o.a, 60); pr.companies = co ? [{ id: newId(), name: co, role: o.b || undefined }] : []; pr.looking = {}; }
       const inbox = /@(gmail|googlemail)\.com$/.test(o.email) ? `<p><a class="btn" href="https://mail.google.com/mail/u/0/#search/from%3Acaldera.social" target="_blank" rel="noopener">Open Gmail</a></p>` : "";
       const sent = () => c.page(res, 200, "Check your email", `${STYLE}<main class="ep"><h1>Check your email</h1><p class="lede">We sent a link to <b>${esc(o.email)}</b> from hello@caldera.social. Open it and your page goes live.</p>${inbox}<p class="mut">Nothing there in a minute? Check spam, or <a href="/join/${kind}">try again</a>.</p></main>`);
@@ -374,7 +376,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       const link = `${pub}/start/confirm?t=${tok}${carry("", o.inv)}`;
       try {
         await c.note({ to: o.email, subject: ex ? "Your Caldera sign-in link" : "Confirm your email to publish your Caldera page", title: ex ? "Sign in to Caldera" : "One click and your page is live",
-          html: `<p>${ex ? `Open this link to sign in as <b>@${esc(ex.handle)}</b>.` : `Open this link to confirm your email. Your ${kind} page for <b>${esc(o.name)}</b> goes live right away, and you can add your ${kind === "designer" ? "work" : "companies"} next.`}</p><p><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">${ex ? "Sign in" : "Publish my page"}</a></p><p style="color:#777;font-size:13px">The link works once, for 48 hours. If you didn't ask for this, ignore this email.</p>`,
+          html: `<p>${ex ? `Open this link to sign in as <b>@${esc(ex.handle)}</b>.` : `Open this link to confirm your email. Your ${kind} page for <b>${esc(o.name)}</b> goes live right away, and you can add your ${kind === "developer" ? "GitHub" : kind === "designer" ? "work" : "companies"} next.`}</p><p><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">${ex ? "Sign in" : "Publish my page"}</a></p><p style="color:#777;font-size:13px">The link works once, for 48 hours. If you didn't ask for this, ignore this email.</p>`,
           text: `${ex ? "Sign in to Caldera" : "Confirm your email and your Caldera page goes live"}: ${link}\n\nThe link works once, for 48 hours. If you didn't ask for this, ignore this email.` });
       } catch (e: any) { page(502, { ...o, msg: "We couldn't send the email: " + e.message }); return true; }
       c.track?.(req, "typed-sent", kind); sent(); return true;
@@ -498,5 +500,40 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
   }
   /** "designer" or "business" for a typed email page, else "" */
   const kindOf = (id: string): string => { try { return okKind(JSON.parse(acctOf(id)?.content || "{}").kind); } catch { return ""; } };
-  return { route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
+  /** People who filled in a sign-up form and never confirmed (Mike 2026-10-31: email them a claim link once).
+   *  Dry run by default: counts only. paths = extra sqlite files (unpacked nightly backups) to read old rows from. */
+  async function stuckClaim(o: { send?: boolean; paths?: string[]; skipBefore?: string; skipFrom?: string; skipTo?: string }) {
+    const rows: { email: string; content: string; ts: string }[] = [];
+    const read = (all: any[]) => { for (const r of all) { try { rows.push({ email: String(c.unseal(r.email_sealed)).toLowerCase(), content: r.content || "{}", ts: r.ts || "" }); } catch { /* other key */ } } };
+    read(q("SELECT email_sealed, content, ts FROM email_pending").all() as any[]);
+    for (const p of o.paths || []) { const d = new DatabaseSync(p, { readOnly: true }); try { read(d.prepare("SELECT email_sealed, content, ts FROM email_pending").all() as any[]); } catch { /* older backup */ } d.close(); }
+    q("CREATE TABLE IF NOT EXISTS stuck_claimed (email_hash TEXT PRIMARY KEY, ts TEXT)").run();
+    const best = new Map<string, { content: string; ts: string }>(), counts: Record<string, number> = { rows: rows.length, test: 0, joined: 0, bot_window: 0, already_mailed: 0, empty: 0 }, kinds: Record<string, number> = {};
+    for (const r of rows) {
+      if (/@(example\.|test\.)|\+caldtest|^schoettle/.test(r.email)) { counts.test!++; continue; }
+      if (o.skipFrom && o.skipTo && r.ts >= o.skipFrom && r.ts < o.skipTo) { counts.bot_window!++; continue; }
+      if (r.content === "{}") { counts.empty!++; continue; }
+      const had = best.get(r.email); if (!had || r.ts > had.ts) best.set(r.email, r);
+    }
+    let sent = 0, failed = 0;
+    for (const [email, r] of best) {
+      const h = hash(email);
+      if (q("SELECT 1 FROM email_accounts WHERE email_hash=?").get(h) || c.memberByEmail?.(email)) { counts.joined!++; continue; }
+      if (q("SELECT 1 FROM stuck_claimed WHERE email_hash=?").get(h)) { counts.already_mailed!++; continue; }
+      const pr = JSON.parse(r.content) as Profile, k = pr.kind || "developer"; kinds[k] = (kinds[k] || 0) + 1;
+      if (!o.send) continue;
+      const tok = crypto.randomBytes(24).toString("base64url"), link = `${pub}/start/confirm?t=${tok}`;
+      q("INSERT INTO email_pending VALUES (?,?,?,?,?)").run(hash(tok), c.seal(email), r.content, Date.now() + 7 * DAY, new Date().toISOString());
+      try {
+        await c.note({ to: email, subject: "Your Caldera page is ready to claim", title: "Your page is one click away",
+          html: `<p>You started a Caldera page${pr.name ? ` for <b>${esc(pr.name)}</b>` : ""} but it never went live. We saved what you entered. One click publishes it.</p><p><a href="${link}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">Claim my page</a></p><p style="color:#777;font-size:13px">The link works once, for 7 days. We won't email you about this again. If this wasn't you, ignore this email.</p>`,
+          text: `You started a Caldera page but it never went live. One click publishes it: ${link}\n\nThe link works once, for 7 days. We won't email you about this again. If this wasn't you, ignore this email.`, src: "stuck-claim" } as any);
+        q("INSERT OR REPLACE INTO stuck_claimed VALUES (?,?)").run(h, new Date().toISOString()); sent++;
+      } catch { failed++; }
+      await new Promise(z => setTimeout(z, 800));
+    }
+    return { ...counts, unique_candidates: Object.values(kinds).reduce((a, b) => a + b, 0), kinds, sent, failed };
+  }
+
+  return { stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
 }

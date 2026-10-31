@@ -10,6 +10,7 @@
 import { TYPE_THEME, TYPE_LIMITS } from "./join";
 
 export type Kind = "designer" | "business";
+export type SignupKind = Kind | "developer";
 export const okKind = (v: unknown): Kind | "" => v === "designer" || v === "business" ? v : "";
 export interface Work { id: string; title: string; url?: string; about?: string; images: string[]; year?: string }
 export interface Company { id: string; name: string; role?: string; years?: string; exited?: boolean; url?: string; team?: number; logo?: string }
@@ -157,21 +158,21 @@ export function applyTyped(t: Typed, f: URLSearchParams): { t: Typed; msg: strin
 }
 
 /** the sign-up form for /join/designer and /join/business */
-export function typedSignupForm(kind: Kind, o: { msg?: string; name?: string; headline?: string; email?: string; a?: string; b?: string; inv?: string; stamp?: string }): string {
+export function typedSignupForm(kind: SignupKind, o: { msg?: string; name?: string; headline?: string; email?: string; a?: string; b?: string; inv?: string; stamp?: string }): string {
   const T = TYPE_THEME[kind], v = (x: unknown) => esc(x ?? "");
-  const extra = kind === "designer"
+  const extra = kind === "developer" ? "" : kind === "designer"
     ? `<label for="ts-a">What you design (optional)</label><input type="text" id="ts-a" name="a" value="${v(o.a)}" maxlength="300" placeholder="Brand identity, product UI, motion">`
     : `<label for="ts-a">Your company (optional)</label><input type="text" id="ts-a" name="a" value="${v(o.a)}" maxlength="60" placeholder="Company name"><label for="ts-b">Your role (optional)</label><input type="text" id="ts-b" name="b" value="${v(o.b)}" maxlength="80" placeholder="Founder and CEO">`;
   return `<style>.ts{max-width:560px;margin:0 auto;padding:36px 16px 72px}.ts-card{background:${T.surface};border:1px solid ${T.line};border-radius:18px;padding:24px;color:${T.ink}}
 .ts h1{margin:0 0 6px;font:600 clamp(1.7rem,4vw,2.3rem)/1.1 'Source Serif 4',Georgia,serif}.ts .lede{margin:0 0 16px;color:${T.mut}}.ts label{display:block;font-size:13.5px;margin:12px 0 4px;color:${T.mut}}
 .ts input{width:100%;box-sizing:border-box;min-height:46px;font:15px 'IBM Plex Sans',Arial,sans-serif;background:${T.ground};color:${T.ink};border:1px solid ${T.line};border-radius:10px;padding:10px 12px}
-.ts button{margin-top:18px;width:100%;min-height:48px;border:0;border-radius:12px;background:${T.accent};color:${kind === "designer" ? "#2A1216" : "#1E1607"};font:600 15px 'IBM Plex Sans',Arial,sans-serif;cursor:pointer}
+.ts button{margin-top:18px;width:100%;min-height:48px;border:0;border-radius:12px;background:${T.accent};color:${kind === "developer" ? "#15141A" : kind === "designer" ? "#2A1216" : "#1E1607"};font:600 15px 'IBM Plex Sans',Arial,sans-serif;cursor:pointer}
 .ts .err{color:#FF8A8A}.ts .fine{font-size:12.5px;color:${T.mut};margin:12px 0 0}.ts .fine a{color:${T.accent2}}.ts-eb{font:500 12px 'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:${T.accent};margin:0 0 10px}</style>
-<main class="ts"><div class="ts-card"><p class="ts-eb">${kind === "designer" ? "Designer" : "Business"} profile</p><h1>${kind === "designer" ? "Make your portfolio page" : "Make your business page"}</h1>
-<p class="lede">${kind === "designer" ? "Your work becomes your page and your city. Add projects and images after you confirm your email." : "Your companies become your page and your city. Add companies, logos and what you're looking for after you confirm your email."}</p>
+<main class="ts"><div class="ts-card"><p class="ts-eb">${kind === "developer" ? "Developer" : kind === "designer" ? "Designer" : "Business"} profile</p><h1>${kind === "developer" ? "Make your developer page" : kind === "designer" ? "Make your portfolio page" : "Make your business page"}</h1>
+<p class="lede">${kind === "developer" ? "Start with your email. Your page goes live when you confirm, then connect GitHub whenever you like and your repos become your city." : kind === "designer" ? "Your work becomes your page and your city. Add projects and images after you confirm your email." : "Your companies become your page and your city. Add companies, logos and what you're looking for after you confirm your email."}</p>
 ${o.msg ? `<p class="err" role="alert">${v(o.msg)}</p>` : ""}<form method="post" action="/join/${kind}">${o.inv ? `<input type="hidden" name="invite" value="${v(o.inv)}">` : ""}${o.stamp ? `<input type="hidden" name="stamp" value="${v(o.stamp)}">` : ""}<div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden"><label for="ts-w">Website</label><input type="text" id="ts-w" name="website" tabindex="-1" autocomplete="off"></div>
 <label for="ts-n">Your name</label><input type="text" id="ts-n" name="name" required maxlength="80" value="${v(o.name)}" autocomplete="name">
-<label for="ts-h">Headline (optional)</label><input type="text" id="ts-h" name="headline" maxlength="160" value="${v(o.headline)}" placeholder="${kind === "designer" ? "Brand and product designer" : "Founder of a logistics software company"}">
+<label for="ts-h">Headline (optional)</label><input type="text" id="ts-h" name="headline" maxlength="160" value="${v(o.headline)}" placeholder="${kind === "developer" ? "Backend engineer building AI tools" : kind === "designer" ? "Brand and product designer" : "Founder of a logistics software company"}">
 ${extra}<label for="ts-e">Email</label><input type="email" id="ts-e" name="email" required maxlength="200" value="${v(o.email)}" autocomplete="email">
 <button type="submit">Email me my link</button></form><p class="fine">We email you one link; opening it publishes your page. By signing up you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div></main>`;
 }

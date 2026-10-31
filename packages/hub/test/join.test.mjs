@@ -170,3 +170,37 @@ test("typed sign-up bot check: a filled hidden field, a missing stamp or a too-f
   const form0 = await (await get("/join/designer")).text();
   assert.match(form0, /name="website" tabindex="-1"/); assert.match(form0, /aria-hidden="true"/);
 });
+
+test("jd1: email-first arm offers email on the developer door, and that form makes a plain page", async () => {
+  const seen = {};
+  for (let i = 0; i < 24; i++) {
+    const h = await (await fetch(base + "/join", { headers: { "user-agent": "Mozilla/5.0 Chrome/120 v" + i, accept: "text/html" } })).text();
+    const first = h.match(/id="door-developer"[\s\S]*?class="jn-b"[^>]*>([^<]+)</)?.[1]; seen[first] = (seen[first] || 0) + 1;
+  }
+  assert.ok(seen["Sign up with GitHub"] > 0 && seen["Start with email"] > 0, JSON.stringify(seen));
+  const go = await fetch(base + "/join/go?door=email&tp=home", { redirect: "manual", headers: { "user-agent": "Mozilla/5.0 Chrome/120" } });
+  assert.match(go.headers.get("location"), /\/join\/developer/);
+  const f = await (await get("/join/developer")).text(); assert.match(f, /Make your developer page/);
+  mails.length = 0;
+  const stamp = f.match(/name="stamp" value="([^"]+)"/)[1];
+  assert.match(await (await form("/join/developer", { name: "Dev Person", email: "dev-first@acme-mail.org", stamp })).text(), /Check your email/);
+  const link = mails[0].text.match(/https?:\/\/\S+start\/confirm\?t=\S+/)[0], tok = new URL(link).searchParams.get("t");
+  const c = await form("/start/confirm", { t: tok });
+  assert.equal(c.status, 302); assert.match(c.headers.get("location"), /\/@dev-person\//);
+});
+
+test("stuck-claim: dry run counts, send mails once with a working link, skips joined and test addresses", async () => {
+  mails.length = 0;
+  const stampOf = async () => (await (await get("/join/business")).text()).match(/name="stamp" value="([^"]+)"/)[1];
+  await form("/join/business", { name: "Stuck Person", a: "Acme", email: "stuck@acme-mail.org", stamp: await stampOf() });
+  await form("/join/business", { name: "Tester", email: "schoettle+caldtest9@gmail.com", stamp: await stampOf() });
+  mails.length = 0;
+  const dry = await hub.stuckClaim({});
+  assert.equal(dry.sent, 0); assert.equal(mails.length, 0); assert.ok(dry.unique_candidates >= 1); assert.ok(dry.test >= 1);
+  const r = await hub.stuckClaim({ send: true });
+  assert.ok(r.sent >= 1);
+  const m = mails.find(x => x.to === "stuck@acme-mail.org"); assert.match(m.subject, /ready to claim/);
+  const c = await form("/start/confirm", { t: new URL(m.text.match(/https?:\/\/\S+start\/confirm\?t=\S+/)[0]).searchParams.get("t") });
+  assert.equal(c.status, 302);
+  const again = await hub.stuckClaim({ send: true }); assert.equal(again.sent, 0);
+});
