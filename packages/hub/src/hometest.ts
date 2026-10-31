@@ -45,7 +45,8 @@ export const HOME_ARMS: Record<string, [string, string][]> = {
   j: hero("Free / more than a social network", "Connect with the people making what you care about.",
         "Developers, designers and founders each get a page built from <b>their real work</b>. Find who you want to know, and <b>start a conversation</b>."),
 };
-export const ARM_IDS = Object.keys(HOME_ARMS);
+// Live round (Mike Oct 31: a test per ~100 people, so few arms at once): 4 arms reach 100 each in about 2 days. Rest wait in HOME_ARMS.
+export const ARM_IDS = ["a", "c", "d", "g"];
 
 let warned = false;
 /** this visitor's arm today ("a".."j"); vid = the funnel's visitor hash */

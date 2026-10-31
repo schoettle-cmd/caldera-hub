@@ -32,9 +32,9 @@ test("home2: all ten arms serve, only the copy differs, views recorded per arm",
     assert.equal(arm.length, 1, "exactly one headline"); seen[arm[0]] = (seen[arm[0]] || 0) + 1;
     if (arm[0] === "b") assert.match(h, /Build your city, two ways\./); else assert.match(h, /Two doors, one network\./);
   }
-  assert.deepEqual(Object.keys(seen).sort(), Object.keys(HEADS), JSON.stringify(seen));
+  assert.deepEqual(Object.keys(seen).sort(), ["a", "c", "d", "g"], JSON.stringify(seen));
   const rows = Object.fromEntries(hub.db.prepare("SELECT step, COUNT(*) n FROM funnel_events WHERE step LIKE 'h2-%' OR step='view' GROUP BY step").all().map(r => [r.step, r.n]));
-  for (const k of Object.keys(HEADS)) assert.equal(rows["h2-" + k], seen[k], k);
+  for (const k of Object.keys(seen)) assert.equal(rows["h2-" + k], seen[k], k);
   assert.equal(rows.view, 160);
 });
 
