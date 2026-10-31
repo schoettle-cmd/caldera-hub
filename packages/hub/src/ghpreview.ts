@@ -249,8 +249,9 @@ ${seeForm("", true)}<p class="ghp-ex">Try: ${ex.map(l => `<a href="/gh/${l}">@${
     if (!g.ok) { send(res, g.status, "text/html; charset=utf-8", notFound(login, g.why), "no-cache", { "content-security-policy": CSP }); return true; }
     if (g.p.login !== login) { res.writeHead(301, { location: `/gh/${g.p.login}` }); res.end(); return true; }   // canonical case
     const arm = c.saveArm ? c.saveArm(req) : null;
-    if (arm && c.track) c.track(req, arm === "b" ? "save-b" : "save-a");
-    send(res, 200, "text/html; charset=utf-8", previewPage(g.p, `/gh/${g.p.login}`, arm === "b"), c.saveArm ? "private, max-age=0" : "public, max-age=600", { "content-security-policy": CSP }); return true;
+    // save1 ended 2026-10-30 (Mike: yes): everyone gets the email box; still counted as save-b. Crawlers (null) don't.
+    if (arm && c.track) c.track(req, "save-b");
+    send(res, 200, "text/html; charset=utf-8", previewPage(g.p, `/gh/${g.p.login}`, !!arm), c.saveArm ? "private, max-age=0" : "public, max-age=600", { "content-security-policy": CSP }); return true;
   }
   return { route, memberBadge, get, badgeSnippet: (handle: string) => snippet(`${c.hub()}/@${handle}/city.html`, `${c.hub()}/@${handle}/badge.svg?style=card`, "My GitHub city on Caldera") };
 }
