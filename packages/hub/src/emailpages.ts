@@ -298,7 +298,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     if (p === "/start/confirm" && req.method === "GET") {
       const t = String(url.searchParams.get("t") || ""), row0 = t ? q("SELECT expires FROM email_pending WHERE token_hash=?").get(hash(t)) as any : null;
       if (!row0 || row0.expires < Date.now()) { c.page(res, 400, "Link expired", `${STYLE}<main class="ep"><h1>That link expired or was already used</h1><p><a class="btn" href="/start">Start again</a> &middot; <a href="/signin">Sign in</a></p></main>`); return true; }
-      c.page(res, 200, "Confirm", `${STYLE}<main class="ep"><h1>One click to finish</h1><form method="post" action="/start/confirm"><input type="hidden" name="t" value="${esc(t)}">${okBack(url.searchParams.get("back")) ? `<input type="hidden" name="back" value="${esc(okBack(url.searchParams.get("back")))}">` : ""}${okInv(url.searchParams.get("invite")) ? `<input type="hidden" name="invite" value="${esc(okInv(url.searchParams.get("invite")))}">` : ""}<button class="btn" type="submit">Publish my page and sign in</button></form></main>`); return true;
+      c.track?.(req, "confirm-open"); c.page(res, 200, "Confirm", `${STYLE}<main class="ep"><h1>Publishing your page...</h1><form id="cf" method="post" action="/start/confirm"><input type="hidden" name="t" value="${esc(t)}">${okBack(url.searchParams.get("back")) ? `<input type="hidden" name="back" value="${esc(okBack(url.searchParams.get("back")))}">` : ""}${okInv(url.searchParams.get("invite")) ? `<input type="hidden" name="invite" value="${esc(okInv(url.searchParams.get("invite")))}">` : ""}<button class="btn" type="submit">Publish my page and sign in</button></form><script>setTimeout(function(){if(document.visibilityState==="visible")document.getElementById("cf").submit()},700)</script></main>`); return true;
     }
     if (p === "/start/confirm" && req.method === "POST") {
       if (!c.sameOrigin(req)) { c.page(res, 403, "No", `${STYLE}<main class="ep"><h1>Wrong origin</h1></main>`); return true; }
@@ -353,6 +353,8 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       // a sealed load time; a form filled in under 4 s or with a stamp we didn't issue gets the normal reply and no email
       let born = 0; try { const s = c.unseal(String(f.get("stamp") || "")); if (s.startsWith("ts:")) born = +s.slice(3); } catch { /* forged or missing */ }
       const age = Date.now() - born, MIN = +(process.env.TYPED_MIN_MS ?? 4000);
+      // autofill can beat 4 s, so a too-fast person gets one more tap (the re-rendered form carries a passing stamp), not silence
+      if (!String(f.get("website") || "") && born && age < MIN) { c.track?.(req, "typed-bot", kind + ":fast"); page(200, { ...o, msg: "Almost there. Check the details and tap once more." }); return true; }
       if (String(f.get("website") || "") || !born || age < MIN || age > 2 * DAY) {
         c.track?.(req, "typed-bot", kind + (f.get("website") ? ":trap" : !born ? ":nostamp" : age < MIN ? ":fast" : ":old"));
         c.page(res, 200, "Check your email", `${STYLE}<main class="ep"><h1>Check your email</h1><p class="lede">We sent a link to <b>${esc(o.email)}</b>. Open it and your page goes live.</p><p class="mut">Nothing there in a minute? Check spam, or <a href="/join/${kind}">try again</a>.</p></main>`); return true;
@@ -361,9 +363,11 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       const pr: Profile = { kind, name: o.name, headline: o.headline || undefined };
       if (kind === "designer") { pr.disciplines = list(o.a); pr.work = []; }
       else { const co = clean(o.a, 60); pr.companies = co ? [{ id: newId(), name: co, role: o.b || undefined }] : []; pr.looking = {}; }
-      const sent = () => c.page(res, 200, "Check your email", `${STYLE}<main class="ep"><h1>Check your email</h1><p class="lede">We sent a link to <b>${esc(o.email)}</b>. Open it and your page goes live.</p><p class="mut">Nothing there in a minute? Check spam, or <a href="/join/${kind}">try again</a>.</p></main>`);
+      const inbox = /@(gmail|googlemail)\.com$/.test(o.email) ? `<p><a class="btn" href="https://mail.google.com/mail/u/0/#search/from%3Acaldera.social" target="_blank" rel="noopener">Open Gmail</a></p>` : "";
+      const sent = () => c.page(res, 200, "Check your email", `${STYLE}<main class="ep"><h1>Check your email</h1><p class="lede">We sent a link to <b>${esc(o.email)}</b> from hello@caldera.social. Open it and your page goes live.</p>${inbox}<p class="mut">Nothing there in a minute? Check spam, or <a href="/join/${kind}">try again</a>.</p></main>`);
       const ex = q("SELECT handle FROM email_accounts WHERE email_hash=?").get(hash(o.email)) as any, other = ex ? null : c.memberByEmail?.(o.email) || null;
       if (other) { try { await c.mailExisting?.(other, o.email, "", o.inv); } catch (e: any) { page(502, { ...o, msg: "We couldn't send the email: " + e.message }); return true; } sent(); return true; }
+      c.track?.(req, "form-submit", kind);
       const tok = crypto.randomBytes(24).toString("base64url");
       q("INSERT INTO email_pending VALUES (?,?,?,?,?)").run(hash(tok), c.seal(o.email), ex ? "{}" : JSON.stringify(pr), Date.now() + 2 * DAY, new Date().toISOString());
       q("DELETE FROM email_pending WHERE expires < ?").run(Date.now());

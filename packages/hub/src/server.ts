@@ -1984,7 +1984,7 @@ body{overflow-x:hidden}.kd{max-width:440px;margin:0 auto;padding:22px 16px 40px}
   const CODE_OR = `<div class="mut" style="display:flex;align-items:center;gap:10px;margin:16px 0 12px"><span style="flex:1;height:1px;background:currentColor;opacity:.25"></span>or<span style="flex:1;height:1px;background:currentColor;opacity:.25"></span></div>`;
   const codeForm = (h: string, back: string) => `<form method="post" action="/signin/email">${h ? `<input type="hidden" name="h" value="${escAttr(h)}">` : ""}${back ? `<input type="hidden" name="back" value="${escAttr(back)}">` : ""}<input type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com" aria-label="Email"><button class="btn small" type="submit">Email me a code</button></form>`;
   function codeSent(res: http.ServerResponse, email: string, back: string, note = "") {
-    signinPage(res, 200, "Check your email", `${note ? `<div class="card">${escAttr(note)}</div>` : ""}<h1>Check your email</h1><p class="lede">${email ? `If <b>${escAttr(email)}</b> belongs to a Caldera page, we sent it a 6-digit code.` : "Enter the 6-digit code from your email."} Enter it here to sign in on this device.</p>
+    signinPage(res, 200, "Check your email", `${note ? `<div class="card">${escAttr(note)}</div>` : ""}<h1>Check your email</h1><p class="lede">${email ? `If <b>${escAttr(email)}</b> belongs to a Caldera page, we sent it a 6-digit code. New here? <a href="/join?tp=signin-page">Create your profile</a>.` : "Enter the 6-digit code from your email."} Enter it here to sign in on this device.</p>
 ${email ? `<form method="post" action="/signin/code"><input type="hidden" name="email" value="${escAttr(email)}">${back ? `<input type="hidden" name="back" value="${escAttr(back)}">` : ""}<input name="code" required autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 \\-]*" maxlength="7" placeholder="123 456" aria-label="6-digit code" autofocus style="font-size:22px;letter-spacing:.12em;max-width:12ch"><button class="btn" type="submit">Sign in</button></form>` : ""}
 <p class="mut">The code works once, for 15 minutes. You can also tap the link in the email. Nothing there in a minute? Check spam, or <a href="/signin">try again</a>.</p>`);
   }
@@ -2090,7 +2090,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
 
   const emailPage = (res: http.ServerResponse, status: number, title: string, body: string) => { res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" });
     res.end(navify(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} - Caldera</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"></head><body>${body}</body></html>`)); };
-  JOIN = joinModule({ q, ipOf, page: emailPage, memberOf, byHandle });
+  JOIN = joinModule({ q, ipOf, page: emailPage, memberOf, byHandle, track: (req, step) => FUNNEL.track(req, step as any) });
   EMP = emailPages({ q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
     startOwner, memberOf, sameOrigin, allowNewProfile, tooMany, note: (m) => mail.note(m),
     page: emailPage,

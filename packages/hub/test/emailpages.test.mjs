@@ -26,7 +26,7 @@ test("sign up with email + an AI: paste, confirm, page and city live, update gro
   assert.match(await r.text(), /Check your email/); assert.equal(mails.length, 1);
   const link = mails[0].text.match(/https?:\/\/\S+start\/confirm\?t=\S+/)[0].replace(ORIGIN, base);
   const tok = new URL(link).searchParams.get("t");
-  assert.match(await (await fetch(link)).text(), /One click to finish/, "opening the link (or a mail scanner) only shows a button");
+  assert.match(await (await fetch(link)).text(), /Publishing your page/, "opening the link (or a mail scanner) only shows a button");
   const c = await form("/start/confirm", { t: tok });
   assert.equal(c.status, 302); assert.equal(c.headers.get("location"), "/@dana-lee/city.html?welcome=1");
   const cookie = (c.headers.getSetCookie?.() || [c.headers.get("set-cookie")]).map(x => x.split(";")[0]).join("; ");

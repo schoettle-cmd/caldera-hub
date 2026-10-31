@@ -87,7 +87,7 @@ test("email sign-up from a Message button: sign-up page -> /start -> email -> co
   const r = await form("/start", { text: "name: Email Joiner\nheadline: Came from a message", email: "joiner@example.com", back: "/messages/@host-person", invite: "host-person" });
   assert.match(await r.text(), /Check your email/); assert.equal(mails.length, n + 1); assert.equal(mails.at(-1).to, "joiner@example.com");
   const link = linkIn(mails.at(-1)).find(u => u.includes("/start/confirm"));
-  assert.match(await (await fetch(link)).text(), /One click to finish/);
+  assert.match(await (await fetch(link)).text(), /Publishing your page/);
   const c = await form("/start/confirm", { t: new URL(link).searchParams.get("t"), back: "/messages/@host-person", invite: "host-person" });
   assert.equal(c.status, 302); assert.equal(c.headers.get("location"), "/messages/@host-person");
   const cookie = jar(c).join("; ");

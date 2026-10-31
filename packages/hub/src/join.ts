@@ -45,6 +45,7 @@ export interface JoinCtx {
   ipOf: (req: http.IncomingMessage) => string;
   page: (res: http.ServerResponse, status: number, title: string, body: string) => void;
   memberOf: (req: http.IncomingMessage) => string | null;
+  track?: (req: http.IncomingMessage, step: string) => void;
   byHandle: (h: string) => any;
 }
 
@@ -119,7 +120,7 @@ ${door("business", "I build companies", "Your companies become your city. Show w
       const door = String(url.searchParams.get("door") || "") as Door, tp = okTp(url.searchParams.get("tp")) || cookieTp(req) || "direct", from = okHandle(url.searchParams.get("from"));
       const to = door === "code" ? `/auth/github${from ? `?invite=${from}` : ""}` : door === "obsidian" ? `/${from ? `?invite=${from}` : ""}#obsidian`
         : door === "designer" ? `/join/designer${from ? `?invite=${from}` : ""}` : door === "business" ? `/join/business${from ? `?invite=${from}` : ""}` : "/join";
-      if (["code", "obsidian", "designer", "business"].includes(door)) record(req, tp, "door");
+      if (["code", "obsidian", "designer", "business"].includes(door)) { record(req, tp, "door"); c.track?.(req, "door-" + door); }
       res.writeHead(302, { location: to, "cache-control": "no-store" }); res.end(); return true;
     }
     // touchpoint events from pages (gate shown): "tp:ev", any origin (hosted pages are sandboxed: Origin null), no cookie

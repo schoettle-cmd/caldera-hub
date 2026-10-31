@@ -163,7 +163,7 @@ test("typed sign-up bot check: a filled hidden field, a missing stamp or a too-f
   assert.match(await (await form("/join/business", body)).text(), /Check your email/, "no stamp");
   assert.match(await (await form("/join/business", { ...body, stamp: "forged" })).text(), /Check your email/, "forged stamp");
   process.env.TYPED_MIN_MS = "4000";
-  try { assert.match(await (await form("/join/designer", { ...body, stamp: await stampOf("designer") })).text(), /Check your email/, "too fast"); }
+  try { assert.match(await (await form("/join/designer", { ...body, stamp: await stampOf("designer") })).text(), /tap once more/, "too fast"); }
   finally { process.env.TYPED_MIN_MS = "0"; }
   assert.equal(mails.length, 0, "bots get no email and no pending sign-up");
   assert.equal(hub.db.prepare("SELECT COUNT(*) n FROM funnel_events WHERE step='typed-bot'").get().n > 0, true);
