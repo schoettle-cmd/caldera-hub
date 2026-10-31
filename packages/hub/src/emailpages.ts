@@ -509,8 +509,14 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     for (const p of o.paths || []) { const d = new DatabaseSync(p, { readOnly: true }); try { read(d.prepare("SELECT email_sealed, content, ts FROM email_pending").all() as any[]); } catch { /* older backup */ } d.close(); }
     q("CREATE TABLE IF NOT EXISTS stuck_claimed (email_hash TEXT PRIMARY KEY, ts TEXT)").run();
     const best = new Map<string, { content: string; ts: string }>(), counts: Record<string, number> = { rows: rows.length, test: 0, joined: 0, bot_window: 0, already_mailed: 0, empty: 0 }, kinds: Record<string, number> = {};
+    // bots filled the designer and business forms seconds apart (Oct 31): drop both halves of a pair
+    const kindOf = (r: { content: string }) => { try { return JSON.parse(r.content).kind || ""; } catch { return ""; } };
+    const tsOf = (r: { ts: string }) => Date.parse(r.ts) || 0;
+    const paired = (r: { content: string; ts: string }) => !!kindOf(r) && rows.some(x => kindOf(x) && kindOf(x) !== kindOf(r) && Math.abs(tsOf(x) - tsOf(r)) <= 30_000);
+    counts.bot_pair = 0;
     for (const r of rows) {
       if (/@(example\.|test\.)|\+caldtest|^schoettle/.test(r.email)) { counts.test!++; continue; }
+      if (paired(r)) { counts.bot_pair!++; continue; }
       if (o.skipFrom && o.skipTo && r.ts >= o.skipFrom && r.ts < o.skipTo) { counts.bot_window!++; continue; }
       if (r.content === "{}") { counts.empty!++; continue; }
       const had = best.get(r.email); if (!had || r.ts > had.ts) best.set(r.email, r);

@@ -204,3 +204,12 @@ test("stuck-claim: dry run counts, send mails once with a working link, skips jo
   assert.equal(c.status, 302);
   const again = await hub.stuckClaim({ send: true }); assert.equal(again.sent, 0);
 });
+
+test("stuck-claim: a designer + business pair seconds apart is dropped as a bot pair", async () => {
+  const stampOf = async k => (await (await get(`/join/${k}`)).text()).match(/name="stamp" value="([^"]+)"/)[1];
+  await form("/join/designer", { name: "Pair One", email: "pair-one@acme-mail.org", stamp: await stampOf("designer") });
+  await form("/join/business", { name: "Pair Two", email: "pair-two@acme-mail.org", stamp: await stampOf("business") });
+  mails.length = 0;
+  const r = await hub.stuckClaim({ send: true });
+  assert.ok(r.bot_pair >= 2); assert.equal(mails.filter(m => /pair-/.test(m.to)).length, 0);
+});
