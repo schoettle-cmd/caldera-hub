@@ -157,7 +157,7 @@ export function applyTyped(t: Typed, f: URLSearchParams): { t: Typed; msg: strin
 }
 
 /** the sign-up form for /join/designer and /join/business */
-export function typedSignupForm(kind: Kind, o: { msg?: string; name?: string; headline?: string; email?: string; a?: string; b?: string; inv?: string }): string {
+export function typedSignupForm(kind: Kind, o: { msg?: string; name?: string; headline?: string; email?: string; a?: string; b?: string; inv?: string; stamp?: string }): string {
   const T = TYPE_THEME[kind], v = (x: unknown) => esc(x ?? "");
   const extra = kind === "designer"
     ? `<label for="ts-a">What you design (comma separated)</label><input type="text" id="ts-a" name="a" value="${v(o.a)}" maxlength="300" placeholder="Brand identity, product UI, motion">`
@@ -169,7 +169,7 @@ export function typedSignupForm(kind: Kind, o: { msg?: string; name?: string; he
 .ts .err{color:#FF8A8A}.ts .fine{font-size:12.5px;color:${T.mut};margin:12px 0 0}.ts .fine a{color:${T.accent2}}.ts-eb{font:500 12px 'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:${T.accent};margin:0 0 10px}</style>
 <main class="ts"><div class="ts-card"><p class="ts-eb">${kind === "designer" ? "Designer" : "Business"} profile</p><h1>${kind === "designer" ? "Make your portfolio page" : "Make your business page"}</h1>
 <p class="lede">${kind === "designer" ? "Your work becomes your page and your city. Add projects and images after you confirm your email." : "Your companies become your page and your city. Add companies, logos and what you're looking for after you confirm your email."}</p>
-${o.msg ? `<p class="err" role="alert">${v(o.msg)}</p>` : ""}<form method="post" action="/join/${kind}">${o.inv ? `<input type="hidden" name="invite" value="${v(o.inv)}">` : ""}
+${o.msg ? `<p class="err" role="alert">${v(o.msg)}</p>` : ""}<form method="post" action="/join/${kind}">${o.inv ? `<input type="hidden" name="invite" value="${v(o.inv)}">` : ""}${o.stamp ? `<input type="hidden" name="stamp" value="${v(o.stamp)}">` : ""}<div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden"><label for="ts-w">Website</label><input type="text" id="ts-w" name="website" tabindex="-1" autocomplete="off"></div>
 <label for="ts-n">Your name</label><input type="text" id="ts-n" name="name" required maxlength="80" value="${v(o.name)}" autocomplete="name">
 <label for="ts-h">Headline</label><input type="text" id="ts-h" name="headline" maxlength="160" value="${v(o.headline)}" placeholder="${kind === "designer" ? "Brand and product designer" : "Founder of a logistics software company"}">
 ${extra}<label for="ts-e">Email</label><input type="email" id="ts-e" name="email" required maxlength="200" value="${v(o.email)}" autocomplete="email">

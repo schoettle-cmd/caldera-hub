@@ -8,6 +8,7 @@ import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
 
+process.env.TYPED_MIN_MS = "0";   // the bot check's minimum fill time; its own test sets it
 let hub, base, dir; const mails = [], events = [];
 const ORIGIN = "http://hub.test";
 const CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
@@ -27,7 +28,8 @@ after(() => { hub.server.close(); fs.rmSync(dir, { recursive: true, force: true 
 /** sign up through a typed form and confirm; returns the owner cookie and where the confirm sent them */
 async function signUp(kind, body, h = {}) {
   mails.length = 0;
-  const r = await form(`/join/${kind}`, body, h);
+  const stamp = (await (await get(`/join/${kind}`, h)).text()).match(/name="stamp" value="([^"]+)"/)[1];
+  const r = await form(`/join/${kind}`, { ...body, stamp }, h);
   assert.match(await r.text(), /Check your email/);
   const link = mails[0].text.match(/https?:\/\/\S+start\/confirm\?t=\S+/)[0].replace(ORIGIN, base);
   const c = await form("/start/confirm", { t: new URL(link).searchParams.get("t") }, h);
@@ -151,4 +153,20 @@ test("the gate script and the sign-up panel parse as JavaScript, for every kind"
   for (const html of pages) for (const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) { if (!/__calGate2|calGate/.test(m[1])) continue; new Function(m[1]); n++; }
   assert.ok(n >= 3, "checked " + n + " scripts");
   void gateScript;
+});
+
+test("typed sign-up bot check: a filled hidden field, a missing stamp or a too-fast submit gets the normal reply and no email", async () => {
+  const stampOf = async k => (await (await get(`/join/${k}`)).text()).match(/name="stamp" value="([^"]+)"/)[1];
+  const body = { name: "Bot Test", headline: "x", a: "y", email: "bot-check@example.com" };
+  mails.length = 0;
+  assert.match(await (await form("/join/designer", { ...body, website: "http://spam.example", stamp: await stampOf("designer") })).text(), /Check your email/);
+  assert.match(await (await form("/join/business", body)).text(), /Check your email/, "no stamp");
+  assert.match(await (await form("/join/business", { ...body, stamp: "forged" })).text(), /Check your email/, "forged stamp");
+  process.env.TYPED_MIN_MS = "4000";
+  try { assert.match(await (await form("/join/designer", { ...body, stamp: await stampOf("designer") })).text(), /Check your email/, "too fast"); }
+  finally { process.env.TYPED_MIN_MS = "0"; }
+  assert.equal(mails.length, 0, "bots get no email and no pending sign-up");
+  assert.equal(hub.db.prepare("SELECT COUNT(*) n FROM funnel_events WHERE step='typed-bot'").get().n > 0, true);
+  const form0 = await (await get("/join/designer")).text();
+  assert.match(form0, /name="website" tabindex="-1"/); assert.match(form0, /aria-hidden="true"/);
 });

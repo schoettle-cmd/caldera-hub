@@ -113,7 +113,7 @@ export interface EmailCtx {
   /** remember the confirmed address so message alerts and the daily summary can reach them */
   rememberEmail: (owner: string, email: string) => void;
   /** count a sign-up funnel step (funnel.ts) */
-  track?: (req: http.IncomingMessage, step: "email-created" | "gh-return", detail?: string) => void;
+  track?: (req: http.IncomingMessage, step: "email-created" | "gh-return" | "typed-form" | "typed-sent" | "typed-bot", detail?: string) => void;
   /** delete the member and everything tied to them (the hub's own erase) */
   eraseProfile: (id: string) => void;
   onPublished?: (id: string, created: boolean) => void;
@@ -342,13 +342,21 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     // ---- Designer and Business sign-up (2026-10-30): a short form instead of the AI prompt; the same confirm link
     const tm = p.match(/^\/join\/(designer|business)$/);
     if (tm) {
-      const kind = tm[1] as Kind, page = (st: number, o: Parameters<typeof typedSignupForm>[1]) => c.page(res, st, kind === "designer" ? "Designer profile" : "Business profile", typedSignupForm(kind, o));
-      if (req.method === "GET") { page(200, { inv: okInv(url.searchParams.get("invite")) }); return true; }
+      const kind = tm[1] as Kind, page = (st: number, o: Parameters<typeof typedSignupForm>[1]) => c.page(res, st, kind === "designer" ? "Designer profile" : "Business profile", typedSignupForm(kind, { stamp: c.seal("ts:" + (Date.now() - 4000)), ...o }));
+      if (req.method === "GET") { c.track?.(req, "typed-form", kind); page(200, { inv: okInv(url.searchParams.get("invite")), stamp: c.seal("ts:" + Date.now()) }); return true; }
       if (req.method !== "POST") return false;
       const f = await form(req), o = { name: clean(f.get("name"), 80), headline: clean(f.get("headline"), 160), email: String(f.get("email") || "").trim().toLowerCase(), a: String(f.get("a") || "").slice(0, 300), b: clean(f.get("b"), 80), inv: okInv(f.get("invite")) };
       if (!c.sameOrigin(req)) { page(403, { ...o, msg: "Wrong origin. Please try again." }); return true; }
       if (!o.name) { page(400, { ...o, msg: "Add your name." }); return true; }
       if (!okEmail(o.email)) { page(400, { ...o, msg: "That email doesn't look right." }); return true; }
+      // bot check (2026-10-31: paired junk designer+business sign-ups seconds apart): a hidden field people never see, and
+      // a sealed load time; a form filled in under 4 s or with a stamp we didn't issue gets the normal reply and no email
+      let born = 0; try { const s = c.unseal(String(f.get("stamp") || "")); if (s.startsWith("ts:")) born = +s.slice(3); } catch { /* forged or missing */ }
+      const age = Date.now() - born, MIN = +(process.env.TYPED_MIN_MS ?? 4000);
+      if (String(f.get("website") || "") || !born || age < MIN || age > 2 * DAY) {
+        c.track?.(req, "typed-bot", kind + (f.get("website") ? ":trap" : !born ? ":nostamp" : age < MIN ? ":fast" : ":old"));
+        c.page(res, 200, "Check your email", `${STYLE}<main class="ep"><h1>Check your email</h1><p class="lede">We sent a link to <b>${esc(o.email)}</b>. Open it and your page goes live.</p><p class="mut">Nothing there in a minute? Check spam, or <a href="/join/${kind}">try again</a>.</p></main>`); return true;
+      }
       if (c.tooMany("emailsignup:" + ipKey(req), 8) || c.tooMany("emailsignup:" + hash(o.email), 3)) { page(429, { ...o, msg: "Too many tries. Wait an hour, then try again." }); return true; }
       const pr: Profile = { kind, name: o.name, headline: o.headline || undefined };
       if (kind === "designer") { pr.disciplines = list(o.a); pr.work = []; }
@@ -365,7 +373,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
           html: `<p>${ex ? `Open this link to sign in as <b>@${esc(ex.handle)}</b>.` : `Open this link to confirm your email. Your ${kind} page for <b>${esc(o.name)}</b> goes live right away, and you can add your ${kind === "designer" ? "work" : "companies"} next.`}</p><p><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">${ex ? "Sign in" : "Publish my page"}</a></p><p style="color:#777;font-size:13px">The link works once, for 48 hours. If you didn't ask for this, ignore this email.</p>`,
           text: `${ex ? "Sign in to Caldera" : "Confirm your email and your Caldera page goes live"}: ${link}\n\nThe link works once, for 48 hours. If you didn't ask for this, ignore this email.` });
       } catch (e: any) { page(502, { ...o, msg: "We couldn't send the email: " + e.message }); return true; }
-      sent(); return true;
+      c.track?.(req, "typed-sent", kind); sent(); return true;
     }
     // ---- the Designer / Business editor on Settings: fields, projects, companies (forms) and images (JSON upload)
     if (p === "/settings/typed" && req.method === "POST") {
