@@ -1,7 +1,7 @@
 /**
  * Homepage message test "home2" (Mike, 2026-10-30: "we need way more options there, create 10 versions of language and
  * let's run them all", goal: at least 5% of homepage visitors sign up). Replaces home1 (2 arms, 2026-10-29; no signal
- * after 423 views). Ten arms, a tenth of visitors each. Arm "a" = the homepage as it is (control); every other arm swaps
+ * after 423 views). Oct 31: arms d, g, i, j replaced with "find people" language (Mike); read from Oct 31 on, by /join clicks. Ten arms, a tenth of visitors each. Arm "a" = the homepage as it is (control); every other arm swaps
  * only the eyebrow, the headline and the lead line (arm "b" = home1's showcase, which also swaps the how-it-works
  * wording). Title, meta, structured data, the "Show my city" box, the buttons and every sign-up path stay identical, so
  * the test measures the message alone. Every claim is a feature that ships today. Crawlers always get control.
@@ -30,20 +30,20 @@ export const HOME_ARMS: Record<string, [string, string][]> = {
         "<li><b>Meet developers.</b> Find people by what they build, add friends, start a group, and get a daily summary by email.</li>"]],
   c: hero("Free / 30 seconds / no install", "Your GitHub, as a city.",
         "Type your username and watch your repos rise: <b>districts are projects</b>, <b>buildings are repos</b>, lit windows are this week's commits."),
-  d: hero("Free and open source / for developers", "A portfolio that builds itself from your GitHub.",
-        "Caldera turns your repos into a <b>live 3D city</b> and a profile page that rebuilds from GitHub every 6 hours. Share one link that is always up to date."),
+  d: hero("Free / developers, designers, founders", "Find developers, designers and partners by their real work.",
+        "Every profile is built from <b>what people actually make</b>: repos, portfolios and companies. Browse people, follow them and <b>message them directly</b>."),
   e: hero("Free and open source / for AI builders", "Watch your AI agents build, live.",
         "Coding agents show up as <b>drones over the repo</b> they are working in, your commits light the windows, and your site's visitors parachute in. Your GitHub as a <b>living city</b>."),
   f: hero("Free and open source / for developers", "Meet developers by what they actually build.",
         "Every profile is built from <b>real work</b>: repos, commits and notes, not a résumé. Browse people, add friends and <b>message them directly</b>."),
-  g: hero("Free / one README badge", "Your contribution graph, but 3D and alive.",
-        "Caldera turns your GitHub into a city: every repo a building, every commit a lit window. <b>Put it on your profile README</b> with one badge."),
+  g: hero("Free / find your people", "Find your next co-founder by what they've built.",
+        "People show their repos, portfolios and companies, and <b>say what they're looking for</b>. Skip the résumé and <b>message them directly</b>."),
   h: hero("Free / no sign-up to look", "What does your code look like as a city?",
         "Enter your GitHub username to find out. <b>Districts are projects</b>, buildings are repos, and lit windows are this week's commits."),
-  i: hero("Free and open source / build in public", "Build in public without writing a single post.",
-        "Your commits and repos become a <b>living city</b> and a page people can follow. Caldera keeps it current from GitHub, so you just <b>keep building</b>."),
-  j: hero("Free and open source / GitHub + Obsidian", "Your code and your notes, one living profile.",
-        "Connect GitHub and your repos become a <b>city</b>. Add the Obsidian plugin and your vault becomes a <b>profile you control</b>: nothing leaves it unless you choose."),
+  i: hero("Free / for designers and developers", "Find designers and developers who show the work.",
+        "Portfolios, repos and live projects, <b>not job titles</b>. Find someone to build with, then <b>reach out directly</b>."),
+  j: hero("Free / more than a social network", "Connect with the people making what you care about.",
+        "Developers, designers and founders each get a page built from <b>their real work</b>. Find who you want to know, and <b>start a conversation</b>."),
 };
 export const ARM_IDS = Object.keys(HOME_ARMS);
 

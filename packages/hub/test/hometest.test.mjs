@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHub } from "../dist/server.js";
-const HEADS = { a: "The social network for GitHub and Obsidian.", b: "Show your work as a living city.", c: "Your GitHub, as a city.", d: "A portfolio that builds itself from your GitHub.", e: "Watch your AI agents build, live.", f: "Meet developers by what they actually build.", g: "Your contribution graph, but 3D and alive.", h: "What does your code look like as a city?", i: "Build in public without writing a single post.", j: "Your code and your notes, one living profile." };
+const HEADS = { a: "The social network for GitHub and Obsidian.", b: "Show your work as a living city.", c: "Your GitHub, as a city.", d: "Find developers, designers and partners by their real work.", e: "Watch your AI agents build, live.", f: "Meet developers by what they actually build.", g: "Find your next co-founder by what they've built.", h: "What does your code look like as a city?", i: "Find designers and developers who show the work.", j: "Connect with the people making what you care about." };
 
 const site = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../site");
 let hub, base, dir;
@@ -27,7 +27,7 @@ test("home2: all ten arms serve, only the copy differs, views recorded per arm",
     assert.equal(r.status, 200); assert.equal(r.headers.get("cache-control"), "private, max-age=0");
     const h = await r.text();
     assert.match(h, /<title>Caldera - the social network for GitHub and Obsidian<\/title>/);   // SEO unchanged
-    assert.match(h, /href="\/auth\/github"/); assert.match(h, /action="\/gh"/);                 // same sign-up paths
+    assert.match(h, /href="\/join\?tp=home"/); assert.match(h, /action="\/gh"/);                 // same sign-up paths
     const arm = Object.keys(HEADS).filter(k => h.includes("<h1>" + HEADS[k] + "</h1>"));
     assert.equal(arm.length, 1, "exactly one headline"); seen[arm[0]] = (seen[arm[0]] || 0) + 1;
     if (arm[0] === "b") assert.match(h, /Build your city, two ways\./); else assert.match(h, /Two doors, one network\./);
