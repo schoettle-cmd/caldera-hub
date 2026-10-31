@@ -376,6 +376,7 @@ export function createHub(opts: HubOptions) {
   // ---------------------------------------------------------------- helpers
   const profile = (id: string) => q("SELECT * FROM profiles WHERE id=?").get(id) as any;
   const byHandle = (h: string) => q("SELECT * FROM profiles WHERE handle=?").get(h) as any;
+  const VISITS = new Map<string, { at: number; v: any }>();   // /v1/visits cache
   // operator moderation (Terms s.3): hidden = taken down, owner cannot republish; blocked = handle can never be claimed
   const modOf = (handle: string | null, id?: string) => q("SELECT * FROM moderation WHERE handle=? OR (id IS NOT NULL AND id=?)").get(handle || "", id || "") as any;
   const body = (pr: any) => { try { return JSON.parse(pr.manifest).body || {}; } catch { return {}; } };
@@ -2831,6 +2832,25 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       // which build of a member's public city is current: open city pages reload when it changes (injectBuildWatch)
       m = p.match(/^\/v1\/build\/([a-z0-9-]+)$/);
       if (req.method === "GET" && m) { res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "access-control-allow-origin": "*" }); return res.end(JSON.stringify({ build: buildOf(m[1]) })); }
+      // visitor helicopters (city renderer): unique profile visitors per day, last 7 days, for listed members only.
+      // Counts only (owner and bots are never recorded in page_views); who visited is never sent. Cached 5 minutes.
+      m = p.match(/^\/v1\/visits(?:\/([a-z0-9-]+))?$/);
+      if (req.method === "GET" && m) {
+        const hit = VISITS.get(m[1] || "*"); let out = hit && Date.now() - hit.at < 300_000 ? hit.v : null;
+        if (!out && m[1]) {
+          const pr = byHandle(m[1]); if (!pr || !listed(pr)) return json(res, 404, { error: "not found" });
+          const d0 = new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10);
+          const got = new Map((q("SELECT substr(ts,1,10) d, COUNT(DISTINCT visitor) n FROM page_views WHERE handle=? AND ts >= ? GROUP BY d").all(pr.handle, d0) as any[]).map(r => [r.d, r.n as number]));
+          const days: [string, number][] = []; for (let i = 6; i >= 0; i--) { const d = new Date(Date.now() - i * 864e5).toISOString().slice(0, 10); days.push([d, got.get(d) || 0]); }
+          out = { days }; VISITS.set(m[1], { at: Date.now(), v: out });
+        } else if (!out) {   // the world: each listed member's visitors over the last 3 days (one per visitor per day)
+          const d3 = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10), mm: Record<string, number> = {};
+          for (const r of q("SELECT handle, COUNT(DISTINCT visitor || substr(ts,1,10)) n FROM page_views WHERE ts >= ? AND handle IS NOT NULL GROUP BY handle").all(d3) as any[]) {
+            const pr = byHandle(r.handle); if (pr && listed(pr) && r.n > 0) mm["@" + r.handle] = r.n; }
+          out = { m: mm }; VISITS.set("*", { at: Date.now(), v: out });
+        }
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "public, max-age=300", "access-control-allow-origin": "*" }); return res.end(JSON.stringify(out));
+      }
       m = p.match(/^\/v1\/live\/([a-z0-9-]+)$/);
       if (req.method === "GET" && m) {
         const pr = byHandle(m[1]); if (!pr || modOf(pr.handle, pr.id)) return json(res, 404, { error: "not found" });
