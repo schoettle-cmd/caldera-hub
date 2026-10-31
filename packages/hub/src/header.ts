@@ -174,7 +174,7 @@ export function appHeader(o: HeaderOpts): string {
   const tabs = (list: string[]) => `<nav class="ch-bn" aria-label="Main" style="grid-template-columns:repeat(${list.length},1fr)">${list.join("")}</nav>`;
   const base3 = [tab("feed", "Feed", `${hub}/feed`, icon("feed", 22) + fbadge, cur === "feed", "ch-bn-feed"), tab("people", "People", `${hub}/people`, icon("people", 22), cur === "people"), tab("world", "World", `${hub}/world`, icon("world", 22), cur === "world")];
   if (!v) {
-    const signin = o.signinHref || `${hub}/signin`, join = o.joinHref || `${hub}/#install`;
+    const signin = o.signinHref || `${hub}/signin`, join = o.joinHref || `${hub}/join?tp=header`;
     return `${HEADER_CSS}<header class="ch" id="caldera-bar" data-state="out">${mobile}${brand}<nav class="ch-nav" aria-label="Main">${navLinks.join("")}</nav>`
       + `<div class="ch-right"><a class="ch-text" href="${e(signin)}" rel="nofollow">Sign in</a><a class="ch-cta" href="${e(join)}">Get started</a></div></header>`
       + tabs([...base3, tab("downloads", "Downloads", `${hub}/downloads`, icon("downloads", 22), cur === "downloads"), tab("guide", "Guide", `${hub}/guide`, icon("guide", 22), cur === "guide")]);

@@ -43,9 +43,12 @@ test("every sign-up surface offers GitHub, email and Obsidian", async () => {
   for (const [name, html] of [["Message sign-up page", msg], ["general sign-in page", gen]]) {
     assert.match(html, /Sign up with GitHub/, name); assert.match(html, /href="\/start[^"]*">Sign up with email</, name); assert.match(html, /Sign up with Obsidian/, name);
   }
-  // the signed-out join panel (profile Follow/Message/Kudos, feed actions) has an email button, not just a small link
+  // the signed-out join panel (profile Follow/Message/Kudos, feed actions) is one way in since 2026-10-30: "Create your
+  // profile" -> /join (the profile-type selector), which offers GitHub, email (AI-written, Designer, Business) and Obsidian
   const page = await (await fetch(base + "/@host-person/", { headers: { "user-agent": "Mozilla/5.0" } })).text();
-  assert.match(page, /cg-em/); assert.match(page, /'Sign up with email'/);
+  assert.match(page, /'Create your profile'/); assert.match(page, /\/join\?tp=/);
+  const join = await (await fetch(base + "/join?tp=follow")).text();
+  assert.match(join, /Sign up with GitHub/); assert.match(join, /Install for Obsidian/); assert.match(join, /href="\/start"/); assert.match(join, /door=designer/); assert.match(join, /door=business/);
   const home = await (await fetch(base + "/", { headers: { "user-agent": "Mozilla/5.0" } })).text();
   if (/id="install"/.test(home)) { assert.match(home, /href="\/auth\/github"/); assert.match(home, /href="\/start"/); }
 });

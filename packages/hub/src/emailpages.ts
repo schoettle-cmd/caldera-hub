@@ -20,6 +20,8 @@ import * as C from "@caldera/core";
 import { renderProfile, type ProfileData } from "../../../../caldera/packages/plugin/src/render";
 import { cityData, type CityRepo } from "../../../../caldera/packages/plugin/src/city";
 import { cleanImage } from "./images";
+import { type Typed, type Kind, okKind, typedProjects, typedIndex, typedEditor, typedSignupForm, applyTyped, list, newId } from "./typed";
+import { TYPE_LIMITS } from "./join";
 
 const DAY = 86_400_000;
 const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -28,7 +30,7 @@ const okEmail = (e: string) => /^[^@\s<>"]+@[^@\s<>"]+\.[a-z]{2,}$/i.test(e) && 
 const okUrl = (u: string) => /^https?:\/\/[^\s"'<>]+$/i.test(u) && u.length <= 300;
 
 /** What a profile block can say. Every field is optional; an update block replaces what it contains and adds to the log. */
-export interface Profile {
+export interface Profile extends Typed {
   name?: string; headline?: string; about?: string; location?: string; role?: string;
   links?: [string, string][]; now?: string[]; topics?: string[];
   projects?: { name: string; status: string; url: string; about: string }[];
@@ -159,7 +161,7 @@ export function emailPages(c: EmailCtx) {
     const pr: Profile = JSON.parse(acct.content || "{}"), log: { ts: string; project: string; what: string }[] = JSON.parse(acct.log || "[]");
     const id = JSON.parse(c.unseal(acct.key_sealed)) as C.Identity, handle = acct.handle as string, name = pr.name || handle, now = Date.now();
     // the city: one building per project; every logged mention adds to it
-    const projects = [...(pr.projects || [])];
+    const tp = typedProjects(pr), projects = [...(tp || pr.projects || [])];
     for (const l of log) if (!projects.some(p => p.name.toLowerCase() === l.project.toLowerCase())) projects.push({ name: l.project, status: "", url: "", about: "" });
     const weekIx = (ts: string) => 11 - Math.floor((now - Date.parse(ts)) / (7 * DAY));
     const repos: CityRepo[] = projects.slice(0, 24).map(p => {
@@ -180,12 +182,17 @@ export function emailPages(c: EmailCtx) {
       stats: { notes: 0, words: 0, links: 0, activeDays: new Set(updates.map(u => u.ts.slice(0, 10))).size }, topics: (pr.topics || []).map(t => [t, 1] as [string, number]), daily, publicNotes: [], asks: [], offers: [],
       updated: acct.updated || new Date().toISOString(), hub: pub, summary: pr.about || undefined, now: pr.now?.length ? pr.now : undefined,
       timeline: pr.timeline?.length ? pr.timeline : undefined,
-      projects: (pr.projects || []).map(x => ({ name: x.name, status: x.status || x.about, url: x.url || "", commits: log.filter(l => l.project.toLowerCase() === x.name.toLowerCase()).length || undefined })),
+      projects: tp ? undefined : (pr.projects || []).map(x => ({ name: x.name, status: x.status || x.about, url: x.url || "", commits: log.filter(l => l.project.toLowerCase() === x.name.toLowerCase()).length || undefined })),
       city, source: "Caldera",
     } as ProfileData;
     const ph = photoOf(acct.profile_id); if (ph) { p.avatar = `img/photo.${ph.ext}`; p.icon = p.avatar; }
     const files = renderProfile(p) as Record<string, any>;
     if (ph) files[p.avatar!] = fs.readFileSync(ph.file);
+    if (pr.kind && typeof files["index.html"] === "string") {   // Designer / Business: their colors, sections and images
+      files["index.html"] = typedIndex(files["index.html"], pr);
+      for (const w of pr.work || []) for (const im of w.images) { const f = path.join(photoDir(acct.profile_id), "work", im); if (fs.existsSync(f)) files[`img/work/${im}`] = fs.readFileSync(f); }
+      for (const co of pr.companies || []) if (co.logo) { const f = path.join(photoDir(acct.profile_id), "logos", co.logo); if (fs.existsSync(f)) files[`img/logos/${co.logo}`] = fs.readFileSync(f); }
+    }
     const listed = Date.parse(acct.created) < now - 3 * DAY || c.hasFollower(acct.profile_id);
     const manifest = C.sign(id, "profile.manifest", { name, handle, boxKey: id.boxPublic, headline: p.headline, links: p.links, sections: Object.keys(p.sections).filter(k => (p.sections as any)[k]),
       stats: p.stats, topics: (pr.topics || []).map(t => [t, 1]), asks: [], offers: [], listed, page: "index.html", updated: p.updated, hosted: "email", ...(ph ? { photos: { avatar: p.avatar } } : {}) });
@@ -228,15 +235,15 @@ ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(
     const pr: Profile = JSON.parse(acct.content || "{}"), log: any[] = JSON.parse(acct.log || "[]"), last = log.length ? log[log.length - 1].ts : acct.updated;
     c.page(res, 200, "Your page", `${STYLE}<main class="ep"><h1>Your page</h1>
 <p class="lede"><a href="/@${esc(acct.handle)}/">caldera.social/@${esc(acct.handle)}</a> &middot; <a href="/@${esc(acct.handle)}/city.html">your city</a> &middot; last updated ${esc(String(last || "").slice(0, 10))}</p>
-${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(msg.replace(/^ok:/, ""))}</p>` : ""}
-<section class="card" id="update"><h2>What's new? Update your page in a minute</h2><p class="mut">Copy this into ChatGPT or Claude, then paste its answer below. Every project you mention grows its building in your city; this week's get lit windows.</p>
+${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(msg.replace(/^ok:/, ""))}</p>` : ""}${pr.kind ? typedEditor(pr, acct.handle) : ""}
+${pr.kind ? "" : `<section class="card" id="update"><h2>What's new? Update your page in a minute</h2><p class="mut">Copy this into ChatGPT or Claude, then paste its answer below. Every project you mention grows its building in your city; this week's get lit windows.</p>
 <pre id="p-up">${esc(UPDATE_PROMPT)}</pre><button type="button" class="btn small" data-copy="p-up">Copy the update prompt</button>
 <form method="post" action="/settings/page" style="margin-top:12px"><input type="hidden" name="do" value="update"><textarea name="text" maxlength="20000" required placeholder="now:&#10;- ...&#10;worked_on:&#10;- Project | what I did"></textarea>
 <div class="row"><button class="btn" type="submit">Update my page</button></div></form></section>
 <section class="card"><h2>Rewrite the whole page</h2><p class="mut">Run the first prompt again and paste the full block: it replaces your name, headline, About, projects, timeline and links. Your city keeps its history.</p>
 <pre id="p-start">${esc(START_PROMPT)}</pre><button type="button" class="btn small" data-copy="p-start">Copy the full prompt</button>
 <form method="post" action="/settings/page" style="margin-top:12px"><input type="hidden" name="do" value="replace"><textarea name="text" maxlength="20000" required placeholder="name: ..."></textarea><div class="row"><button class="btn small" type="submit">Replace my page</button></div></form></section>
-<section class="card" id="photo"><h2>Your photo</h2><div class="row" style="align-items:center;gap:14px">${photoOf(acct.profile_id) ? `<img src="/@${esc(acct.handle)}/img/photo.${photoOf(acct.profile_id)!.ext}?v=${Date.now()}" alt="" width="64" height="64" style="border-radius:50%;object-fit:cover;border:1px solid var(--line)">` : ""}
+`}<section class="card" id="photo"><h2>Your photo</h2><div class="row" style="align-items:center;gap:14px">${photoOf(acct.profile_id) ? `<img src="/@${esc(acct.handle)}/img/photo.${photoOf(acct.profile_id)!.ext}?v=${Date.now()}" alt="" width="64" height="64" style="border-radius:50%;object-fit:cover;border:1px solid var(--line)">` : ""}
 <label class="btn small" style="cursor:pointer">${photoOf(acct.profile_id) ? "Replace photo" : "Upload a photo"}<input type="file" accept="image/jpeg,image/png,image/webp" id="ph-in" style="display:none"></label><span class="mut" id="ph-st">JPG, PNG or WebP, up to 3 MB. Shows on your page and next to your messages.</span></div>
 <script>(function(){var i=document.getElementById('ph-in'),st=document.getElementById('ph-st');i.addEventListener('change',function(){var f=i.files&&i.files[0];if(!f)return;if(f.size>3*1024*1024){st.textContent='That image is over 3 MB.';return;}st.textContent='Uploading\u2026';var r=new FileReader();r.onload=function(){fetch('/settings/photo',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({data:String(r.result).split(',')[1]})}).then(function(x){return x.json()}).then(function(j){if(j.ok){location.href='/settings?photo=1#photo'}else st.textContent=j.error||'Upload failed.'}).catch(function(){st.textContent='Upload failed.'})};r.readAsDataURL(f)})})();</script></section>
 <section class="card"><h2>Weekly reminder</h2><form method="post" action="/settings/page"><input type="hidden" name="do" value="nudge"><label><input type="checkbox" name="on" ${acct.nudge_off ? "" : "checked"} onchange="this.form.submit()"> Email me the update prompt when I haven't updated in a week</label></form></section>
@@ -321,14 +328,96 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       c.rememberEmail(acct.profile_id, email);
       try { publish(acct); } catch (e: any) { c.page(res, 500, "Not yet", `${STYLE}<main class="ep"><h1>We couldn't publish your page</h1><p class="mut">${esc(e.message)}</p><p><a class="btn" href="/start">Try again</a></p></main>`); return true; }
       c.onPublished?.(acct.profile_id, created);
-      if (created) c.track?.(req, "email-created", inv ? "invite" : "");
+      if (created) c.track?.(req, "email-created", pr.kind || (inv ? "invite" : ""));
       // joined from someone's invite (e.g. their Message button): credit them, and the new member follows them
       if (created && inv && inv !== acct.handle) try {
         const inviter = c.recordReferral?.(acct.profile_id, inv, "email");
         if (inviter) c.accept(C.sign(JSON.parse(c.unseal(acct.key_sealed)), "friend.request", { to: inviter, note: "I joined Caldera from your invite." }));
       } catch { /* best effort */ }
       const hasCity = fs.existsSync(path.join(c.dataDir, "profiles", acct.handle, "city.html"));   // no repos yet: their page, not a 404
+      if (created && pr.kind && !back) { res.writeHead(302, { location: `/settings?new=1#${pr.kind === "designer" ? "work" : "companies"}`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true; }   // straight to adding their work
       res.writeHead(302, { location: back || `/@${acct.handle}/${hasCity ? "city.html" : ""}?welcome=1`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true;
+    }
+
+    // ---- Designer and Business sign-up (2026-10-30): a short form instead of the AI prompt; the same confirm link
+    const tm = p.match(/^\/join\/(designer|business)$/);
+    if (tm) {
+      const kind = tm[1] as Kind, page = (st: number, o: Parameters<typeof typedSignupForm>[1]) => c.page(res, st, kind === "designer" ? "Designer profile" : "Business profile", typedSignupForm(kind, o));
+      if (req.method === "GET") { page(200, { inv: okInv(url.searchParams.get("invite")) }); return true; }
+      if (req.method !== "POST") return false;
+      const f = await form(req), o = { name: clean(f.get("name"), 80), headline: clean(f.get("headline"), 160), email: String(f.get("email") || "").trim().toLowerCase(), a: String(f.get("a") || "").slice(0, 300), b: clean(f.get("b"), 80), inv: okInv(f.get("invite")) };
+      if (!c.sameOrigin(req)) { page(403, { ...o, msg: "Wrong origin. Please try again." }); return true; }
+      if (!o.name) { page(400, { ...o, msg: "Add your name." }); return true; }
+      if (!okEmail(o.email)) { page(400, { ...o, msg: "That email doesn't look right." }); return true; }
+      if (c.tooMany("emailsignup:" + ipKey(req), 8) || c.tooMany("emailsignup:" + hash(o.email), 3)) { page(429, { ...o, msg: "Too many tries. Wait an hour, then try again." }); return true; }
+      const pr: Profile = { kind, name: o.name, headline: o.headline || undefined };
+      if (kind === "designer") { pr.disciplines = list(o.a); pr.work = []; }
+      else { const co = clean(o.a, 60); pr.companies = co ? [{ id: newId(), name: co, role: o.b || undefined }] : []; pr.looking = {}; }
+      const sent = () => c.page(res, 200, "Check your email", `${STYLE}<main class="ep"><h1>Check your email</h1><p class="lede">We sent a link to <b>${esc(o.email)}</b>. Open it and your page goes live.</p><p class="mut">Nothing there in a minute? Check spam, or <a href="/join/${kind}">try again</a>.</p></main>`);
+      const ex = q("SELECT handle FROM email_accounts WHERE email_hash=?").get(hash(o.email)) as any, other = ex ? null : c.memberByEmail?.(o.email) || null;
+      if (other) { try { await c.mailExisting?.(other, o.email, "", o.inv); } catch (e: any) { page(502, { ...o, msg: "We couldn't send the email: " + e.message }); return true; } sent(); return true; }
+      const tok = crypto.randomBytes(24).toString("base64url");
+      q("INSERT INTO email_pending VALUES (?,?,?,?,?)").run(hash(tok), c.seal(o.email), ex ? "{}" : JSON.stringify(pr), Date.now() + 2 * DAY, new Date().toISOString());
+      q("DELETE FROM email_pending WHERE expires < ?").run(Date.now());
+      const link = `${pub}/start/confirm?t=${tok}${carry("", o.inv)}`;
+      try {
+        await c.note({ to: o.email, subject: ex ? "Your Caldera sign-in link" : "Confirm your email to publish your Caldera page", title: ex ? "Sign in to Caldera" : "One click and your page is live",
+          html: `<p>${ex ? `Open this link to sign in as <b>@${esc(ex.handle)}</b>.` : `Open this link to confirm your email. Your ${kind} page for <b>${esc(o.name)}</b> goes live right away, and you can add your ${kind === "designer" ? "work" : "companies"} next.`}</p><p><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">${ex ? "Sign in" : "Publish my page"}</a></p><p style="color:#777;font-size:13px">The link works once, for 48 hours. If you didn't ask for this, ignore this email.</p>`,
+          text: `${ex ? "Sign in to Caldera" : "Confirm your email and your Caldera page goes live"}: ${link}\n\nThe link works once, for 48 hours. If you didn't ask for this, ignore this email.` });
+      } catch (e: any) { page(502, { ...o, msg: "We couldn't send the email: " + e.message }); return true; }
+      sent(); return true;
+    }
+    // ---- the Designer / Business editor on Settings: fields, projects, companies (forms) and images (JSON upload)
+    if (p === "/settings/typed" && req.method === "POST") {
+      const acct = acctOf(c.memberOf(req)); if (!acct) { res.writeHead(302, { location: "/signin" }); res.end(); return true; }
+      if (!c.sameOrigin(req)) { settingsPage(res, acct, "Wrong origin."); return true; }
+      if (c.tooMany("emailupdate:" + acct.profile_id, 60)) { settingsPage(res, acct, "That's a lot of changes for one hour."); return true; }
+      const pr: Profile = JSON.parse(acct.content || "{}"), f = await form(req), r = applyTyped(pr, f);
+      if ("error" in r) { settingsPage(res, acct, r.error); return true; }
+      // removed projects and companies take their images with them
+      const gone = new Set<string>([...(pr.work || []).filter(w => !(r.t.work || []).some(x => x.id === w.id)).flatMap(w => w.images.map(i => "work/" + i)),
+        ...(pr.companies || []).filter(co => co.logo && !(r.t.companies || []).some(x => x.id === co.id)).map(co => "logos/" + co.logo)]);
+      for (const g of gone) fs.rmSync(path.join(photoDir(acct.profile_id), g), { force: true });
+      q("UPDATE email_accounts SET content=?, updated=? WHERE profile_id=?").run(JSON.stringify(r.t), new Date().toISOString(), acct.profile_id);
+      const next = q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id);
+      try { publish(next); } catch (e: any) { settingsPage(res, next, "Saved, but publishing failed: " + e.message); return true; }
+      c.onPublished?.(acct.profile_id, false);
+      // post/redirect/get: a reload (the image uploader reloads) must never send the form again
+      const at = /work/.test(String(f.get("do"))) ? "#work" : /co$/.test(String(f.get("do"))) ? "#companies" : "#typed";
+      res.writeHead(303, { location: `/settings?saved=1${at}`, "cache-control": "no-store" }); res.end(); return true;
+    }
+    if (p === "/settings/typed/img" && req.method === "POST") {
+      const acct = acctOf(c.memberOf(req)), J = (st: number, b: any) => { res.writeHead(st, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(b)); };
+      if (!acct) { J(401, { error: "Sign in first." }); return true; }
+      if (!c.sameOrigin(req)) { J(403, { error: "wrong origin" }); return true; }
+      const pr: Profile = JSON.parse(acct.content || "{}");
+      if (!pr.kind) { J(400, { error: "This page has no profile type." }); return true; }
+      const maxB = pr.kind === "designer" ? TYPE_LIMITS.designer.imageBytes : TYPE_LIMITS.business.logoBytes, mb = Math.round(maxB / 1048576);
+      if (c.tooMany("typed-img:" + acct.profile_id, 120)) { J(429, { error: "Too many uploads. Try again in an hour." }); return true; }
+      const ch: Buffer[] = [], lim = Math.ceil(maxB * 1.37) + 4096; let n = 0;
+      for await (const x of req) { n += (x as Buffer).length; if (n <= lim) ch.push(x as Buffer); else if (n > lim * 2) break; }   // read it out, so the browser gets the answer
+      if (n > lim) { J(413, { error: `That image is over ${mb} MB.` }); return true; }
+      let b: any = null; try { b = JSON.parse(Buffer.concat(ch).toString("utf8")); } catch { /* bad body */ }
+      if (!b || typeof b.data !== "string") { J(400, { error: "Choose an image." }); return true; }
+      const img = cleanImage(Buffer.from(b.data, "base64"), maxB); if (!img.ok) { J(400, { error: img.error }); return true; }
+      const base = photoDir(acct.profile_id), file = `${newId()}.${img.ext}`;
+      if (pr.kind === "designer") {
+        const w = (pr.work || []).find(x => x.id === b.work); if (!w) { J(404, { error: "That project is gone. Reload the page." }); return true; }
+        if (w.images.length >= TYPE_LIMITS.designer.imagesPerProject) { J(400, { error: `That's the limit of ${TYPE_LIMITS.designer.imagesPerProject} images for one project.` }); return true; }
+        const dir = path.join(base, "work"); fs.mkdirSync(dir, { recursive: true });
+        const used = fs.readdirSync(dir).reduce((t, x) => t + fs.statSync(path.join(dir, x)).size, 0);
+        if (used + img.data.length > TYPE_LIMITS.designer.totalBytes) { J(400, { error: "That's your 300 MB of portfolio images. Remove a project to make room." }); return true; }
+        fs.writeFileSync(path.join(dir, file), img.data); w.images.push(file);
+      } else {
+        const co = (pr.companies || []).find(x => x.id === b.co); if (!co) { J(404, { error: "That company is gone. Reload the page." }); return true; }
+        const dir = path.join(base, "logos"); fs.mkdirSync(dir, { recursive: true });
+        if (co.logo) fs.rmSync(path.join(dir, co.logo), { force: true });
+        else if ((pr.companies || []).filter(x => x.logo).length >= TYPE_LIMITS.business.logos) { J(400, { error: `That's the limit of ${TYPE_LIMITS.business.logos} logos.` }); return true; }
+        fs.writeFileSync(path.join(dir, file), img.data); co.logo = file;
+      }
+      q("UPDATE email_accounts SET content=?, updated=? WHERE profile_id=?").run(JSON.stringify(pr), new Date().toISOString(), acct.profile_id);
+      try { publish(q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id)); } catch (e: any) { J(502, { error: "Saved, but republishing failed: " + e.message }); return true; }
+      J(200, { ok: true }); return true;
     }
     if (p === "/settings/photo" && req.method === "POST") {
       const acct = acctOf(c.memberOf(req)), J = (st: number, b: any) => { res.writeHead(st, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(b)); };
@@ -348,12 +437,12 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     if (p === "/settings/page" || ((p === "/settings" || p === "/me") && req.method === "GET")) {
       const acct = acctOf(c.memberOf(req));
       if (!acct) { if (p === "/settings/page") { res.writeHead(302, { location: "/signin" }); res.end(); return true; } return false; }   // not an email page: the usual settings
-      if (req.method === "GET") { settingsPage(res, acct, url && url.searchParams && url.searchParams.get("photo") ? "ok:Your photo is up and your page is republished." : ""); return true; }
+      if (req.method === "GET") { settingsPage(res, acct, url && url.searchParams && url.searchParams.get("photo") ? "ok:Your photo is up and your page is republished." : url?.searchParams?.get("saved") ? "ok:Saved and republished." : url?.searchParams?.get("new") ? `ok:Your page is live at caldera.social/@${acct.handle}. Add your ${JSON.parse(acct.content || "{}").kind === "business" ? "companies" : "work"} below.` : ""); return true; }
       if (!c.sameOrigin(req)) { settingsPage(res, acct, "Wrong origin."); return true; }
       const f = await form(req), act = f.get("do");
       if (act === "delete") {
         if (!f.get("sure")) { settingsPage(res, acct, "Tick \"I'm sure\" to delete."); return true; }
-        c.eraseProfile(acct.profile_id); q("DELETE FROM email_accounts WHERE profile_id=?").run(acct.profile_id);
+        c.eraseProfile(acct.profile_id); erase(acct.profile_id);
         c.page(res, 200, "Deleted", `${STYLE}<main class="ep"><h1>Your page is deleted</h1><p class="lede">Your page, city and data are gone, and we've forgotten your email.</p></main>`); return true; }
       if (act === "nudge") { q("UPDATE email_accounts SET nudge_off=? WHERE profile_id=?").run(f.get("on") ? 0 : 1, acct.profile_id); settingsPage(res, q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id), f.get("on") ? "ok:Weekly reminder is on." : "ok:Weekly reminder is off."); return true; }
       if (c.tooMany("emailupdate:" + acct.profile_id, 30)) { settingsPage(res, acct, "That's a lot of updates for one hour."); return true; }
@@ -386,7 +475,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     }
   }
   function schedule() { const t0 = setTimeout(function tick() { void daily(); const t = setTimeout(tick, DAY); t.unref?.(); }, 10 * 60_000); t0.unref?.(); }
-  function erase(id: string) { q("DELETE FROM email_accounts WHERE profile_id=?").run(id); }
+  function erase(id: string) { q("DELETE FROM email_accounts WHERE profile_id=?").run(id); fs.rmSync(photoDir(id), { recursive: true, force: true }); }   // photo, portfolio and logos too
   /** the email page that uses this address, if any (email sign-ups are keyed by the address itself) */
   const accountByEmail = (email: string) => q("SELECT profile_id, handle FROM email_accounts WHERE email_hash=?").get(hash(email.trim().toLowerCase())) as { profile_id: string; handle: string } | undefined;
   /** a one-time sign-in link for an existing email page (the same link /start sends when the profile box is left empty) */
@@ -395,5 +484,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     q("INSERT INTO email_pending VALUES (?,?,?,?,?)").run(hash(tok), c.seal(email.trim().toLowerCase()), "{}", Date.now() + 2 * DAY, new Date().toISOString());
     return `${pub}/start/confirm?t=${tok}${carry(okBack(back), okInv(inv))}`;
   }
-  return { route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor };
+  /** "designer" or "business" for a typed email page, else "" */
+  const kindOf = (id: string): string => { try { return okKind(JSON.parse(acctOf(id)?.content || "{}").kind); } catch { return ""; } };
+  return { route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
 }

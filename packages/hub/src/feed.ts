@@ -711,7 +711,7 @@ ${sentence.toString()}
 function $(s,r){return (r||document).querySelector(s)}function $$(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))}
 function tip(m){var t=document.createElement('div');t.className='fd-tip';t.setAttribute('role','status');t.textContent=m;document.body.appendChild(t);setTimeout(function(){t.remove()},2600)}
 function api(path,o){return fetch(path,{method:o?'POST':'GET',credentials:'same-origin',headers:o?{'content-type':'application/json'}:{},body:o?JSON.stringify(o):undefined}).then(function(r){return r.json().then(function(j){return{ok:r.ok,status:r.status,j:j}})},function(){return{ok:false,j:{error:'Could not reach Caldera. Try again.'}}})}
-function need(back,k){var e=encodeURIComponent,b=back||location.pathname;if(!window.calGate){location.href='/auth/github?back='+e(b);return}
+function need(back,k){var e=encodeURIComponent,b=back||location.pathname;if(!window.calGate){location.href='/join?tp='+e(k||'join');return}
 calGate({kind:k||'join',title:({comment:'Join Caldera to comment',reply:'Join Caldera to reply',help:'Join Caldera to offer help',kudos:'Join Caldera to send kudos',post:'Join Caldera to post'})[k]||'Join Caldera to do that',name:'Caldera',api:'',
 gh:'/auth/github?back='+e(b),obsidian:'/#obsidian',start:'/start',signin:'/signin?back='+e(b)})}
 // share: the permalink, plus the sharer's invite so sign-ups from it credit them

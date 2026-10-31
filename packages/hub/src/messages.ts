@@ -33,7 +33,7 @@ export interface MsgCtx {
   areFriends: (a: string, b: string) => boolean;
   memberOf: (req: http.IncomingMessage) => string | null; sameOrigin: (req: http.IncomingMessage) => boolean;
   readBody: (req: http.IncomingMessage) => Promise<any>; json: (res: http.ServerResponse, status: number, body: unknown) => void;
-  navify: (html: string, current?: string) => string; tooMany: (key: string, max: number, windowMs?: number) => boolean;
+  navify: (html: string, current?: string) => string; /** new message requests a day for this sender (by profile type) */ coldCap?: (id: string) => number; tooMany: (key: string, max: number, windowMs?: number) => boolean;
   seal: (s: string) => string; unseal: (s: string) => string;
   /** may this member start conversations with non-friends? (brand-new, empty accounts message friends only) */
   canRequest?: (pr: any) => boolean;
@@ -90,7 +90,8 @@ export function messages(c: MsgCtx) {
       } else {
         if (t?.status === "ignored" && t.requested_by === me && t.ignored_at && Date.parse(t.ignored_at) > Date.now() - 30 * DAY) return { status: 409, body: { error: `@${to.handle} isn't taking a request from you right now.`, state: "ignored" } };
         if (c.canRequest && !c.canRequest(mp)) return { status: 403, body: { error: "New accounts can message friends for their first couple of days. Add a friend, or try again soon." } };
-        if (c.tooMany("msgreq:" + me, 10, DAY)) return { status: 429, body: { error: "That's 10 new message requests today. Try again tomorrow." } };
+        { const cap = c.coldCap ? c.coldCap(me) : 10;   // per profile type (2026-10-30): business 5 a day, everyone else 10
+          if (c.tooMany("msgreq:" + me, cap, DAY)) return { status: 429, body: { error: `That's ${cap} new message requests today. Try again tomorrow.` } }; }
         if (t) q("UPDATE msg_threads SET status='request', requested_by=?, ignored_at=NULL, updated=? WHERE id=?").run(me, ts, t.id);
         else { const [a, b] = pair(me, to.id); q("INSERT INTO msg_threads VALUES (?,?,?,?,?,?,?,?)").run(crypto.randomBytes(8).toString("hex"), a, b, "request", me, ts, ts, null); }
         isRequest = true;

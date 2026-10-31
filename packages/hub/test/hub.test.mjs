@@ -167,7 +167,7 @@ test("onEvent: signup fires once per new profile, not on updates; delete fires",
 
 test("every hosted profile page gets the Caldera bar linking home with the owner's invite", async () => {
   const html = (await get("/@mike/")).body;
-  assert.ok(html.includes('id="caldera-bar"') && html.includes("/?invite=mike") && html.includes("Get started"));
+  assert.ok(html.includes('id="caldera-bar"') && /\/join\?tp=header&(amp;)?from=mike/.test(html) && html.includes("Get started"));
   assert.ok(html.indexOf('id="caldera-bar"') < html.indexOf("Mike again") || !html.includes("Mike again"));
   const css = await fetch(base + "/@mike/caldera.json").then(r => r.text());
   assert.ok(!css.includes("caldera-bar"), "only HTML pages are touched");

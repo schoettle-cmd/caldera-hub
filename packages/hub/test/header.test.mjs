@@ -44,11 +44,11 @@ test("one header: same markup for the same viewer on site pages, hub pages, prof
   assert.match(own.hd, /data-state="own"/); assert.match(own.hd, /class="ch-seg"/);
   assert.equal(own.hd.replace(/city\.html/g, ""), ownCity.hd.replace(/city\.html/g, ""), "own profile and own city share the header");
   // signed out: identical everywhere except where Sign in / Get started point (a profile's owner sign-in + invite)
-  const norm = (s) => s.replace(/signin\?h=[a-z0-9-]+/g, "signin").replace(/\/\?invite=[a-z0-9-]+#install/g, "/#install");
+  const norm = (s) => s.replace(/signin\?h=[a-z0-9-]+/g, "signin").replace(/(\/join\?tp=header)&(amp;)?from=[a-z0-9-]+/g, "$1");
   const out = await grab("/people", anon);
   assert.match(out.hd, /data-state="out"/); assert.match(out.hd, /Get started/); assert.doesNotMatch(out.hd, /ch-bell|@mike/);
   for (const p of ["/guide", "/", "/@mike/", "/@ana/city.html"]) assert.equal(norm((await grab(p, anon)).hd), norm(out.hd), `same signed-out header on ${p}`);
-  assert.match((await grab("/@ana/", anon)).hd, /\/\?invite=ana#install/, "profiles invite to their owner");
+  assert.match((await grab("/@ana/", anon)).hd, /\/join\?tp=header&(amp;)?from=ana/, "profiles invite to their owner, through the profile-type selector");
   h.server.close();
 });
 

@@ -75,7 +75,7 @@ test("/gh/<login> of a member goes to their real city; member badges; fresh buil
   } finally { S.hub.server.close(); }
 });
 
-test("save1: the 'b' arm shows 'Email me my city'; the email carries the city link, claim button and badge; arms counted", async () => {
+test("'Email me my city' for everyone (save1 ended 4d09685); the email carries the city link, claim button and badge", async () => {
   const sent = [], d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-save-"));
   let hub;
   try {
@@ -91,9 +91,7 @@ test("save1: the 'b' arm shows 'Email me my city'; the email carries the city li
       const h = await r.text(); assert.match(h, /Claim it with GitHub/);
       if (h.includes("Email me my city")) { b++; bUa = CH + " s" + i; assert.match(h, /name="city" value="Octo"/); assert.match(h, /name="website"/); } else a++;
     }
-    assert.ok(a > 0 && b > 0, JSON.stringify({ a, b }));
-    const rows = Object.fromEntries(hub.db.prepare("SELECT step, COUNT(*) n FROM funnel_events WHERE step IN ('save-a','save-b') GROUP BY step").all().map(r => [r.step, r.n]));
-    assert.equal(rows["save-a"], a); assert.equal(rows["save-b"], b);
+    assert.deepEqual({ a, b }, { a: 0, b: 20 }, "the experiment ended: every visitor gets the box");
     const bot = await (await fetch(base + "/gh/Octo", { headers: { "user-agent": "Googlebot/2.1" } })).text();
     assert.doesNotMatch(bot, /Email me my city/);
     const r = await fetch(base + "/signin/signup-email", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: "http://hub.test", ...NAV, "user-agent": bUa }, body: new URLSearchParams({ email: "dev@person.dev", city: "Octo", website: "" }).toString() });

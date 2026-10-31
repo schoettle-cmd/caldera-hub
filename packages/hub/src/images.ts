@@ -49,9 +49,9 @@ function stripWebp(b: Buffer): Buffer {
 }
 
 /** Validate an upload; returns the cleaned bytes and its type, or an error message for the owner. */
-export function cleanImage(b: Buffer): { ok: true; data: Buffer; ext: ImageKind } | { ok: false; error: string } {
+export function cleanImage(b: Buffer, max = MAX_IMAGE): { ok: true; data: Buffer; ext: ImageKind } | { ok: false; error: string } {
   if (!b.length) return { ok: false, error: "That file is empty." };
-  if (b.length > MAX_IMAGE) return { ok: false, error: "That image is over 3 MB. Try a smaller one." };
+  if (b.length > max) return { ok: false, error: `That image is over ${Math.round(max / 1048576)} MB. Try a smaller one.` };
   const k = sniff(b); if (!k) return { ok: false, error: "Use a JPG, PNG or WebP image." };
   return { ok: true, ext: k, data: k === "jpg" ? stripJpeg(b) : k === "png" ? stripPng(b) : stripWebp(b) };
 }
