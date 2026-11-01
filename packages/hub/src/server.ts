@@ -2250,6 +2250,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         return res.end(worldPage(worldNow(), { hub: opts.publicUrl || "https://caldera.social", nav: worldNav(), tools: TOOLS ? TOOLS.mapData() : [] }));
       }
       if (req.method === "GET" && /^\/gh\/[A-Za-z0-9-]+\/?$/.test(p)) FUNNEL.track(req, "preview");
+      if (req.method === "GET" && /^\/gh\/[A-Za-z0-9-]+\/career$/.test(p)) FUNNEL.track(req, "career");
       if ((p === "/gh" || p.startsWith("/gh/")) && await GHP.route(req, res, url, p)) return;
       // a handle merged into another profile: every old link (page, city, notes, badge, card) goes to the survivor
       { const ma = p.match(/^\/@([a-z0-9-]+)(\/.*)?$/);
