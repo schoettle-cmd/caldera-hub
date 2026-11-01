@@ -16,7 +16,17 @@ const ROLES: [RegExp, string][] = [
 ];
 const DAY = 86_400_000;
 
-export interface CareerEval { repos: number; commits: number; activeWeeks: number; span: number; recent: number; languages: string[]; roles: string[]; stands: string[]; next: string[] }
+export interface CareerEval { repos: number; commits: number; activeWeeks: number; span: number; recent: number; languages: string[]; style: { name: string; line: string }; roles: { role: string; why: string }[]; proof: string[]; next: string[] }
+
+/** One named style from the same counts, first match wins. Every style is a strength; none ranks a person. */
+function styleOf(o: { repos: number; recent: number; sites: number; langs: number; topShare: number; activeWeeks: number; span: number }): { name: string; line: string } {
+  if (o.sites >= 2) return { name: "Product Builder", line: "Code that ends up live, on sites people can open." };
+  if (o.repos >= 8 && o.topShare >= 0.5) return { name: "Deep Specialist", line: "Most of the work goes into one project, and it goes deep." };
+  if (o.repos >= 20 && o.recent >= 5) return { name: "Toolmaker", line: "Lots of focused projects, kept moving." };
+  if (o.langs >= 4) return { name: "Polyglot", line: "Comfortable across languages, picking the right one for the job." };
+  if (o.span && o.activeWeeks >= o.span * 0.75) return { name: "Steady Maintainer", line: "Commits week after week, the habit that keeps projects alive." };
+  return { name: "Explorer", line: "Trying ideas in public and following what's interesting." };
+}
 
 export function careerEval(city: CityData, now = Date.now()): CareerEval {
   const R: CityRepo[] = city.districts.flatMap(d => d.repos).filter(r => !r.locked && r.public !== false && r.kind === undefined);
@@ -28,22 +38,21 @@ export function careerEval(city: CityData, now = Date.now()): CareerEval {
   const byLang = new Map<string, number>();
   for (const r of R) if (r.language && r.language !== "Other") byLang.set(r.language, (byLang.get(r.language) || 0) + (r.commits || 0) + 1);
   const languages = [...byLang.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
-  const roles: string[] = [];
-  for (const l of languages) { const m = ROLES.find(([rx]) => rx.test(l)); if (m && !roles.includes(m[1])) roles.push(m[1]); if (roles.length === 3) break; }
+  const roles: { role: string; why: string }[] = [];
+  languages.forEach((l, i) => { const m = ROLES.find(([rx]) => rx.test(l)); if (m && roles.length < 3 && !roles.some(r => r.role === m[1])) roles.push({ role: m[1], why: i === 0 ? `${l} leads your public work` : `You also work in ${l}` }); });
   const recent = R.filter(r => r.pushed && now - Date.parse(r.pushed) < 90 * DAY).length;
   const top = [...R].sort((a, b) => (b.commits || 0) - (a.commits || 0))[0];
   const described = R.filter(r => r.description).length, sites = R.filter(r => r.sites?.length).length;
   const n = (x: number, w: string) => `${x.toLocaleString("en-US")} ${w}${x === 1 ? "" : "s"}`;
-  const stands: string[] = [], next: string[] = [];
-  if (span && activeWeeks >= span / 2) stands.push(`Steady work: commits in ${activeWeeks} of the last ${span} weeks.`);
-  if (top && (top.commits || 0) >= 100) stands.push(`Depth: ${n(top.commits, "commit")} on ${top.name} in the last year.`);
-  if (languages.length >= 3) stands.push(`Range: public work in ${languages.length} languages, led by ${languages.slice(0, 3).join(", ")}.`);
-  if (recent >= 3) stands.push(`Current: ${n(recent, "repo")} pushed in the last 90 days.`);
-  if (sites) stands.push(`Shipping: ${n(sites, "repo")} linked to a live site.`);
-  if (!recent) next.push("Push something public this month. Recent activity is the first thing people check.");
-  if (R.length && described < R.length) next.push(`Add a one-line description to ${n(R.length - described, "repo")}, so people can see what each one does.`);
-  if (R.length && !sites) next.push("Link a live demo from your best repo. A working site says more than a code listing.");
-  if (languages.length === 1) next.push(`Your public work is all ${languages[0]}. One project in a second language shows range, if you want roles beyond it.`);
-  if (span && activeWeeks < span / 2 && commits > 0) next.push("Small, regular commits show steady work better than occasional bursts.");
-  return { repos: R.length, commits, activeWeeks, span, recent, languages: languages.slice(0, 5), roles, stands: stands.slice(0, 4), next: next.slice(0, 3) };
+  const proof: string[] = [], next: string[] = [];
+  if (top && (top.commits || 0) >= 20) proof.push(`${n(top.commits, "commit")} on ${top.name} this year`);
+  if (recent) proof.push(`${n(recent, "repo")} pushed in the last 90 days`);
+  if (languages.length >= 2) proof.push(`Work in ${n(languages.length, "language")}`);
+  if (sites) proof.push(`${n(sites, "repo")} linked to a live site`);
+  if (!recent) next.push("Push something public this month");
+  if (R.length && described < R.length) next.push(`Describe the ${n(R.length - described, "repo")} with no description`);
+  if (R.length && !sites) next.push("Link a live demo from your best repo");
+  if (languages.length === 1) next.push(`Add one project outside ${languages[0]}, if you want roles beyond it`);
+  const style = styleOf({ repos: R.length, recent, sites, langs: languages.length, topShare: commits ? (top?.commits || 0) / commits : 0, activeWeeks, span });
+  return { repos: R.length, commits, activeWeeks, span, recent, languages: languages.slice(0, 5), style, roles, proof: proof.slice(0, 4), next: next.slice(0, 3) };
 }

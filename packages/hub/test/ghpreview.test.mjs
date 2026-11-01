@@ -108,12 +108,13 @@ test("/gh/<login>/career: free evaluation from public data, noindex, not a ratin
     assert.equal((await S.get("/gh/octo/career")).headers.get("location"), "/gh/Octo/career", "canonical case keeps the page");
     const r = await S.get("/gh/Octo/career"); assert.equal(r.status, 200);
     const h = await r.text();
-    assert.match(h, /Free career evaluation/); assert.match(h, /<h1>Octo Cat<\/h1>/); assert.match(h, /noindex/); assert.match(h, /isn't a rating/);
-    assert.match(h, /Frontend or full-stack engineer/, "TypeScript led"); assert.match(h, /Public repos/);
-    assert.match(h, /Claim your city/); assert.doesNotMatch(h, /secret@example\.com/); assert.doesNotMatch(h, /forked/);
+    assert.match(h, /<h1>Octo builds like (an Explorer|a Steady Maintainer)\.<\/h1>/); assert.match(h, /noindex/); assert.match(h, /isn't a rating/);
+    assert.match(h, /Frontend or full-stack engineer/, "TypeScript led"); assert.match(h, /TypeScript leads your public work/); assert.match(h, /public repos/);
+    assert.match(h, /Put this on my free profile/); assert.doesNotMatch(h, /secret@example\.com/); assert.doesNotMatch(h, /forked/);
+    const sky = await S.get("/gh/Octo/skyline.svg"); assert.equal(sky.status, 200); assert.match(await sky.text(), /<rect/);
     assert.match(await (await S.get("/gh/Octo")).text(), /\/gh\/Octo\/career/, "preview links to it");
     assert.equal((await S.get("/gh/acme/career")).headers.get("location"), "/gh/acme", "orgs get the city");
-    assert.doesNotMatch(await (await S.get("/gh/acme")).text(), /career evaluation/i);
+    assert.doesNotMatch(await (await S.get("/gh/acme")).text(), /career read/i);
     assert.equal((await S.get("/gh/nobody-here/career")).status, 404);
   } finally { S.hub.server.close(); }
 });
