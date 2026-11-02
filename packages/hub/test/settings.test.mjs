@@ -116,7 +116,7 @@ test("alerts: pinned first, audience, unread badge on the owner's bar, seen beac
   assert.doesNotMatch(await (await fetch(base + "/@mike/", { headers: ck })).text(), /<span class="ch-badge">/, "/alerts marked it read");
   assert.equal((await fetch(base + "/alerts", { redirect: "manual" })).headers.get("location"), "/signin?back=%2Falerts");
   assert.equal((await fetch(base + "/me/building", { redirect: "manual" })).headers.get("location"), "/signin?back=%2Fme%2Fbuilding", "email intro links come back after sign-in");
-  assert.match(await (await fetch(base + "/signin?back=%2Fme%2Fbuilding")).text(), /href="\/auth\/github\?back=%2Fme%2Fbuilding"/);
+  assert.match(await (await fetch(base + "/signin?back=%2Fme%2Fbuilding")).text(), /href="\/auth\/github\?back=%2Fme%2Fbuilding&from=signin"/);
   // releases post once per version
   const a1 = h.admin.alertPost({ title: "New in Caldera 9.9.9: x", body: "- y", version: "9.9.9" }).posted, a2 = h.admin.alertPost({ title: "again", body: "z", version: "9.9.9" }).posted;
   assert.equal(a1, a2);

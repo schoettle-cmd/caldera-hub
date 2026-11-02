@@ -86,7 +86,7 @@ test("/signin: GitHub first for pages that list a GitHub account; none for pages
   assert.match(si, /href="\/auth\/github\?h=mike"/); assert.match(si, /<b>octo<\/b>/);
   assert.ok(si.indexOf("Continue with GitHub") > 0 && si.indexOf("Continue with GitHub") < si.indexOf("summary email"), "GitHub is first");
   assert.doesNotMatch(await (await fetch(base + "/signin?h=other")).text(), /auth\/github/, "a repo link isn't an account link");
-  const g = await (await fetch(base + "/signin")).text(); assert.match(g, /Sign in to Caldera/); assert.match(g, /href="\/auth\/github"/);
+  const g = await (await fetch(base + "/signin")).text(); assert.match(g, /Sign in to Caldera/); assert.match(g, /href="\/auth\/github\?from=signin"/);
   h.server.close(); fs.rmSync(d, { recursive: true, force: true });
 });
 

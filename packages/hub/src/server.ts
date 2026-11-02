@@ -1536,7 +1536,7 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   // the sign-in standard's shared event names, next to the GitHub funnel steps they mirror
   const AUTH_OF: Record<string, "auth_start" | "auth_ok" | "auth_fail"> = { click: "auth_start", signin: "auth_ok", created: "auth_ok", fail: "auth_fail" };   // click-ext (scripts, crawlers, other sites) is not a start
   const GH = github({ firstValue: (o) => FLOWS.firstValue(o), listings: () => LISTINGS, track: (req, step, detail, owner) => { FUNNEL.track(req, step, detail); if (step === "created") JOIN?.signup(req);
-    if (step === "click") FLOWS.start(req, "github", doorOf(req)); else if (step === "fail") FLOWS.fail(req, "github"); else if (step === "signin" || step === "created") { FLOWS.ok(req, "github", owner, step === "created"); if (step === "created") FLOWS.firstValue(owner); }
+    if (step === "click") { let u: URL | undefined; try { u = new URL(req.url || "/", "http://x"); } catch { /* none */ } FLOWS.start(req, "github", doorOf(req, u)); } else if (step === "fail") FLOWS.fail(req, "github"); else if (step === "signin" || step === "created") { FLOWS.ok(req, "github", owner, step === "created"); if (step === "created") FLOWS.firstValue(owner); }
     const a = AUTH_OF[step]; if (a) FUNNEL.track(req, a, step === "fail" ? detail : "github"); }, accountOk: ext.githubAccountOk, privateMode: PM, searchPref: { on: searchable, set: (o: string, on: boolean) => q("INSERT OR REPLACE INTO search_prefs VALUES (?,?,?)").run(o, on ? 1 : 0, now()) }, q, seal, unseal, accept, erase, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", privateUrl: opts.privateUrl,
     json, readBody, allowNewProfile, byHandle, reserved: TAKEN, fetch: opts.githubFetch,
     verifyPublicCity: (id: string, login: string) => !!EMP?.verifyPublicCity(id, login), republishEmail: (id: string) => EMP?.republish(id), merge: (from: string, into: string, reason: string) => mergeProfiles(from, into, reason), memberByEmail: (e: string) => memberByEmail(e), freshenMs: opts.githubFetch ? 0 : undefined,
@@ -2023,7 +2023,7 @@ ${signupCards(q2, `tap Message on @${e(h)}'s page again`, bq)}
       return;
     }
     signinPage(res, 200, "Sign in", `<h1>Sign in to Caldera</h1><p class="lede">Sign this browser in as the owner of your page. It stays signed in for a year.</p>
-<div class="card"><div class="row" style="flex-wrap:wrap;gap:10px"><a rel="nofollow" class="btn" href="/auth/github${bq}" style="display:inline-flex;align-items:center;gap:8px">${GH_ICON}Continue with GitHub</a>${googleBtn(bq)}</div>
+<div class="card"><div class="row" style="flex-wrap:wrap;gap:10px"><a rel="nofollow" class="btn" href="/auth/github${bq ? bq + "&" : "?"}from=signin" style="display:inline-flex;align-items:center;gap:8px">${GH_ICON}Continue with GitHub</a>${googleBtn((bq ? bq + "&" : "?") + "from=signin")}</div>
 ${CODE_OR}${codeForm("", signinBack(back))}<p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
 <div class="card"><h2>Made your page in Obsidian?</h2><p class="mut">Open your page and tap <b>Sign in</b> in the bar at the top for an email link or a code from Obsidian. Or in Obsidian, run <b>Caldera: Open my public page (as owner)</b>.</p></div>
 <h2 style="margin-top:22px">No page yet?</h2>
@@ -2633,7 +2633,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const pr = h ? byHandle(h) : null;
           if (h && (!pr || modOf(pr.handle, pr.id))) { signinPage(res, 404, "Sign in", `<h1>No such page</h1>`); return; }
           if (!/^[^\s@<>"']{1,64}@[^\s@<>"']+\.[a-z]{2,}$/i.test(email)) { codeSent(res, "", back, "That email doesn't look right. Go back and try again."); return; }
-          FUNNEL.track(req, "auth_start", "code"); FLOWS.start(req, "email", doorOf(req));
+          FUNNEL.track(req, "auth_start", "code"); FLOWS.start(req, "email", "signin");
           if (tooMany("email-ip:" + ip, 10) || tooMany("code-em:" + mail.hashOf(email), 5, 30 * 60_000) || (pr && tooMany("email-h:" + pr.handle, 5))) { codeSent(res, email, back, "Too many codes asked for. Use the newest email, or wait a while and try again."); return; }
           const live = memberByEmail(email), who = pr ? (mail.matches(pr.id, email) || live?.id === pr.id ? pr : null) : live;
           if (who?.handle) {
