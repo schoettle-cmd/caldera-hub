@@ -90,3 +90,13 @@
 :root[data-theme="light"] .hh-types a:nth-child(1) { color: #B2394B; }
 :root[data-theme="light"] .hh-types a:nth-child(2) { color: #8A6210; }
 @media (max-width: 620px) { .hh-types a { flex: 1 1 100%; justify-content: center; } }
+
+/* featured cities: AI developers' public GitHub as cities (Mike 2026-11-02) */
+.featured-cities{margin:0 0 64px}
+.fc-head h2{margin:0 0 6px}.fc-head p{margin:0 0 18px;max-width:62ch}
+.fc-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.fc-card{display:flex;flex-direction:column;height:100%;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--bg-raised);color:var(--text);text-decoration:none;transition:border-color .2s,transform .2s}
+.fc-card:hover,.fc-card:focus-visible{border-color:var(--accent);transform:translateY(-1px);text-decoration:none}
+.fc-card img{display:block;width:100%;height:auto;aspect-ratio:1200/630;object-fit:cover;background:#0c1222}
+.fc-t{display:flex;flex-direction:column;gap:3px;padding:10px 12px 12px;min-height:44px}.fc-t b{color:var(--text-strong);font-size:15px}.fc-t span{color:var(--text-muted);font-size:13px;line-height:1.35}
+@media (max-width:520px){.fc-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.fc-t{padding:8px 10px 10px}.fc-t b{font-size:14px}.fc-t span{font-size:12px}}
