@@ -78,3 +78,21 @@ export const devArm = (vid: string): "a" | "b" => (crypto.createHash("sha256").u
  */
 export const CAREER_TEST = "cg1";
 export const careerArm = (vid: string): "a" | "b" => (crypto.createHash("sha256").update(CAREER_TEST + "|" + vid).digest()[0]! & 1 ? "b" : "a");
+
+/**
+ * Hero button test "pb1" (2026-11-02, Every Signal: calm one action, shortical product-as-landing). "a": the white Get started
+ * above the username box. "b": the username box is the one main action, with a plain "Or sign up" link under it. Independent of
+ * home2 (different salt, same one-day visitor hash); crawlers get "a". Views: funnel steps pb-a / pb-b. Read previews, clicks
+ * and created per view, by arm. If the hero was edited, the visitor gets "a" and the miss is logged once.
+ */
+export const PRIMARY_TEST = "pb1";
+export const primaryArm = (vid: string): "a" | "b" => (crypto.createHash("sha256").update(PRIMARY_TEST + "|" + vid).digest()[0]! & 1 ? "b" : "a");
+const PB_BTN = '<div class="cta hh-cta"><a rel="nofollow" class="btn gh" href="/join?tp=home">Get started</a></div>\n';
+const PB_FINE = '<p class="fine consent" style="margin-top:8px">By signing up you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>';
+let pbWarned = false;
+/** the homepage for pb1 "b", or null when the hero no longer matches */
+export function primaryHome(html: string): string | null {
+  const i = html.indexOf(PB_BTN);
+  if (i < 0 || !html.includes(PB_FINE)) { if (!pbWarned) { pbWarned = true; console.error("pb1: hero changed, serving control"); } return null; }
+  return html.replace(/[ \t]*<div class="cta hh-cta">[^\n]*\n/, "").replace(PB_FINE, '<p class="fine consent" style="margin-top:8px"><a rel="nofollow" href="/join?tp=home">Or sign up</a>. By signing up you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>');
+}

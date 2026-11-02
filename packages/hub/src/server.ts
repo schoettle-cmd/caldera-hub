@@ -24,7 +24,7 @@ import { feed, sentenceText, postTags } from "./feed";
 import { newsToday } from "./news";
 import { gifts } from "./gifts";
 import { funnel, BOT_UA, funnelDay } from "./funnel";
-import { devArm, HOME_TEST, homeArm, armHome, SAVE_TEST, saveArm, CAREER_TEST, careerArm } from "./hometest";
+import { devArm, HOME_TEST, homeArm, armHome, SAVE_TEST, saveArm, CAREER_TEST, careerArm, PRIMARY_TEST, primaryArm, primaryHome } from "./hometest";
 import { GATE_CSS, GATE_JS, okGateKind } from "./signupgate";
 import { emailPages } from "./emailpages";
 import { joinModule, gateScript } from "./join";
@@ -2292,8 +2292,10 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
             const v = FUNNEL.vid(req), arm = v ? homeArm(v) : "a", page = fs.readFileSync(file, "utf8");
             const b = armHome(page, arm);
             if (v) FUNNEL.track(req, (b ? "h2-" + arm : "h2-a") as any, HOME_TEST);
+            const pb = v && primaryArm(v) === "b" ? primaryHome(b || page) : null;
+            if (v) FUNNEL.track(req, pb ? "pb-b" : "pb-a", PRIMARY_TEST);
             res.writeHead(200, { "content-type": MIME[ext] || "text/html; charset=utf-8", "cache-control": "private, max-age=0" });
-            return res.end(withLive(b || page));
+            return res.end(withLive(pb || b || page));
           }
           res.writeHead(200, { "content-type": MIME[ext] || (ext === ".zip" ? "application/zip" : "application/octet-stream"), "cache-control": "public, max-age=600" });
           if (ext === ".html") return res.end(withLive(fs.readFileSync(file, "utf8")));   // whole, so off-site links get their new-window rewrite

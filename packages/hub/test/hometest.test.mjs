@@ -46,3 +46,24 @@ test("home2: crawlers always get control and are not counted", async () => {
   }
   assert.equal(hub.db.prepare("SELECT COUNT(*) n FROM funnel_events").get().n, before);
 });
+
+test("pb1: b drops the hero button, keeps sign-up and consent, both arms counted, bots get control", async () => {
+  const realSite = fileURLToPath(new URL("../../site/", import.meta.url));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-pb1-"));
+  const h = createHub({ dataDir, siteDir: realSite, publicUrl: "http://hub.test", limits: { newProfilesPerDay: 100 } });
+  try {
+    const base2 = "http://127.0.0.1:" + await h.listen(0);
+    const CH = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
+    const seen = { a: 0, b: 0 };
+    for (let i = 0; i < 30; i++) {
+      const page = await (await fetch(base2 + "/", { headers: { "sec-fetch-mode": "navigate", "sec-fetch-site": "none", accept: "text/html", "user-agent": CH + " p" + i } })).text();
+      assert.match(page, /Show my city/);
+      if (page.includes('class="cta hh-cta"')) seen.a++; else { seen.b++; assert.match(page, />Or sign up<\/a>\. By signing up you agree/); }
+    }
+    assert.ok(seen.a && seen.b, "both arms served: the hero still matches the swap");
+    const rows = Object.fromEntries(h.db.prepare("SELECT step, COUNT(*) n FROM funnel_events WHERE step LIKE 'pb-%' GROUP BY step").all().map(r => [r.step, r.n]));
+    assert.equal(rows["pb-a"], seen.a); assert.equal(rows["pb-b"], seen.b);
+    const bot = await (await fetch(base2 + "/", { headers: { "user-agent": "Googlebot/2.1" } })).text();
+    assert.match(bot, /class="cta hh-cta"/);
+  } finally { h.server.close(); fs.rmSync(dataDir, { recursive: true, force: true }); }
+});
