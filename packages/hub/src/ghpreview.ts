@@ -177,7 +177,7 @@ ${seeForm("", true)}<p class="ghp-ex">Try: ${ex.map(l => `<a href="/gh/${l}">@${
     const tail = member ? "" : `<div class="ce-end"><h2>Is this you?</h2><p>A free Caldera profile shows this work to people who can find and message you.</p>${go}<a class="ce-alt" href="${cityUrl}">See the city first</a></div>`;
     const body = !e.repos ? `<h1>No public work to read yet</h1><p class="ce-lead">@${esc(login)} has no public repos. Try another username below.</p>` : `<h1>${esc(first)} builds like ${art} ${esc(e.style.name)}.</h1><p class="ce-lead">${esc(e.style.line)}</p>
 <a class="ce-sky" href="${cityUrl}" aria-label="See the city"><img src="/gh/${esc(login)}/skyline.svg" alt="" width="780" height="200"></a>
-<div class="ce-nums">${num(fmt(e.repos), "public repos")}${num(fmt(e.commits), "commits this year")}${e.span ? num(`${e.activeWeeks} of ${e.span}`, "recent weeks active") : ""}</div>
+<div class="ce-nums">${num(fmt(e.repos), "public repos")}${num(fmt(e.commits), "commits this year")}${e.span && e.activeWeeks >= Math.max(3, e.span / 4) ? num(`${e.activeWeeks} of ${e.span}`, "recent weeks active") : e.languages.length ? num(fmt(e.languages.length), e.languages.length === 1 ? "language" : "languages") : ""}</div>
 ${share}
 ${gated ? (gf ? `<p style="margin:18px 0 8px"><a rel="nofollow" class="ghp-gbtn" href="/auth/google?gh=${esc(login)}">${GOOGLE_ICON}Save your scan with Google</a></p><p class="ce-sub">Your account is made in one step and shows the whole read. Or get it by email:</p>` : "") + careerGate(login) : `${go}
 ${e.roles.length ? sec("Jobs this work fits", `<div class="ce-roles">${e.roles.map(r => `<div><b>${esc(r.role)}</b><span>${esc(r.why)}</span></div>`).join("")}</div>`) : ""}
