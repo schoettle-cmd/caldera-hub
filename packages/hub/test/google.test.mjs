@@ -95,20 +95,20 @@ test("Google-first is off by default: preview, career and join unchanged, ?gf=1 
   const b = await boot();
   try {
     const off = await (await fetch(b.base + "/gh/octo", UA)).text();
-    assert.match(off, /Claim it with GitHub/); assert.doesNotMatch(off, /Continue with Google/);
+    assert.match(off, /Claim it with GitHub/); assert.doesNotMatch(off, /Save your scan with Google/);
     assert.doesNotMatch(await (await fetch(b.base + "/join", UA)).text(), /door=google/);
     const pv = await (await fetch(b.base + "/gh/octo?gf=1", UA)).text();
     assert.match(pv, /auth\/google\?gh=Octo/); assert.match(pv, /Connect GitHub instead/); assert.doesNotMatch(pv, /Claim it with GitHub/);
     assert.match(await (await fetch(b.base + "/join?gf=1", UA)).text(), /door=google/);
     fs.writeFileSync(path.join(b.d, "google-first.json"), JSON.stringify({ on: true }));
-    assert.match(await (await fetch(b.base + "/gh/octo", UA)).text(), /Is this you\? Continue with Google/);
+    assert.match(await (await fetch(b.base + "/gh/octo", UA)).text(), /Save your scan with Google/);
   } finally { b.h.server.closeAllConnections?.(); b.h.server.close(); }
 });
 test("the flag alone does nothing without a Google client", async () => {
   const b = await boot(false);
   try {
     fs.writeFileSync(path.join(b.d, "google-first.json"), JSON.stringify({ on: true }));
-    assert.doesNotMatch(await (await fetch(b.base + "/gh/octo", UA)).text(), /Continue with Google/);
+    assert.doesNotMatch(await (await fetch(b.base + "/gh/octo", UA)).text(), /Save your scan with Google/);
   } finally { b.h.server.closeAllConnections?.(); b.h.server.close(); }
 });
 test("from a preview: the page keeps that city, unverified, and offers Connect GitHub; no Daily or weekly email", async () => {
@@ -117,7 +117,7 @@ test("from a preview: the page keeps that city, unverified, and offers Connect G
     const { r } = await signIn(b, { email: "o@example.com", name: "Olive Oak" }, { query: "?gh=Octo" });
     assert.equal(r.headers.get("location"), "/settings?new=1");
     const c = cookieOf(r), set = await (await fetch(b.base + "/settings?new=1", { headers: { cookie: c } })).text();
-    assert.match(set, /Make your page richer/); assert.match(set, /Verify @Octo/); assert.match(set, /Connect GitHub/); assert.match(set, /Coming soon/);
+    assert.match(set, /Now make it official/); assert.match(set, /Congratulations, your account&#39;s created|Congratulations, your account's created/); assert.match(set, /Skip for now/); assert.match(set, /Verify @Octo/); assert.match(set, /Connect GitHub/); assert.match(set, /Coming soon/);
     const db = hubDb(b), acct = db.prepare("SELECT content, nudge_off, profile_id FROM email_accounts WHERE handle='olive-oak'").get();
     assert.equal(JSON.parse(acct.content).ghPublic.login, "Octo"); assert.equal(JSON.parse(acct.content).via, "google"); assert.equal(acct.nudge_off, 1);
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'email_sub%'").all();

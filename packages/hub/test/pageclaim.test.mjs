@@ -63,7 +63,7 @@ test("after the move the vault's signed publish updates the same page, and the o
   assert.equal(pub.status, 200, await pub.clone().text());
   assert.match(await (await fetch(b.base + "/@gus-vault/")).text(), /Gus From Vault/);
   const set = await fetch(b.base + "/settings", { redirect: "manual", headers: { cookie: own } }); assert.equal(set.status, 200, "settings " + set.status + " " + set.headers.get("location"));
-  assert.doesNotMatch(await set.text(), /Make your page richer/);
+  assert.doesNotMatch(await set.text(), /Now make it official/);
 } finally { stop(b); } });
 test("the claim says which photo to bring, only when there is one", async () => { const b = await boot(); try {
   const { own } = await google(b, "h@example.com", "Hal Photo"); const none = await issue(b, own);
