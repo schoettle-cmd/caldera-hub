@@ -24,6 +24,9 @@ import { alertItem, ALERT_CSS, ALERT_JS, type AlertRow } from "./alerts";
 
 export interface GhPerson { login: string; avatar: string; url: string; relation: string; invited: boolean; canEmail: boolean }
 export interface GhCtx {
+  /** an email page's unverified public-GitHub city (emailpages.ts): mark it as this login's, then rebuild once linked */
+  verifyPublicCity?: (id: string, login: string) => boolean;
+  republishEmail?: (id: string) => void;
   /** apps and websites members list (details looked up and cached by the hub) */
   listings?: () => { resolve: (refs: ListingRef[], mayFetch?: boolean) => Promise<ListingMeta[]>; refsOf: (lines: unknown, kind: ListingKind) => ListingRef[] } | null;
   /** how often a page view may check GitHub for new repos, per member (default 10 minutes; tests use 0) */
@@ -774,12 +777,15 @@ ${sug.length ? `<p style="margin:.8em 0 .3em">People you might know:</p>${sug.ma
         if (!acct || acct.claimed || (wantH && wantH !== acct.handle) || linkedElsewhere) {
           // an existing link, or a first link with proof; never on a bare claim (anyone can put your GitHub on their page)
           let pr = linkedProfile(me.id, me.login);
+          // an email page with an unverified city from this public account, and this browser owns it: signing in with GitHub verifies it
+          { const ownId = ctx.owner?.of?.(req); if (!pr && ownId) ctx.verifyPublicCity?.(ownId, me.login); }
           if (!pr) { const cands = claimants(me.login).filter(x => !wantH || x.handle === wantH), proven = cands.filter(x => provenOwner(req, x, me));
             if (proven.length === 1) pr = proven[0];
             else if (cands.length) { ctx.track?.(req, "fail", "GitHub link needs proof");
               page(res, 403, "Link your GitHub", `<h1>One step to link your GitHub</h1><p>To keep GitHub accounts safe, Caldera links a GitHub account to a page only with proof that both are yours. Either:</p><ul><li>Open your page as its owner first: in Obsidian run <b>Caldera: Open my public page (as owner)</b>, then sign in with GitHub again, or</li><li>Put your Caldera page (<code>caldera.social/@your-handle</code>) in your GitHub profile's website or bio, then sign in with GitHub again.</li></ul><p><a rel="nofollow" class="btn" href="/auth/github">Sign in with GitHub</a></p>`); return true; } }
           if (pr && ctx.owner && (!wantH || wantH === pr.handle)) {
             q("INSERT OR REPLACE INTO gh_links VALUES (?,?,?,?)").run(me.id, me.login, pr.id, new Date().toISOString());
+            try { ctx.republishEmail?.(pr.id); } catch (e: any) { console.error("verified city republish", e?.message); }
             // this GitHub account also has its own page here (signed up with GitHub before the vault): one person, one
             // profile. The GitHub page merges into the proven one; its handle redirects there, GitHub signs in there
             if (acct && !acct.claimed && acct.profile_id !== pr.id && ctx.merge) {

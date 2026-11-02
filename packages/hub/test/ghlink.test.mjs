@@ -17,6 +17,7 @@ function hubWith(extra = {}) {
   const fake = async (u, init = {}) => { u = String(u);
     if (u.endsWith("/access_token")) { const code = JSON.parse(init.body || "{}").code; who = code; return J({ access_token: "tok-" + code, expires_in: 28800 }); }
     if (u.endsWith("/user")) { const x = USERS[who]; return J({ ...x, name: x.login, created_at: "2019-01-01T00:00:00Z", public_repos: 1, followers: 1, html_url: "https://github.com/" + x.login, avatar_url: "https://avatars.githubusercontent.com/u/1" }); }
+    if (/\/users\/octo$/i.test(u)) return J({ login: "Octo", type: "User", name: "Octo Cat", html_url: "https://github.com/Octo" });
     if (u.includes("avatars.githubusercontent.com")) return new Response(Buffer.from("png"));
     if (u.includes("/repos?") || u.includes("/events")) return J([]);
     return J({}, 404); };
@@ -109,3 +110,40 @@ test("founder: every new profile (Obsidian or GitHub) starts as the founder's fr
   assert.equal(count(off.h, "SELECT COUNT(*) n FROM friends"), 0);
   off.h.server.close(); fs.rmSync(off.d, { recursive: true, force: true });
 });
+
+test("unverified public-GitHub city: it never blocks the real owner, and its own page verifies by signing in with that GitHub", async () => {
+  process.env.TYPED_MIN_MS = "0";
+  const sent = []; const { h } = hubWith({ email: { send: async m => { sent.push(m); } } }); const { base, signIn } = await start(h);
+  const CH = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36", NAV = { "sec-fetch-mode": "navigate", "sec-fetch-site": "none", accept: "text/html", "user-agent": CH };
+  const makePage = async (email) => {
+    const form = await (await fetch(base + "/join/developer?gh=octo", { headers: NAV })).text(), stamp = form.match(/name="stamp" value="([^"]+)"/)[1];
+    const hdr = { ...NAV, "content-type": "application/x-www-form-urlencoded", origin: "http://hub.test" };
+    await fetch(base + "/join/developer", { method: "POST", headers: hdr, body: new URLSearchParams({ name: "Someone", email, gh: "Octo", stamp }) });
+    const t = sent.at(-1).text.match(/t=([A-Za-z0-9_-]+)/)[1];
+    const c = await fetch(base + "/start/confirm", { method: "POST", redirect: "manual", headers: hdr, body: new URLSearchParams({ t }) });
+    return { own: (c.headers.getSetCookie?.() || []).map(x => x.split(";")[0]).find(x => x.startsWith("cal_own=")), handle: c.headers.get("location").match(/@([a-z0-9-]+)\//)[1] };
+  };
+  try {
+    const page = await makePage("someone@gmail.com");
+    const settings = await (await fetch(base + "/settings", { headers: { ...NAV, cookie: page.own } })).text(); assert.match(settings, /Your city is unverified/); assert.match(settings, /Verify with GitHub/);
+    // the page owner's browser, signing in as the same GitHub: verified on that page, no second page, label gone
+    const a = await fetch(base + "/auth/github", { headers: { cookie: page.own }, redirect: "manual" });
+    const jar = [page.own, ...(a.headers.getSetCookie?.() || []).map(c => c.split(";")[0]).filter(c => !c.endsWith("="))];
+    const state = new URL(a.headers.get("location")).searchParams.get("state");
+    const cb = await fetch(base + `/auth/github/callback?code=octo&state=${state}`, { headers: { cookie: jar.join("; ") }, redirect: "manual" });
+    assert.equal(cb.status, 302); assert.equal(cb.headers.get("location"), `/@${page.handle}/`);
+    assert.equal(h.db.prepare("SELECT profile_id FROM gh_links").all().length, 1); assert.equal(h.db.prepare("SELECT COUNT(*) n FROM gh_accounts").get().n, 0, "no second page");
+    assert.doesNotMatch(await (await fetch(base + "/settings", { headers: { ...NAV, cookie: page.own } })).text(), /Your city is unverified/);
+  } finally { h.server.close(); }
+  // someone else's unverified page must not stop the real owner: GitHub sign-up makes their own page, no proof screen
+  const second = hubWith({ email: { send: async m => { sent.push(m); } } }); const s2 = await start(second.h); 
+  try {
+    const form = await (await fetch(s2.base + "/join/developer?gh=octo", { headers: NAV })).text(), stamp = form.match(/name="stamp" value="([^"]+)"/)[1];
+    const hdr = { ...NAV, "content-type": "application/x-www-form-urlencoded", origin: "http://hub.test" };
+    await fetch(s2.base + "/join/developer", { method: "POST", headers: hdr, body: new URLSearchParams({ name: "Impostor", email: "x@gmail.com", gh: "Octo", stamp }) });
+    await fetch(s2.base + "/start/confirm", { method: "POST", redirect: "manual", headers: hdr, body: new URLSearchParams({ t: sent.at(-1).text.match(/t=([A-Za-z0-9_-]+)/)[1] }) });
+    const real = await s2.signIn("octo"); assert.equal(real.cb.status, 302, "not the proof page"); assert.equal(second.h.db.prepare("SELECT COUNT(*) n FROM gh_accounts").get().n, 1);
+    assert.equal(second.h.db.prepare("SELECT COUNT(*) n FROM gh_links").get().n, 0);
+  } finally { delete process.env.TYPED_MIN_MS; second.h.server.close(); }
+});
+

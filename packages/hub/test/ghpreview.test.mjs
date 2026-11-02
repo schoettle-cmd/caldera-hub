@@ -145,3 +145,30 @@ test("cg1: arm b holds back the rest of the read until an email, sends the exist
     assert.equal(n["cg-email"], 1); assert.ok(n["cg-a"] > 0 && n["cg-b"] > 0);
   } finally { S.hub.server.close(); }
 });
+
+test("email sign-up with a public GitHub: the city comes along, labeled unverified, without any claim on the account", async () => {
+  const S = await setup(); process.env.TYPED_MIN_MS = "0";
+  try {
+    const CH = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
+    const NAV = { "sec-fetch-mode": "navigate", "sec-fetch-site": "none", accept: "text/html", "user-agent": CH };
+    assert.match(await (await fetch(S.base + "/gh/octo", { headers: NAV, redirect: "follow" })).text(), /join\/developer\?gh=Octo/, "preview offers it");
+    const form = await (await fetch(S.base + "/join/developer?gh=octo", { headers: NAV })).text();
+    assert.match(form, /name="gh" value="Octo"/); assert.match(form, /never connect to your account/); assert.match(form, /unverified city/);
+    const stamp = form.match(/name="stamp" value="([^"]+)"/)[1];
+    const post = (body) => fetch(S.base + "/join/developer", { method: "POST", redirect: "manual", headers: { ...NAV, "content-type": "application/x-www-form-urlencoded", origin: "http://hub.test" }, body: new URLSearchParams(body) });
+    const r = await post({ name: "Someone", email: "someone@gmail.com", gh: "Octo", stamp }); assert.equal(r.status, 200);
+    assert.equal(S.sent.length, 1);
+    const t = S.sent[0].text.match(/t=([A-Za-z0-9_-]+)/)[1];
+    const c = await fetch(S.base + "/start/confirm", { method: "POST", redirect: "manual", headers: { ...NAV, "content-type": "application/x-www-form-urlencoded", origin: "http://hub.test" }, body: new URLSearchParams({ t }) });
+    assert.equal(c.status, 302); assert.match(c.headers.get("location"), /city\.html/, "goes straight to the city");
+    const h = c.headers.get("location").match(/@([a-z0-9-]+)\//)[1];
+    const page = await (await fetch(S.base + `/@${h}/city.html`, { headers: NAV })).text();
+    assert.match(page, /Unverified city/); assert.match(page, /public GitHub URL for @Octo/); assert.match(page, /agentkit/i, "the real public repos");
+    const man = JSON.parse(fs.readFileSync(path.join(S.d, "profiles", h, "caldera.json"), "utf8"));
+    assert.doesNotMatch(JSON.stringify(man.body?.links ?? man.links ?? []), /github\.com\/Octo/i, "no claim on the account");
+    assert.match(await (await fetch(S.base + "/gh/Octo", { headers: NAV })).text(), /Claim it with GitHub/, "/gh/Octo stays neutral: the real owner can still claim it");
+    assert.equal(S.hub.db.prepare("SELECT detail FROM funnel_events WHERE step='email-created'").get().detail, "gh");
+    assert.equal(S.hub.db.prepare("SELECT COUNT(*) n FROM gh_links").get().n, 0);
+  } finally { delete process.env.TYPED_MIN_MS; S.hub.server.close(); }
+});
+

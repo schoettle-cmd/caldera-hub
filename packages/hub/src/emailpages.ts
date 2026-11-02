@@ -38,6 +38,9 @@ export interface Profile extends Typed {
   timeline?: [string, string][];
   /** an update's "this week" lines: [project, what happened] */
   worked?: [string, string][];
+  /** a city built from a public GitHub account named at sign-up (Mike 2026-11-02: developers won't connect GitHub). Unverified:
+   *  never in `links`, so it can't count as a claim on that account or block the real owner's sign-up (github.ts claimants). */
+  ghPublic?: { login: string; city: any; fetched: string };
 }
 const LIST_KEYS = ["links", "now", "projects", "timeline", "topics", "worked_on", "worked on"];
 
@@ -114,7 +117,7 @@ export interface EmailCtx {
   /** remember the confirmed address so message alerts and the daily summary can reach them */
   rememberEmail: (owner: string, email: string) => void;
   /** count a sign-up funnel step (funnel.ts) */
-  track?: (req: http.IncomingMessage, step: "confirm-open" | "form-submit" | "email-created" | "gh-return" | "typed-form" | "typed-sent" | "typed-bot", detail?: string) => void;
+  track?: (req: http.IncomingMessage, step: "confirm-open" | "form-submit" | "email-created" | "gh-return" | "ghe-open" | "ghe-sent" | "typed-form" | "typed-sent" | "typed-bot", detail?: string) => void;
   /** delete the member and everything tied to them (the hub's own erase) */
   eraseProfile: (id: string) => void;
   onPublished?: (id: string, created: boolean) => void;
@@ -124,6 +127,12 @@ export interface EmailCtx {
   mailExisting?: (member: { id: string; handle: string }, email: string, back: string, inv: string) => Promise<boolean>;
   /** credit the member whose invite brought a new page; returns the inviter's id */
   recordReferral?: (invitee: string, inviterHandle: unknown, via: string) => string | null;
+  /** the public GitHub read behind /gh/<login> */
+  ghRead?: (login: string, req?: http.IncomingMessage) => Promise<{ ok: true; p: { org?: boolean; login: string; name: string; city: any; fetched: string } } | { ok: false; why: string }>;
+  /** a member already verified as this GitHub login */
+  ghMember?: (login: string) => string | null;
+  /** has this page proved it owns a GitHub account (gh_links)? */
+  ghVerified?: (id: string) => boolean;
 }
 
 export function emailPages(c: EmailCtx) {
@@ -172,8 +181,9 @@ export function emailPages(c: EmailCtx) {
       return { name: p.name, project: p.name, public: true, language: p.status || "Project", commits: 4 + mine.length * 6, weeks, week: weeks[11],
         today: mine.filter(l => now - Date.parse(l.ts) < DAY).length, pushed: last || acct.created, created: acct.created, size: 1, url: p.url || undefined, description: p.about || undefined };
     });
-    const city = repos.length ? cityData(repos, () => ({ n: 0, paths: [] }), new Date().toISOString()) : undefined;
-    const props: [string, string][] = ([["Based", pr.location || ""], ["Role", pr.role || ""], ["On Caldera since", String(acct.created).slice(0, 10)]] as [string, string][]).filter(x => x[1]);
+    const ghp = pr.ghPublic, ghOk = !!ghp && !!c.ghVerified?.(acct.profile_id);
+    const city = ghp?.city || (repos.length ? cityData(repos, () => ({ n: 0, paths: [] }), new Date().toISOString()) : undefined);
+    const props: [string, string][] = ([["Based", pr.location || ""], ["Role", pr.role || ""], ["GitHub", ghp ? `@${ghp.login}${ghOk ? "" : ", unverified, from a public URL"}` : ""], ["On Caldera since", String(acct.created).slice(0, 10)]] as [string, string][]).filter(x => x[1]);
     const updates = log.slice(-60);
     const daily = Array.from({ length: 30 }, (_, i) => { const d = new Date(now - (29 - i) * DAY).toISOString().slice(0, 10);
       return { date: d, counts: { meetings: 0, emails: 0, prompts: 0, commits: 0, notes: updates.filter(u => u.ts.slice(0, 10) === d).length, docs: 0 } as any }; });
@@ -189,6 +199,7 @@ export function emailPages(c: EmailCtx) {
     const ph = photoOf(acct.profile_id); if (ph) { p.avatar = `img/photo.${ph.ext}`; p.icon = p.avatar; }
     const files = renderProfile(p) as Record<string, any>;
     if (ph) files[p.avatar!] = fs.readFileSync(ph.file);
+    if (ghp && !ghOk && typeof files["city.html"] === "string") files["city.html"] = files["city.html"].replace(/<body([^>]*)>/, `<body$1><div style="padding:8px 14px;background:#2E2B3A;color:#ECE9F2;font:13px/1.4 'IBM Plex Sans',Arial,sans-serif;text-align:center">Unverified city. Built from the public GitHub URL for @${esc(ghp.login)}, given by this page's owner.</div>`);
     if (pr.kind && typeof files["index.html"] === "string") {   // Designer / Business: their colors, sections and images
       files["index.html"] = typedIndex(files["index.html"], pr);
       for (const w of pr.work || []) for (const im of w.images) { const f = path.join(photoDir(acct.profile_id), "work", im); if (fs.existsSync(f)) files[`img/work/${im}`] = fs.readFileSync(f); }
@@ -236,7 +247,7 @@ ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(
     const pr: Profile = JSON.parse(acct.content || "{}"), log: any[] = JSON.parse(acct.log || "[]"), last = log.length ? log[log.length - 1].ts : acct.updated;
     c.page(res, 200, "Your page", `${STYLE}<main class="ep"><h1>Your page</h1>
 <p class="lede"><a href="/@${esc(acct.handle)}/">caldera.social/@${esc(acct.handle)}</a> &middot; <a href="/@${esc(acct.handle)}/city.html">your city</a> &middot; last updated ${esc(String(last || "").slice(0, 10))}</p>
-${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(msg.replace(/^ok:/, ""))}</p>` : ""}${pr.kind ? typedEditor(pr, acct.handle) : ""}
+${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(msg.replace(/^ok:/, ""))}</p>` : ""}${pr.ghPublic && !c.ghVerified?.(acct.profile_id) ? `<section class="card" id="verify"><h2>Your city is unverified</h2><p class="mut">It comes from the public GitHub URL for <b>@${esc(pr.ghPublic.login)}</b>. It stays that way unless you sign in once with that GitHub account, which is read-only and optional.</p><a rel="nofollow" class="btn small" href="/auth/github?back=${encodeURIComponent(`/@${acct.handle}/`)}">Verify with GitHub</a></section>` : ""}${pr.kind ? typedEditor(pr, acct.handle) : ""}
 ${pr.kind ? "" : `<section class="card" id="update"><h2>What's new? Update your page in a minute</h2><p class="mut">Copy this into ChatGPT or Claude, then paste its answer below. Every project you mention grows its building in your city; this week's get lit windows.</p>
 <pre id="p-up">${esc(UPDATE_PROMPT)}</pre><button type="button" class="btn small" data-copy="p-up">Copy the update prompt</button>
 <form method="post" action="/settings/page" style="margin-top:12px"><input type="hidden" name="do" value="update"><textarea name="text" maxlength="20000" required placeholder="now:&#10;- ...&#10;worked_on:&#10;- Project | what I did"></textarea>
@@ -329,7 +340,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       c.rememberEmail(acct.profile_id, email);
       try { publish(acct); } catch (e: any) { c.page(res, 500, "Not yet", `${STYLE}<main class="ep"><h1>We couldn't publish your page</h1><p class="mut">${esc(e.message)}</p><p><a class="btn" href="/start">Try again</a></p></main>`); return true; }
       c.onPublished?.(acct.profile_id, created);
-      if (created) c.track?.(req, "email-created", pr.kind || (inv ? "invite" : ""));
+      if (created) c.track?.(req, "email-created", pr.kind || (pr.ghPublic ? "gh" : inv ? "invite" : ""));
       // joined from someone's invite (e.g. their Message button): credit them, and the new member follows them
       if (created && inv && inv !== acct.handle) try {
         const inviter = c.recordReferral?.(acct.profile_id, inv, "email");
@@ -344,9 +355,15 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     const tm = p.match(/^\/join\/(designer|business|developer)$/);
     if (tm) {
       const kind = tm[1] as SignupKind, page = (st: number, o: Parameters<typeof typedSignupForm>[1]) => c.page(res, st, kind === "developer" ? "Developer profile" : kind === "designer" ? "Designer profile" : "Business profile", typedSignupForm(kind, { stamp: c.seal("ts:" + (Date.now() - 4000)), ...o }));
-      if (req.method === "GET") { c.track?.(req, "typed-form", kind); page(200, { inv: okInv(url.searchParams.get("invite")), stamp: c.seal("ts:" + Date.now()) }); return true; }
+      const ghLogin = (v: unknown) => { const s = String(v ?? ""); return kind === "developer" && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(s) ? s : ""; };
+      if (req.method === "GET") {
+        c.track?.(req, "typed-form", kind);
+        let gh = ghLogin(url.searchParams.get("gh")), name = "";
+        if (gh) { if (c.ghMember?.(gh.toLowerCase())) gh = ""; else { const g = await c.ghRead?.(gh, req); if (g?.ok && !g.p.org) { gh = g.p.login; name = g.p.name && g.p.name !== g.p.login ? g.p.name : ""; c.track?.(req, "ghe-open"); } else gh = ""; } }
+        page(200, { inv: okInv(url.searchParams.get("invite")), stamp: c.seal("ts:" + Date.now()), gh, name }); return true;
+      }
       if (req.method !== "POST") return false;
-      const f = await form(req), o = { name: clean(f.get("name"), 80), headline: clean(f.get("headline"), 160), email: String(f.get("email") || "").trim().toLowerCase(), a: String(f.get("a") || "").slice(0, 300), b: clean(f.get("b"), 80), inv: okInv(f.get("invite")) };
+      const f = await form(req), o = { name: clean(f.get("name"), 80), headline: clean(f.get("headline"), 160), email: String(f.get("email") || "").trim().toLowerCase(), a: String(f.get("a") || "").slice(0, 300), b: clean(f.get("b"), 80), inv: okInv(f.get("invite")), gh: ghLogin(f.get("gh")) };
       if (!c.sameOrigin(req)) { page(403, { ...o, msg: "Wrong origin. Please try again." }); return true; }
       if (!o.name) { page(400, { ...o, msg: "Add your name." }); return true; }
       if (!okEmail(o.email)) { page(400, { ...o, msg: "That email doesn't look right." }); return true; }
@@ -362,11 +379,16 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       }
       if (c.tooMany("emailsignup:" + ipKey(req), 8) || c.tooMany("emailsignup:" + hash(o.email), 3)) { page(429, { ...o, msg: "Too many tries. Wait an hour, then try again." }); return true; }
       const pr: Profile = { ...(kind === "developer" ? {} : { kind: kind as Kind }), name: o.name, headline: o.headline || undefined };   // developer = the plain page, GitHub adds the city later
-      if (kind === "developer") { /* nothing else to ask */ }
+      if (kind === "developer") {   // a public GitHub named at sign-up: its city now, unverified. A login someone has verified stays theirs
+        if (o.gh && c.ghMember?.(o.gh.toLowerCase())) { page(409, { ...o, gh: "", msg: `@${o.gh} is already on Caldera. If it's you, sign in with GitHub. Otherwise you can still make a page below.` }); return true; }
+        const g = o.gh ? await c.ghRead?.(o.gh, req) : null;
+        if (g?.ok && !g.p.org) pr.ghPublic = { login: g.p.login, city: g.p.city, fetched: g.p.fetched };
+      }
       else if (kind === "designer") { pr.disciplines = list(o.a); pr.work = []; }
       else { const co = clean(o.a, 60); pr.companies = co ? [{ id: newId(), name: co, role: o.b || undefined }] : []; pr.looking = {}; }
       const inbox = /@(gmail|googlemail)\.com$/.test(o.email) ? `<p><a class="btn" href="https://mail.google.com/mail/u/0/#search/from%3Acaldera.social" target="_blank" rel="noopener">Open Gmail</a></p>` : "";
       const sent = () => c.page(res, 200, "Check your email", `${STYLE}<main class="ep"><h1>Check your email</h1><p class="lede">We sent a link to <b>${esc(o.email)}</b> from hello@caldera.social. Open it and your page goes live.</p>${inbox}<p class="mut">Nothing there in a minute? Check spam, or <a href="/join/${kind}">try again</a>.</p></main>`);
+      if (pr.ghPublic) c.track?.(req, "ghe-sent");
       const ex = q("SELECT handle FROM email_accounts WHERE email_hash=?").get(hash(o.email)) as any, other = ex ? null : c.memberByEmail?.(o.email) || null;
       if (other) { try { await c.mailExisting?.(other, o.email, "", o.inv); } catch (e: any) { page(502, { ...o, msg: "We couldn't send the email: " + e.message }); return true; } sent(); return true; }
       c.track?.(req, "form-submit", kind);
@@ -477,7 +499,11 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
   /** daily: republish (so new pages get listed after 3 days and windows dim) and send the weekly nudge to quiet pages */
   async function daily() {
     for (const a of q("SELECT * FROM email_accounts").all() as any[]) {
-      try { if (c.profile(a.profile_id)) publish(a); } catch (e: any) { console.error("email page republish", a.handle, e.message); }
+      try {
+        const cur = JSON.parse(a.content || "{}") as Profile;   // an unverified public-GitHub city follows the public account
+        if (cur.ghPublic && c.ghRead) { const g = await c.ghRead(cur.ghPublic.login); if (g.ok && !g.p.org) { cur.ghPublic = { login: g.p.login, city: g.p.city, fetched: g.p.fetched }; a.content = JSON.stringify(cur); q("UPDATE email_accounts SET content=? WHERE profile_id=?").run(a.content, a.profile_id); } }
+        if (c.profile(a.profile_id)) publish(a);
+      } catch (e: any) { console.error("email page republish", a.handle, e.message); }
       const quiet = Date.now() - Date.parse(a.updated) > 7 * DAY, nudged = a.nudged ? Date.now() - Date.parse(a.nudged) < 7 * DAY : false;
       if (a.nudge_off || !quiet || nudged) continue;
       q("UPDATE email_accounts SET nudged=? WHERE profile_id=?").run(new Date().toISOString(), a.profile_id);
@@ -541,5 +567,14 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     return { ...counts, unique_candidates: Object.values(kinds).reduce((a, b) => a + b, 0), kinds, sent, failed };
   }
 
-  return { stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
+  /** this page's unverified city is from this login, so the login goes on its links; the caller's proof check then links it */
+  function verifyPublicCity(id: string, login: string): boolean {
+    const a = acctOf(id); if (!a) return false;
+    const pr = JSON.parse(a.content || "{}") as Profile; if (pr.ghPublic?.login.toLowerCase() !== login.toLowerCase()) return false;
+    const url = `https://github.com/${pr.ghPublic.login}`;
+    if (!(pr.links || []).some(l => l[1].toLowerCase() === url.toLowerCase())) pr.links = [...(pr.links || []), ["GitHub", url]];
+    a.content = JSON.stringify(pr); q("UPDATE email_accounts SET content=? WHERE profile_id=?").run(a.content, id); publish(a); return true;
+  }
+  function republish(id: string) { const a = acctOf(id); if (a) publish(a); }
+  return { verifyPublicCity, republish, stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
 }
