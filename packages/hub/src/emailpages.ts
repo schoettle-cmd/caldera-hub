@@ -723,5 +723,5 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     a.content = JSON.stringify(pr); q("UPDATE email_accounts SET content=? WHERE profile_id=?").run(a.content, id); publish(a); c.flows?.firstValue(id);
     return true;
   }
-  return { googleFirst, googleOn: () => !!googleClient(), verifyPublicCity, connectGitHub, republish, stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
+  return { googleFirst, googleOn: () => !!googleClient(), verifyPublicCity, connectGitHub, handleOf: (id: string) => (acctOf(id) as any)?.handle || null, republish, stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
 }

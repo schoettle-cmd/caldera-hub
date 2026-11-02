@@ -18,6 +18,7 @@ function hubWith(extra = {}) {
     if (u.endsWith("/access_token")) { const code = JSON.parse(init.body || "{}").code; who = code; return J({ access_token: "tok-" + code, expires_in: 28800 }); }
     if (u.endsWith("/user")) { const x = USERS[who]; return J({ ...x, name: x.login, created_at: "2019-01-01T00:00:00Z", public_repos: 1, followers: 1, html_url: "https://github.com/" + x.login, avatar_url: "https://avatars.githubusercontent.com/u/1" }); }
     if (/\/users\/octo$/i.test(u)) return J({ login: "Octo", type: "User", name: "Octo Cat", html_url: "https://github.com/Octo" });
+    if (/\/users\/newbie$/i.test(u)) return J({ login: "newbie", type: "User", name: "newbie", html_url: "https://github.com/newbie" });
     if (u.includes("avatars.githubusercontent.com")) return new Response(Buffer.from("png"));
     if (u.includes("/repos?") || u.includes("/events")) return J([]);
     return J({}, 404); };
@@ -148,3 +149,31 @@ test("unverified public-GitHub city: it never blocks the real owner, and its own
 });
 
 
+
+// Sign-up matrix row (product-standards signup-integration-checklist, 2026-11-02): an email page that kept someone's
+// public city (@Octo) is connected by its owner with a DIFFERENT GitHub account. The connected account wins: linked,
+// the city and links are rebuilt from it, the unverified label is gone, and no second page is made.
+test("unverified public city, owner connects a different GitHub: that account is linked and replaces the city", async () => {
+  process.env.TYPED_MIN_MS = "0";
+  const sent = []; const { h } = hubWith({ email: { send: async m => { sent.push(m); } } }); const { base } = await start(h);
+  const CH = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36", NAV = { "sec-fetch-mode": "navigate", "sec-fetch-site": "none", accept: "text/html", "user-agent": CH };
+  try {
+    const form = await (await fetch(base + "/join/developer?gh=octo", { headers: NAV })).text(), stamp = form.match(/name="stamp" value="([^"]+)"/)[1];
+    const hdr = { ...NAV, "content-type": "application/x-www-form-urlencoded", origin: "http://hub.test" };
+    await fetch(base + "/join/developer", { method: "POST", headers: hdr, body: new URLSearchParams({ name: "Someone", email: "someone2@gmail.com", gh: "Octo", stamp }) });
+    const c = await fetch(base + "/start/confirm", { method: "POST", redirect: "manual", headers: hdr, body: new URLSearchParams({ t: sent.at(-1).text.match(/t=([A-Za-z0-9_-]+)/)[1] }) });
+    const own = (c.headers.getSetCookie?.() || []).map(x => x.split(";")[0]).find(x => x.startsWith("cal_own=")), handle = c.headers.get("location").match(/@([a-z0-9-]+)\//)[1];
+    const a = await fetch(base + "/auth/github", { headers: { cookie: own }, redirect: "manual" });
+    const jar = [own, ...(a.headers.getSetCookie?.() || []).map(x => x.split(";")[0]).filter(x => !x.endsWith("="))];
+    const state = new URL(a.headers.get("location")).searchParams.get("state");
+    const cb = await fetch(base + `/auth/github/callback?code=newbie&state=${state}`, { headers: { cookie: jar.join("; ") }, redirect: "manual" });
+    assert.equal(cb.status, 302);
+    const links = h.db.prepare("SELECT login FROM gh_links").all().map(r => r.login.toLowerCase());
+    assert.deepEqual(links, ["newbie"], "the connected account is linked, not the public one");
+    assert.equal(h.db.prepare("SELECT COUNT(*) n FROM gh_accounts").get().n, 0, "no second page");
+    assert.doesNotMatch(await (await fetch(base + "/settings", { headers: { ...NAV, cookie: own } })).text(), /Your city is unverified/);
+    const page = await (await fetch(base + `/@${handle}/`)).text();
+    assert.match(page, /github\.com\/newbie/i, "the page links the connected account");
+    assert.doesNotMatch(page, /unverified, from a public URL/);
+  } finally { delete process.env.TYPED_MIN_MS; h.server.close(); }
+});

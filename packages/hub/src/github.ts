@@ -28,6 +28,7 @@ export interface GhCtx {
   verifyPublicCity?: (id: string, login: string) => boolean;
   republishEmail?: (id: string) => void;
   connectEmailGitHub?: (id: string, login: string) => Promise<boolean>;
+  emailPageHandle?: (id: string) => string | null;
   /** apps and websites members list (details looked up and cached by the hub) */
   listings?: () => { resolve: (refs: ListingRef[], mayFetch?: boolean) => Promise<ListingMeta[]>; refsOf: (lines: unknown, kind: ListingKind) => ListingRef[] } | null;
   /** how often a page view may check GitHub for new repos, per member (default 10 minutes; tests use 0) */
@@ -798,6 +799,20 @@ ${sug.length ? `<p style="margin:.8em 0 .3em">People you might know:</p>${sug.ma
           }
           if (wantH) { page(res, 403, "Not this page", `<h1>That GitHub account isn't the one on this page</h1><p class="mut">You signed in as <b>${esc(me.login)}</b>, but @${esc(wantH)} doesn't list that GitHub account. Add <code>GitHub | https://github.com/${esc(me.login)}</code> to the page's links (in Obsidian: Caldera/profile.md), or sign in another way.</p><p><a class="btn" href="/signin?h=${encodeURIComponent(wantH)}">Other ways to sign in</a></p>`); return true; }
         }
+        // signed in to an email page (owner cookie) and connecting GitHub from it: the session and the GitHub sign-in prove
+        // both, whatever address GitHub has. Link it to THAT page and build its city; never a second page. A GitHub page
+        // this account made before folds into the email page (Growth Conversion's checklist run, 2026-11-02).
+        { const ownId = ctx.owner?.of?.(req), ownH = ownId ? ctx.emailPageHandle?.(ownId) : null;
+          if (ownId && ownH && !(acct && acct.claimed) && !(acct && acct.profile_id === ownId)) {
+            q("INSERT OR REPLACE INTO gh_links VALUES (?,?,?,?)").run(me.id, me.login, ownId, new Date().toISOString());
+            if (acct && !acct.claimed && acct.profile_id !== ownId && ctx.merge) {
+              try { ctx.merge(acct.profile_id, ownId, `GitHub @${me.login} (${me.id}) connected from @${ownH}`); ctx.track?.(req, "signin", "merged GitHub page into email page", ownId); }
+              catch (e: any) { console.error("github merge into email page", me.login, e?.message); }
+            }
+            let built = false; try { built = !!(await ctx.connectEmailGitHub?.(ownId, me.login)); } catch (e: any) { console.error("connect github city", me.login, e?.message); }
+            ctx.track?.(req, "signin", "linked from email page session", ownId); ctx.firstValue?.(ownId); await captureEmail(ownId, tok.access, me);
+            done(`/@${ownH}/${built ? "city.html" : ""}?gh=connected`); return true;
+          } }
         if (acct && acct.claimed) { page(res, 200, "Moved to Obsidian", `<h1>This profile now lives in your vault</h1><p>Edit it from Caldera in Obsidian. <a href="${esc(pub)}/@${esc(acct.handle)}/">Your page</a></p>`); return true; }
         if (acct) {
           q("UPDATE gh_accounts SET token_sealed=?, login=?, reconnect=NULL WHERE gh_id=?").run(ctx.seal(JSON.stringify(tok)), me.login, me.id);   // signing in again reconnects
