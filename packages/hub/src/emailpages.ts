@@ -256,12 +256,13 @@ ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(
 
   let richerPreview = false, richerObsidian = false, skipRicher = false;   // this request: ?gf=1, and whether Connect Obsidian is on
   /** After a Google sign-up: what connecting adds, one main action. Obsidian can't attach to a page made this way yet, so it says so instead of making a second page. */
+  const ghLoginOf = (id: string) => { try { return (q("SELECT login FROM gh_links WHERE profile_id=? ORDER BY ts DESC LIMIT 1").get(id) as any)?.login || ""; } catch { return ""; } };
   function richerCard(acct: any, pr: Profile) {
     const verified = !!c.ghVerified?.(acct.profile_id), linkBack = `/auth/github?back=${encodeURIComponent(`/@${acct.handle}/`)}`;
     const row = (t: string, d: string, act: string) => `<div class="row" style="justify-content:space-between;border-top:1px solid var(--line);padding:10px 0;margin:0;flex-wrap:nowrap"><div><b>${t}</b><br><span class="mut">${d}</span></div><div style="flex:none">${act}</div></div>`;
     const city = pr.ghPublic ? `Verify @${esc(pr.ghPublic.login)} so your city counts as yours. Read-only.` : "Your repos become your city. Read-only.";
     return `<section class="card" id="richer"><h2>Now make it official</h2><p class="mut">Connect GitHub and Obsidian. Optional, any time.</p>
-${verified ? "" : row("GitHub", city, `<a rel="nofollow" class="btn small" href="${linkBack}">Connect GitHub</a>`)}
+${verified ? row("GitHub", `Connected as @${esc(ghLoginOf(acct.profile_id) || "your account")}. Your public repos are your city.`, `<a class="btn small" href="/@${esc(acct.handle)}/city.html">View city</a> <a rel="nofollow" class="btn small ghost" href="${linkBack}">Reconnect</a>`) : row("GitHub", city, `<a rel="nofollow" class="btn small" href="${linkBack}">Connect GitHub</a>`)}
 ${pr.kind ? "" : row("Your AI", "ChatGPT or Claude writes your About, projects and links.", `<a class="btn small ghost" href="#update">Write it</a>`)}
 ${row("Obsidian", "Your notes and daily journal on your page. This page moves into your vault and stays at the same address.", pr.kind ? `<span class="mut">Coming soon</span>` : richerObsidian ? `<form method="post" action="/settings/obsidian" style="margin:0"><button class="btn small ghost" type="submit">Connect Obsidian</button></form>` : `<span class="mut">Coming soon</span>`)}<p style="margin:10px 0 0;text-align:right"><a class="mut" href="/@${esc(acct.handle)}/">Skip for now</a></p></section>`;
   }

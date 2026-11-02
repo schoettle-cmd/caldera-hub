@@ -820,7 +820,10 @@ ${sug.length ? `<p style="margin:.8em 0 .3em">People you might know:</p>${sug.ma
               if (!built) try { ctx.verifyPublicCity?.(mine.id, me.login); ctx.republishEmail?.(mine.id); } catch { /* best effort */ }
               ctx.track?.(req, "signin", "linked by verified email", mine.id); ctx.firstValue?.(mine.id);
             }
-            done(backTo ? backTo + (backTo.includes("?") ? "&" : "?") + "gh=connected" : `/@${mine.handle}/${built ? "city.html" : ""}?gh=connected`); return true;
+            // land on the city with a banner, not back on the profile: GitHub skips its consent screen for an app already
+            // authorized, so without this a reconnect looked like nothing happened (Arsen Yeremin, 2026-11-02)
+            const hasCity = built || !!q("SELECT 1 FROM gh_links WHERE gh_id=? AND profile_id=?").get(me.id, mine.id);
+            done(`/@${mine.handle}/${hasCity ? "city.html" : ""}?gh=connected`); return true;
           }
         }
         const held = !(ctx.accountOk ? ctx.accountOk(me) : true);

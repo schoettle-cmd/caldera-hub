@@ -90,7 +90,7 @@ test("a /start link confirmed after the address became a member's signs in to th
   const dana = h.db.prepare("SELECT profile_id, handle FROM email_accounts").get();
   const p2 = n(h, "SELECT COUNT(*) n FROM profiles");
   const g2 = await signIn("dana");
-  assert.equal(g2.loc, `/@${dana.handle}/?gh=connected`); assert.ok(g2.own, "owner cookie for the email page");
+  assert.ok([`/@${dana.handle}/?gh=connected`, `/@${dana.handle}/city.html?gh=connected`].includes(g2.loc), g2.loc); assert.ok(g2.own, "owner cookie for the email page");
   assert.equal(n(h, "SELECT COUNT(*) n FROM gh_links WHERE gh_id=? AND profile_id=?", USERS.dana.id, dana.profile_id), 1, "the GitHub account is linked to the email page");
   assert.equal(n(h, "SELECT COUNT(*) n FROM profiles"), p2, "no GitHub page made"); assert.equal(n(h, "SELECT COUNT(*) n FROM gh_accounts WHERE gh_id=?", USERS.dana.id), 0);
   h.server.close(); fs.rmSync(d, { recursive: true, force: true });

@@ -1173,6 +1173,16 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
       if (prT && rel === "city.html") { const td = TOOLS.mapData(prT.id);
         if (td.length) html = html.replace(/<head>/i, h => `${h}<script>window.CALDERA_TOOLS=${JSON.stringify(td).replace(/</g, "\\u003c")};window.CALDERA_TOOLS_HUB=${JSON.stringify(PUB())};</script>`); }
     }
+    // just connected GitHub (?gh=connected): say so on arrival, with the account and how many repos the city shows
+    if (rel === "index.html" || rel === "city.html") {
+      const prG = byHandle(handle), lg = prG ? (q("SELECT login FROM gh_links WHERE profile_id=? ORDER BY ts DESC LIMIT 1").get(prG.id) as any)?.login : null;
+      if (lg) {
+        const built = fs.existsSync(path.join(opts.dataDir, "profiles", handle, "city.html"));
+        let n = 0; try { const ch = rel === "city.html" ? html : fs.readFileSync(path.join(opts.dataDir, "profiles", handle, "city.html"), "utf8"); n = Number((ch.match(/city of (\d+) repos?/i) || [])[1] || 0); } catch { /* not built */ }
+        const d = JSON.stringify({ login: String(lg), repos: n, built, city: `/@${handle}/city.html`, settings: "/settings" }).replace(/</g, "\\u003c");
+        html = html.replace(/<\/body>/i, `<script>(function(){try{if(!/[?&]gh=connected\\b/.test(location.search))return;var g=${d};var b=document.createElement('div');b.setAttribute('role','status');b.style.cssText='position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:9999;max-width:calc(100vw - 24px);display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 14px;border-radius:14px;background:#0f1a33;color:#fff;font:600 14px/1.4 system-ui,-apple-system,sans-serif;box-shadow:0 14px 40px -12px rgba(0,0,0,.5)';var t=g.built?('GitHub connected as @'+g.login+(g.repos?' \\u00b7 your city shows your '+g.repos+' most active public repos':'')):'GitHub connected as @'+g.login+' \\u00b7 building your city\\u2026';var s=document.createElement('span');s.textContent=t;b.appendChild(s);var a=function(h,l){var x=document.createElement('a');x.href=h;x.textContent=l;x.style.cssText='color:#8ab0ff;text-decoration:none;font-weight:700';b.appendChild(x)};if(g.built&&location.pathname.indexOf('city.html')<0)a(g.city,'View city');a(g.settings,'Settings');var c=document.createElement('button');c.type='button';c.setAttribute('aria-label','Close');c.textContent='\\u00d7';c.style.cssText='background:none;border:0;color:#c3cce3;font-size:20px;cursor:pointer;min-width:44px;min-height:44px';c.onclick=function(){b.remove()};b.appendChild(c);document.body.appendChild(b);if(!g.built)setTimeout(function(){location.replace(g.city+'?gh=connected')},9000);}catch(e){}})();</script></body>`);
+      }
+    }
     if (!C.gardenEnabled()) html = stripGarden(html);
     const note = C.gardenEnabled() ? rel.match(/^n\/([a-z0-9-]+)\.html$/) : null;
     if (note && html.includes('class="xlink"')) html = html.replace(/(<a class="xlink" href="[^"]*\/@([a-z0-9-]+)\/n\/([a-z0-9-]+)\.html"[^>]*>)([\s\S]*?)<\/a>/g, (all, open, h, sl, inner) =>
