@@ -27,6 +27,7 @@ import { funnel, BOT_UA, funnelDay } from "./funnel";
 import { devArm, HOME_TEST, homeArm, armHome, SAVE_TEST, saveArm, CAREER_TEST, careerArm, PRIMARY_TEST, primaryArm, primaryHome } from "./hometest";
 import { GATE_CSS, GATE_JS, okGateKind } from "./signupgate";
 import { emailPages, GOOGLE_ICON } from "./emailpages";
+import { flows, doorOf as doorOfRaw } from "./flows";
 import { joinModule, gateScript } from "./join";
 import { signinCodes, codeMail } from "./signincode";
 import { messages } from "./messages";
@@ -529,6 +530,7 @@ export function createHub(opts: HubOptions) {
           const f = byHandle(opts.founder.toLowerCase());
           if (f && f.id !== e.from) befriend(f.id, e.from, "founder", now());
         }
+        if (!existing && !q("SELECT 1 FROM email_accounts WHERE profile_id=?").get(e.from) && !q("SELECT 1 FROM gh_accounts WHERE profile_id=?").get(e.from)) FLOWS.obsidian(e.from);   // a vault made this page
         if (!existing) emit({ type: "signup", handle, name: nameNow, kind: EMP?.kindOf(e.from) || "developer", total: (q("SELECT COUNT(*) c FROM profiles").get() as any).c });
         return { status: 200, body: { ok: true, id: e.from, handle } };
       }
@@ -901,6 +903,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
   let JOIN: ReturnType<typeof joinModule> | null = null;   // /join, the profile-type selector, and the sign-up touchpoints
   let EMP: ReturnType<typeof emailPages> | null = null;   // pages made by email + an AI (no GitHub, no Obsidian)
   function erase(id: string) {
+    FLOWS.erased(id);
     FEED?.erase(id); MSG?.erase(id); CHAT?.erase(id); GUIDE?.erase(id); TOOLS?.erase(id); GIFTS?.erase(id); EMP?.erase(id); PM.erase(id);
     q("DELETE FROM alerts WHERE target=?").run(id); q("DELETE FROM handle_aliases WHERE id=?").run(id);
     const pr = profile(id);
@@ -1523,10 +1526,18 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   const autoOff = (pr: any) => { const b = body(pr); return b.autoConnectGithub === false || b.autoConnectRepos === false; };
   const circleHooks: { joined?: (id: string) => void; signedIn?: (id: string) => void } = {};
   const FUNNEL = funnel({ q, ipOf, botUa: BOT_UA });
+  // sign-up flows, one shape for every way in (flows.ts); caldera-agg reads them as .flows
+  const PUB_HOST = (() => { try { return new URL(opts.publicUrl || "https://caldera.social").host; } catch { return ""; } })();
+  const doorOf = (r: http.IncomingMessage, u?: URL) => doorOfRaw(r, u, PUB_HOST);
+  const FLOWS = flows({ q, vid: (r) => FUNNEL.vid(r), emailOf: (id) => {
+    try { const a = q("SELECT email_sealed FROM email_accounts WHERE profile_id=?").get(id) as any; if (a?.email_sealed) return unseal(a.email_sealed); } catch { /* fall through */ }
+    try { return mail.suggestion(id)?.email || null; } catch { return null; } } });
   q("CREATE TABLE IF NOT EXISTS email_clicks (owner TEXT, day TEXT, src TEXT, PRIMARY KEY (owner, day, src))").run();
   // the sign-in standard's shared event names, next to the GitHub funnel steps they mirror
-  const AUTH_OF: Record<string, "auth_start" | "auth_ok" | "auth_fail"> = { click: "auth_start", "click-ext": "auth_start", signin: "auth_ok", fail: "auth_fail" };
-  const GH = github({ listings: () => LISTINGS, track: (req, step, detail) => { FUNNEL.track(req, step, detail); if (step === "created") JOIN?.signup(req); const a = AUTH_OF[step]; if (a) FUNNEL.track(req, a, step === "fail" ? detail : "github"); }, accountOk: ext.githubAccountOk, privateMode: PM, searchPref: { on: searchable, set: (o: string, on: boolean) => q("INSERT OR REPLACE INTO search_prefs VALUES (?,?,?)").run(o, on ? 1 : 0, now()) }, q, seal, unseal, accept, erase, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", privateUrl: opts.privateUrl,
+  const AUTH_OF: Record<string, "auth_start" | "auth_ok" | "auth_fail"> = { click: "auth_start", signin: "auth_ok", created: "auth_ok", fail: "auth_fail" };   // click-ext (scripts, crawlers, other sites) is not a start
+  const GH = github({ firstValue: (o) => FLOWS.firstValue(o), listings: () => LISTINGS, track: (req, step, detail, owner) => { FUNNEL.track(req, step, detail); if (step === "created") JOIN?.signup(req);
+    if (step === "click") FLOWS.start(req, "github", doorOf(req)); else if (step === "fail") FLOWS.fail(req, "github"); else if (step === "signin" || step === "created") { FLOWS.ok(req, "github", owner, step === "created"); if (step === "created") FLOWS.firstValue(owner); }
+    const a = AUTH_OF[step]; if (a) FUNNEL.track(req, a, step === "fail" ? detail : "github"); }, accountOk: ext.githubAccountOk, privateMode: PM, searchPref: { on: searchable, set: (o: string, on: boolean) => q("INSERT OR REPLACE INTO search_prefs VALUES (?,?,?)").run(o, on ? 1 : 0, now()) }, q, seal, unseal, accept, erase, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", privateUrl: opts.privateUrl,
     json, readBody, allowNewProfile, byHandle, reserved: TAKEN, fetch: opts.githubFetch,
     verifyPublicCity: (id: string, login: string) => !!EMP?.verifyPublicCity(id, login), republishEmail: (id: string) => EMP?.republish(id), merge: (from: string, into: string, reason: string) => mergeProfiles(from, into, reason), memberByEmail: (e: string) => memberByEmail(e), freshenMs: opts.githubFetch ? 0 : undefined,
     siteNav: () => siteHeader(),
@@ -2092,7 +2103,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   const emailPage = (res: http.ServerResponse, status: number, title: string, body: string) => { res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" });
     res.end(navify(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} - Caldera</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"></head><body>${body}</body></html>`)); };
   JOIN = joinModule({ googleFirst: (u) => !!EMP?.googleFirst(u), googleOn: () => !!EMP?.googleOn(), q, ipOf, page: emailPage, memberOf, byHandle, track: (req, step) => FUNNEL.track(req, step as any), devArm: (req) => { const v = FUNNEL.vid(req); return v ? devArm(v) : null; } });
-  EMP = emailPages({ googleFetch: (opts.githubFetch || fetch) as typeof fetch, ghRead: (l, r) => GHP.get(l, r ?? null) as any, ghMember: (l) => memberOfLogin(l), ghVerified: (id) => !!q("SELECT 1 FROM gh_links WHERE profile_id=?").get(id), q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
+  EMP = emailPages({ flows: { start: (r, m, d) => FLOWS.start(r, m, d), fail: (r, m) => FLOWS.fail(r, m), ok: (r, m, o, cr) => FLOWS.ok(r, m, o, cr), firstValue: (o) => FLOWS.firstValue(o), door: (r, u) => doorOf(r, u) }, googleFetch: (opts.githubFetch || fetch) as typeof fetch, ghRead: (l, r) => GHP.get(l, r ?? null) as any, ghMember: (l) => memberOfLogin(l), ghVerified: (id) => !!q("SELECT 1 FROM gh_links WHERE profile_id=?").get(id), q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
     startOwner, memberOf, sameOrigin, allowNewProfile, tooMany, note: (m) => mail.note(m),
     page: emailPage,
     hasFollower: (id) => !!q("SELECT 1 FROM friends WHERE a=? OR b=? LIMIT 1").get(id, id) || !!q("SELECT 1 FROM friend_intents WHERE target=? AND kind='add' LIMIT 1").get(id),
@@ -2622,7 +2633,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const pr = h ? byHandle(h) : null;
           if (h && (!pr || modOf(pr.handle, pr.id))) { signinPage(res, 404, "Sign in", `<h1>No such page</h1>`); return; }
           if (!/^[^\s@<>"']{1,64}@[^\s@<>"']+\.[a-z]{2,}$/i.test(email)) { codeSent(res, "", back, "That email doesn't look right. Go back and try again."); return; }
-          FUNNEL.track(req, "auth_start", "code");
+          FUNNEL.track(req, "auth_start", "code"); FLOWS.start(req, "email", doorOf(req));
           if (tooMany("email-ip:" + ip, 10) || tooMany("code-em:" + mail.hashOf(email), 5, 30 * 60_000) || (pr && tooMany("email-h:" + pr.handle, 5))) { codeSent(res, email, back, "Too many codes asked for. Use the newest email, or wait a while and try again."); return; }
           const live = memberByEmail(email), who = pr ? (mail.matches(pr.id, email) || live?.id === pr.id ? pr : null) : live;
           if (who?.handle) {
@@ -2636,10 +2647,10 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           if (tooMany("code-try-ip:" + ip, 30)) { codeSent(res, email, back, "Too many tries from this network. Wait a while, or tap the link in the email."); return; }
           const r = email ? CODES.useCode(email, f.get("code")) : "none", pr = r !== "bad" && r !== "none" ? profile(r) : null;
           if (!pr?.handle) {
-            FUNNEL.track(req, "auth_fail", r === "bad" ? "wrong code" : "no code waiting");
+            FUNNEL.track(req, "auth_fail", r === "bad" ? "wrong code" : "no code waiting"); FLOWS.fail(req, "email");
             codeSent(res, email, back, r === "bad" ? "That code didn't work. Check the newest email from Caldera and try again." : "That code expired or was already used. Ask for a new one."); return;
           }
-          FUNNEL.track(req, "auth_ok", "code");
+          FUNNEL.track(req, "auth_ok", "code"); FLOWS.ok(req, "email", pr.id, false);
           res.writeHead(303, { location: back || `/@${pr.handle}/`, "set-cookie": startOwner(pr.id), "cache-control": "no-store" }); return res.end();
         }
         // "Not signed in to GitHub on this device? Get a sign-up link by email." One email that works on any device: continue
@@ -2664,7 +2675,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           if (tooMany("signup-mail-ip:" + ip, 6) || tooMany("signup-mail:" + mail.hashOf(email), 3)) { signinPage(res, 429, "Sign up", `<h1>Too many tries</h1><p class="lede">Wait an hour, then try again. Or <a href="/auth/github" rel="nofollow">sign up with GitHub</a> on this device.</p>`); return; }
           const fromCareer = !!city && f.get("from") === "career";   // cg1 "b": the email unlocks the career read
           if (fromCareer) FUNNEL.track(req, "cg-email", CAREER_TEST);
-          FUNNEL.track(req, "email-start", city ? "city" : okB ? "from " + okB.split("/").slice(0, 2).join("/") : "");
+          FLOWS.start(req, "email", doorOf(req)); FUNNEL.track(req, "email-start", city ? "city" : okB ? "from " + okB.split("/").slice(0, 2).join("/") : "");
           const pubB = (opts.publicUrl || "https://caldera.social").replace(/\/$/, ""), qs = (o: Record<string, string>) => { const s = new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString(); return s ? "?" + s : ""; };
           const startBack = /^\/(messages|messages\/@[a-z0-9-]+|feed|people|world)$/.test(okB) ? okB : "";
           const ghLink = `${pubB}/auth/github${qs({ back: okB, invite: inv })}`, startLink = `${pubB}/start${qs({ back: startBack, invite: inv })}`;
@@ -2700,7 +2711,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const e = (v: string) => v.replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]!));
           if (req.method === "GET") { signinPage(res, 200, "Sign in", `<h1>Sign in as @${e(pr.handle)}</h1><p class="lede">Sign this browser in as the owner of the page. It stays signed in for a year; "Sign out" in the bar at the top of your page ends it.</p><form method="post" action="/signin/link"><input type="hidden" name="c" value="${e(c)}"><button class="btn" type="submit">Sign in on this device</button></form>`); return; }
           q("DELETE FROM signin_links WHERE code_hash=?").run(row.code_hash); CODES.linkUsed(row.code_hash);   // the code dies with the link
-          FUNNEL.track(req, "auth_ok", "link");
+          FUNNEL.track(req, "auth_ok", "link"); FLOWS.ok(req, "email", pr.id, false);
           res.writeHead(303, { location: `/@${pr.handle}/`, "set-cookie": startOwner(pr.id), "cache-control": "no-store" }); return res.end();
         }
         if (req.method === "POST" && p === "/signin/pair") {

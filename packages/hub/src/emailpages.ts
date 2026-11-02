@@ -109,6 +109,7 @@ export interface EmailCtx {
   accept: (e: C.Envelope) => { status: number; body: any };
   dataDir: string; publicUrl: string; reserved: Set<string>;
   /** token call for Google sign-in (tests fake it) */ googleFetch: typeof fetch;
+  /** sign-up flow counts (flows.ts) */ flows?: { start: (req: http.IncomingMessage, m: "google" | "email", door: string) => void; fail: (req: http.IncomingMessage, m: "google" | "email") => void; ok: (req: http.IncomingMessage, m: "google" | "email", owner: string, created: boolean) => void; firstValue: (owner: string) => void; door: (req: http.IncomingMessage, url?: URL) => string };
   byHandle: (h: string) => any; profile: (id: string) => any;
   startOwner: (id: string) => string; memberOf: (req: http.IncomingMessage) => string | null;
   sameOrigin: (req: http.IncomingMessage) => boolean; allowNewProfile: (req: http.IncomingMessage) => boolean;
@@ -299,11 +300,12 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
   // keepPage: `pr` is only for a new page, never merged into an existing one.
   async function finishVerified(req: http.IncomingMessage, res: http.ServerResponse, email: string, pr: Profile, back: string, inv: string, opts: { keepPage?: boolean } = {}): Promise<boolean> {
       let acct = q("SELECT * FROM email_accounts WHERE email_hash=?").get(hash(email)) as any, created = false;
-      if (acct?.claimed) { res.writeHead(302, { location: back || `/@${acct.handle}/`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true; }   // moved to a vault: just sign in
+      if (acct?.claimed) { c.flows?.ok(req, opts.keepPage ? "google" : "email", acct.profile_id, false); res.writeHead(302, { location: back || `/@${acct.handle}/`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true; }   // moved to a vault: just sign in
       // the address became a GitHub or Obsidian member's after this link went out (or the link predates this check): the
       // link proves the address, so it signs in to THAT page; the pasted profile is only for email pages
       const other = acct ? null : c.memberByEmail?.(email) || null;
       if (other) {
+        c.flows?.ok(req, opts.keepPage ? "google" : "email", other.id, false);
         res.writeHead(302, { location: back || `/@${other.handle}/`, "set-cookie": c.startOwner(other.id), "cache-control": "no-store" }); res.end(); return true;
       }
       if (!acct) {
@@ -320,6 +322,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       c.rememberEmail(acct.profile_id, email);
       try { publish(acct); } catch (e: any) { c.page(res, 500, "Not yet", `${STYLE}<main class="ep"><h1>We couldn't publish your page</h1><p class="mut">${esc(e.message)}</p><p><a class="btn" href="/start">Try again</a></p></main>`); return true; }
       c.onPublished?.(acct.profile_id, created);
+      c.flows?.ok(req, opts.keepPage ? "google" : "email", acct.profile_id, created);
       if (created) c.track?.(req, "email-created", opts.keepPage ? "google" + (pr.ghPublic ? "-gh" : pr.kind ? "-" + pr.kind : "") : pr.kind || (pr.ghPublic ? "gh" : inv ? "invite" : ""));
       if (created && opts.keepPage) q("UPDATE email_accounts SET nudge_off=1 WHERE profile_id=?").run(acct.profile_id);   // never asked for the weekly email; Settings can turn it on
       // joined from someone's invite (e.g. their Message button): credit them, and the new member follows them
@@ -353,16 +356,17 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     if (p === "/auth/google") {
       if (c.tooMany("google:" + ipKey(req), 30)) { googleFail(res, "Too many tries", "Wait a little while, then try again."); return true; }
       const state = crypto.randomBytes(16).toString("hex");
+      c.flows?.start(req, "google", c.flows.door(req, url));
       const q2 = new URLSearchParams({ client_id: client.client_id, redirect_uri: googleRedirect(), response_type: "code", scope: "openid email profile", state, nonce: state, prompt: "select_account" });
       const sealed = c.seal(JSON.stringify({ state, back: okBack(url.searchParams.get("back")), inv: okInv(url.searchParams.get("invite")), gh: /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(String(url.searchParams.get("gh") || "")) ? url.searchParams.get("gh") : "", type: ["designer", "business"].includes(String(url.searchParams.get("type"))) ? url.searchParams.get("type") : "", exp: Date.now() + 10 * 60_000 }));
       res.writeHead(302, { location: "https://accounts.google.com/o/oauth2/v2/auth?" + q2, "set-cookie": googleCookie(sealed, 600), "cache-control": "no-store" }); res.end();
       return true;
     }
-    if (url.searchParams.get("error")) { res.writeHead(302, { location: "/signin", "cache-control": "no-store" }); res.end(); return true; }   // they cancelled
+    if (url.searchParams.get("error")) { c.flows?.fail(req, "google"); res.writeHead(302, { location: "/signin", "cache-control": "no-store" }); res.end(); return true; }   // they cancelled
     let st: any = null;
     try { const raw = String(req.headers.cookie || "").split(/;\s*/).find(x => x.startsWith(GOOGLE_COOKIE + "="))?.slice(GOOGLE_COOKIE.length + 1) || ""; st = JSON.parse(c.unseal(decodeURIComponent(raw))); } catch { /* missing or forged */ }
     const state = String(url.searchParams.get("state") || ""), code = String(url.searchParams.get("code") || "");
-    if (!st || !state || st.state !== state || st.exp < Date.now() || !code) { googleFail(res, "That sign-in timed out", "Please try again. Nothing was changed."); return true; }
+    if (!st || !state || st.state !== state || st.exp < Date.now() || !code) { c.flows?.fail(req, "google"); googleFail(res, "That sign-in timed out", "Please try again. Nothing was changed."); return true; }
     let claims: any = null;
     try {
       const r = await c.googleFetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -373,8 +377,8 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     } catch (e: any) { console.error("google sign-in", e?.message); }
     const iss = String(claims?.iss || ""), email = String(claims?.email || "").trim().toLowerCase();
     const good = claims && (iss === "https://accounts.google.com" || iss === "accounts.google.com") && claims.aud === client.client_id && claims.nonce === st.state && Number(claims.exp) * 1000 > Date.now();
-    if (!good) { googleFail(res, "Google sign-in didn't finish", "Please try again, or use a code by email."); return true; }
-    if (claims.email_verified !== true || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { googleFail(res, "We need a verified email", "Google hasn't verified that account's email address. Use a code by email instead."); return true; }
+    if (!good) { c.flows?.fail(req, "google"); googleFail(res, "Google sign-in didn't finish", "Please try again, or use a code by email."); return true; }
+    if (claims.email_verified !== true || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { c.flows?.fail(req, "google"); googleFail(res, "We need a verified email", "Google hasn't verified that account's email address. Use a code by email instead."); return true; }
     c.track?.(req, "google-signin");
     const name = String(claims.name || "").replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, 80);
     const pr: any = { via: "google", ...(name ? { name } : {}) };
@@ -423,7 +427,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
         const ph = photoOf(acct.profile_id);
         return J(200, { identity: JSON.parse(c.unseal(acct.key_sealed)), handle: acct.handle, page: { ...pageForVault(JSON.parse(acct.content || "{}")), photoExt: ph?.ext || "" } });
       }
-      q("UPDATE email_accounts SET key_sealed='', claimed=? WHERE profile_id=?").run(new Date().toISOString(), acct.profile_id);
+      q("UPDATE email_accounts SET key_sealed='', claimed=? WHERE profile_id=?").run(new Date().toISOString(), acct.profile_id); c.flows?.firstValue(acct.profile_id);
       q("DELETE FROM page_claims WHERE profile_id=?").run(acct.profile_id);
       return J(200, { ok: true });
     }
@@ -437,6 +441,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       if (url.searchParams.get("via") === "gh-return") c.track?.(req, "gh-return");   // the offer after leaving GitHub (site.js)
       startPage(res, "", "", "", okBack(url.searchParams.get("back")), okInv(url.searchParams.get("invite"))); return true; }
     if (p === "/start" && req.method === "POST") {
+      if (c.sameOrigin(req)) c.flows?.start(req, "email", c.flows.door(req));
       if (!c.sameOrigin(req)) { startPage(res, "Wrong origin. Please try again."); return true; }
       const f = await form(req), text = String(f.get("text") || ""), email = String(f.get("email") || "").trim().toLowerCase();
       const back = okBack(f.get("back")), inv = okInv(f.get("invite")), again = (m: string) => startPage(res, m, text, email, back, inv);
@@ -474,7 +479,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       if (!c.sameOrigin(req)) { c.page(res, 403, "No", `${STYLE}<main class="ep"><h1>Wrong origin</h1></main>`); return true; }
       const cf = await form(req), t = String(cf.get("t") || ""), row = t ? q("SELECT * FROM email_pending WHERE token_hash=?").get(hash(t)) as any : null;
       const back = okBack(cf.get("back")), inv = okInv(cf.get("invite"));
-      if (!row || row.expires < Date.now()) { c.page(res, 400, "Link expired", `${STYLE}<main class="ep"><h1>That link expired or was already used</h1><p><a class="btn" href="/start">Start again</a> &middot; <a href="/signin">Sign in</a></p></main>`); return true; }
+      if (!row || row.expires < Date.now()) { c.flows?.fail(req, "email"); c.page(res, 400, "Link expired", `${STYLE}<main class="ep"><h1>That link expired or was already used</h1><p><a class="btn" href="/start">Start again</a> &middot; <a href="/signin">Sign in</a></p></main>`); return true; }
       q("DELETE FROM email_pending WHERE token_hash=?").run(hash(t));
       return finishVerified(req, res, c.unseal(row.email_sealed), JSON.parse(row.content || "{}") as Profile, back, inv);
     }
@@ -516,7 +521,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       else { const co = clean(o.a, 60); pr.companies = co ? [{ id: newId(), name: co, role: o.b || undefined }] : []; pr.looking = {}; }
       const inbox = /@(gmail|googlemail)\.com$/.test(o.email) ? `<p><a class="btn" href="https://mail.google.com/mail/u/0/#search/from%3Acaldera.social" target="_blank" rel="noopener">Open Gmail</a></p>` : "";
       const sent = () => c.page(res, 200, "Check your email", `${STYLE}<main class="ep"><h1>Check your email</h1><p class="lede">We sent a link to <b>${esc(o.email)}</b> from hello@caldera.social. Open it and your page goes live.</p>${inbox}<p class="mut">Nothing there in a minute? Check spam, or <a href="/join/${kind}">try again</a>.</p></main>`);
-      if (pr.ghPublic) c.track?.(req, "ghe-sent");
+      c.flows?.start(req, "email", c.flows.door(req)); if (pr.ghPublic) c.track?.(req, "ghe-sent");
       const ex = q("SELECT handle FROM email_accounts WHERE email_hash=?").get(hash(o.email)) as any, other = ex ? null : c.memberByEmail?.(o.email) || null;
       if (other) { try { await c.mailExisting?.(other, o.email, "", o.inv); } catch (e: any) { page(502, { ...o, msg: "We couldn't send the email: " + e.message }); return true; } sent(); return true; }
       c.track?.(req, "form-submit", kind);
@@ -542,7 +547,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       const gone = new Set<string>([...(pr.work || []).filter(w => !(r.t.work || []).some(x => x.id === w.id)).flatMap(w => w.images.map(i => "work/" + i)),
         ...(pr.companies || []).filter(co => co.logo && !(r.t.companies || []).some(x => x.id === co.id)).map(co => "logos/" + co.logo)]);
       for (const g of gone) fs.rmSync(path.join(photoDir(acct.profile_id), g), { force: true });
-      q("UPDATE email_accounts SET content=?, updated=? WHERE profile_id=?").run(JSON.stringify(r.t), new Date().toISOString(), acct.profile_id);
+      q("UPDATE email_accounts SET content=?, updated=? WHERE profile_id=?").run(JSON.stringify(r.t), new Date().toISOString(), acct.profile_id); c.flows?.firstValue(acct.profile_id);
       const next = q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id);
       try { publish(next); } catch (e: any) { settingsPage(res, next, "Saved, but publishing failed: " + e.message); return true; }
       c.onPublished?.(acct.profile_id, false);
@@ -579,7 +584,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
         else if ((pr.companies || []).filter(x => x.logo).length >= TYPE_LIMITS.business.logos) { J(400, { error: `That's the limit of ${TYPE_LIMITS.business.logos} logos.` }); return true; }
         fs.writeFileSync(path.join(dir, file), img.data); co.logo = file;
       }
-      q("UPDATE email_accounts SET content=?, updated=? WHERE profile_id=?").run(JSON.stringify(pr), new Date().toISOString(), acct.profile_id);
+      q("UPDATE email_accounts SET content=?, updated=? WHERE profile_id=?").run(JSON.stringify(pr), new Date().toISOString(), acct.profile_id); c.flows?.firstValue(acct.profile_id);
       try { publish(q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id)); } catch (e: any) { J(502, { error: "Saved, but republishing failed: " + e.message }); return true; }
       J(200, { ok: true }); return true;
     }
@@ -594,7 +599,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       const img = cleanImage(Buffer.from(b.data, "base64")); if (!img.ok) { J(400, { error: img.error }); return true; }
       const dir = photoDir(acct.profile_id); fs.mkdirSync(dir, { recursive: true });
       for (const ext of ["jpg", "png", "webp"]) fs.rmSync(path.join(dir, `photo.${ext}`), { force: true });
-      fs.writeFileSync(path.join(dir, `photo.${img.ext}`), img.data);
+      fs.writeFileSync(path.join(dir, `photo.${img.ext}`), img.data); c.flows?.firstValue(acct.profile_id);
       try { publish(q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id)); } catch (e: any) { J(502, { error: "Saved, but republishing failed: " + e.message }); return true; }
       J(200, { ok: true }); return true;
     }
@@ -616,7 +621,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       const log: any[] = JSON.parse(acct.log || "[]"), ts = new Date().toISOString();
       for (const [project, what] of up.worked || []) log.push({ ts, project, what });
       for (const n of up.now || []) { const pj = (next.projects || []).find(x => n.toLowerCase().includes(x.name.toLowerCase())); if (pj && !(up.worked || []).some(w => w[0].toLowerCase() === pj.name.toLowerCase())) log.push({ ts, project: pj.name, what: n }); }
-      q("UPDATE email_accounts SET content=?, log=?, updated=? WHERE profile_id=?").run(JSON.stringify(next), JSON.stringify(log.slice(-500)), ts, acct.profile_id);
+      c.flows?.firstValue(acct.profile_id); q("UPDATE email_accounts SET content=?, log=?, updated=? WHERE profile_id=?").run(JSON.stringify(next), JSON.stringify(log.slice(-500)), ts, acct.profile_id);
       try { publish(q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id)); } catch (e: any) { settingsPage(res, acct, "Saved, but publishing failed: " + e.message); return true; }
       settingsPage(res, q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id), `ok:Updated. ${(up.worked || []).length ? `${up.worked!.length} project update${up.worked!.length === 1 ? "" : "s"} added to your city.` : "Your page is republished."}`);
       return true;
@@ -701,7 +706,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     const pr = JSON.parse(a.content || "{}") as Profile; if (pr.ghPublic?.login.toLowerCase() !== login.toLowerCase()) return false;
     const url = `https://github.com/${pr.ghPublic.login}`;
     if (!(pr.links || []).some(l => l[1].toLowerCase() === url.toLowerCase())) pr.links = [...(pr.links || []), ["GitHub", url]];
-    a.content = JSON.stringify(pr); q("UPDATE email_accounts SET content=? WHERE profile_id=?").run(a.content, id); publish(a); return true;
+    a.content = JSON.stringify(pr); q("UPDATE email_accounts SET content=? WHERE profile_id=?").run(a.content, id); publish(a); c.flows?.firstValue(id); return true;
   }
   function republish(id: string) { const a = acctOf(id); if (a) publish(a); }
   return { googleFirst, googleOn: () => !!googleClient(), verifyPublicCity, republish, stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };

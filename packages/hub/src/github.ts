@@ -34,7 +34,8 @@ export interface GhCtx {
   /** sign-up gate for new GitHub accounts (an open-core hook) */
   accountOk?: (me: { created_at?: string; public_repos?: number; followers?: number }) => boolean;
   /** sign-up funnel counting (click, back from GitHub, created / signed in, failures) */
-  track?: (req: http.IncomingMessage, step: "click" | "back" | "created" | "signin" | "fail", detail?: string) => void;
+  track?: (req: http.IncomingMessage, step: "click" | "back" | "created" | "signin" | "fail", detail?: string, owner?: string) => void;
+  /** a page verified its GitHub: a new member's first value */ firstValue?: (owner: string) => void;
   q: (sql: string) => any; seal: (s: string) => string; unseal: (s: string) => string;
   accept: (e: C.Envelope) => { status: number; body: any }; erase: (id: string) => void;
   dataDir: string; publicUrl: string; privateUrl?: string;
@@ -789,17 +790,17 @@ ${sug.length ? `<p style="margin:.8em 0 .3em">People you might know:</p>${sug.ma
             // this GitHub account also has its own page here (signed up with GitHub before the vault): one person, one
             // profile. The GitHub page merges into the proven one; its handle redirects there, GitHub signs in there
             if (acct && !acct.claimed && acct.profile_id !== pr.id && ctx.merge) {
-              try { ctx.merge(acct.profile_id, pr.id, `GitHub @${me.login} (${me.id}) linked to @${pr.handle}`); ctx.track?.(req, "signin", "merged GitHub page"); }
+              try { ctx.merge(acct.profile_id, pr.id, `GitHub @${me.login} (${me.id}) linked to @${pr.handle}`); ctx.track?.(req, "signin", "merged GitHub page", pr.id); }
               catch (e: any) { console.error("github merge", me.login, "->", pr.handle, e?.message); }
             }
-            ctx.track?.(req, "signin", "linked page"); addCookie(res, ctx.owner.start(pr.id)); ctx.social?.circle?.signedIn(pr.id); await captureEmail(pr.id, tok.access, me); done(backTo || `/@${pr.handle}/`); return true;
+            ctx.track?.(req, "signin", "linked page", pr.id); ctx.firstValue?.(pr.id); addCookie(res, ctx.owner.start(pr.id)); ctx.social?.circle?.signedIn(pr.id); await captureEmail(pr.id, tok.access, me); done(backTo || `/@${pr.handle}/`); return true;
           }
           if (wantH) { page(res, 403, "Not this page", `<h1>That GitHub account isn't the one on this page</h1><p class="mut">You signed in as <b>${esc(me.login)}</b>, but @${esc(wantH)} doesn't list that GitHub account. Add <code>GitHub | https://github.com/${esc(me.login)}</code> to the page's links (in Obsidian: Caldera/profile.md), or sign in another way.</p><p><a class="btn" href="/signin?h=${encodeURIComponent(wantH)}">Other ways to sign in</a></p>`); return true; }
         }
         if (acct && acct.claimed) { page(res, 200, "Moved to Obsidian", `<h1>This profile now lives in your vault</h1><p>Edit it from Caldera in Obsidian. <a href="${esc(pub)}/@${esc(acct.handle)}/">Your page</a></p>`); return true; }
         if (acct) {
           q("UPDATE gh_accounts SET token_sealed=?, login=?, reconnect=NULL WHERE gh_id=?").run(ctx.seal(JSON.stringify(tok)), me.login, me.id);   // signing in again reconnects
-          ctx.track?.(req, "signin"); startSession(res, me.id); ctx.social?.circle?.signedIn(acct.profile_id); await captureEmail(acct.profile_id, tok.access, me); done(backTo || "/me"); return true;
+          ctx.track?.(req, "signin", "", acct.profile_id); startSession(res, me.id); ctx.social?.circle?.signedIn(acct.profile_id); await captureEmail(acct.profile_id, tok.access, me); done(backTo || "/me"); return true;
         }
         // new account: only a brand-new, completely empty GitHub account is held back (bots); new developers are welcome
         // a brand-new, completely empty GitHub account (how bots look) still gets its page, just not listed in People or
@@ -809,7 +810,7 @@ ${sug.length ? `<p style="margin:.8em 0 .3em">People you might know:</p>${sug.ma
         if (ctx.memberByEmail && ctx.owner) {
           const mine = (await verifiedEmails(tok.access)).map(x => ctx.memberByEmail!(x)).find(Boolean);
           if (mine) {
-            ctx.track?.(req, "signin", "matched verified email"); addCookie(res, ctx.owner.start(mine.id)); await captureEmail(mine.id, tok.access, me);
+            ctx.track?.(req, "signin", "matched verified email", mine.id); addCookie(res, ctx.owner.start(mine.id)); await captureEmail(mine.id, tok.access, me);
             done(backTo || `/@${mine.handle}/`); return true;
           }
         }
@@ -835,7 +836,7 @@ ${sug.length ? `<p style="margin:.8em 0 .3em">People you might know:</p>${sug.ma
           const inviter = inv ? ctx.social?.recordReferral(id.id, inv, "github") : null;
           if (inviter) try { ctx.accept(C.sign(id, "friend.request", { to: inviter, note: "I joined Caldera from your invite." })); } catch { /* best effort */ }
         });
-        ctx.track?.(req, "created", held ? "held (brand-new GitHub)" : ""); done("/me?welcome=1" + (backTo ? "&back=" + encodeURIComponent(backTo) : "")); return true;
+        ctx.track?.(req, "created", held ? "held (brand-new GitHub)" : "", id.id); done("/me?welcome=1" + (backTo ? "&back=" + encodeURIComponent(backTo) : "")); return true;
       } catch (e: any) {
         settle(null);
         // a used or expired one-time code (a reload, a retried request, a restart mid-sign-in): one more click fixes it,
