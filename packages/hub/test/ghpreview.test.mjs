@@ -153,7 +153,7 @@ test("email sign-up with a public GitHub: the city comes along, labeled unverifi
     const NAV = { "sec-fetch-mode": "navigate", "sec-fetch-site": "none", accept: "text/html", "user-agent": CH };
     assert.match(await (await fetch(S.base + "/gh/octo", { headers: NAV, redirect: "follow" })).text(), /join\/developer\?gh=Octo/, "preview offers it");
     const form = await (await fetch(S.base + "/join/developer?gh=octo", { headers: NAV })).text();
-    assert.match(form, /name="gh" value="Octo"/); assert.match(form, /never connect to your account/); assert.match(form, /unverified city/);
+    assert.match(form, /name="gh" value="Octo"/); assert.match(form, /no GitHub connection/); assert.match(form, /unverified city/);
     const stamp = form.match(/name="stamp" value="([^"]+)"/)[1];
     const post = (body) => fetch(S.base + "/join/developer", { method: "POST", redirect: "manual", headers: { ...NAV, "content-type": "application/x-www-form-urlencoded", origin: "http://hub.test" }, body: new URLSearchParams(body) });
     const r = await post({ name: "Someone", email: "someone@gmail.com", gh: "Octo", stamp }); assert.equal(r.status, 200);

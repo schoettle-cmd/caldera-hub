@@ -34,7 +34,7 @@ export const LOGIN_RX = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const DAY = 86_400_000;
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 const fmt = (n: number) => n.toLocaleString("en-US");
-const CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://mjonesone.com; connect-src 'self' https://mjonesone.com; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 /** stats a badge shows: public repos and commits in the last year (public repos only) */
 export function cityStats(city: CityData): { repos: number; commits: number } {
