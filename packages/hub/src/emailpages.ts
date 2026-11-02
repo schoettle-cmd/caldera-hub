@@ -145,7 +145,11 @@ export function emailPages(c: EmailCtx) {
       content TEXT, log TEXT, created TEXT, updated TEXT, nudged TEXT, nudge_off INTEGER DEFAULT 0)`).run();
   q(`CREATE TABLE IF NOT EXISTS email_pending (token_hash TEXT PRIMARY KEY, email_sealed TEXT, content TEXT, expires INTEGER, ts TEXT)`).run();
   const hash = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
-  const acctOf = (id: string | null) => id ? q("SELECT * FROM email_accounts WHERE profile_id=?").get(id) as any : null;
+  // Attach Obsidian: a page moves into the owner's vault. Until the plugin confirms it saved the key the hub keeps hosting, so a lost reply can't orphan a page;
+  // after that the hub's copy of the key is gone and the row only says who the address belongs to.
+  try { q("ALTER TABLE email_accounts ADD COLUMN claimed TEXT").run(); } catch { /* already there */ }
+  q("CREATE TABLE IF NOT EXISTS page_claims (code_hash TEXT PRIMARY KEY, profile_id TEXT, expires INTEGER, opened INTEGER)").run();
+  const acctOf = (id: string | null) => id ? q("SELECT * FROM email_accounts WHERE profile_id=? AND claimed IS NULL").get(id) as any : null;
 
   const handleFor = (name: string, email: string) => {
     let h = (name || email.split("@")[0]).toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 26) || "member";
@@ -173,6 +177,7 @@ export function emailPages(c: EmailCtx) {
   /** build and publish the page and city from what they've told us */
   function publish(acct: any): string {
     const pr: Profile = JSON.parse(acct.content || "{}"), log: { ts: string; project: string; what: string }[] = JSON.parse(acct.log || "[]");
+    if (acct.claimed || !acct.key_sealed) return;   // lives in a vault now
     const id = JSON.parse(c.unseal(acct.key_sealed)) as C.Identity, handle = acct.handle as string, name = pr.name || handle, now = Date.now();
     // the city: one building per project; every logged mention adds to it
     const tp = typedProjects(pr), projects = [...(tp || pr.projects || [])];
@@ -248,7 +253,7 @@ ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(
 <p class="mut">Already made your page this way? Enter just your email above (leave the box empty) and we send a sign-in link. Use GitHub? <a rel="nofollow" href="/auth/github${back || inv ? `?${[back ? `back=${encodeURIComponent(back)}` : "", inv ? `invite=${encodeURIComponent(inv)}` : ""].filter(Boolean).join("&")}` : ""}">Sign up with GitHub</a> instead: your repos become your city.</p></main>${copyJs}`);
   }
 
-  let richerPreview = false;   // ?gf=1 on this request
+  let richerPreview = false, richerObsidian = false;   // this request: ?gf=1, and whether Connect Obsidian is on
   /** After a Google sign-up: what connecting adds, one main action. Obsidian can't attach to a page made this way yet, so it says so instead of making a second page. */
   function richerCard(acct: any, pr: Profile) {
     const verified = !!c.ghVerified?.(acct.profile_id), linkBack = `/auth/github?back=${encodeURIComponent(`/@${acct.handle}/`)}`;
@@ -257,7 +262,7 @@ ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(
     return `<section class="card" id="richer"><h2>Make your page richer</h2><p class="mut">Add more whenever you like. All of it is optional.</p>
 ${verified ? "" : row("GitHub", city, `<a rel="nofollow" class="btn small" href="${linkBack}">Connect GitHub</a>`)}
 ${pr.kind ? "" : row("Your AI", "ChatGPT or Claude writes your About, projects and links.", `<a class="btn small ghost" href="#update">Write it</a>`)}
-${row("Obsidian", "Your notes and daily journal on your page.", `<span class="mut">Coming soon</span>`)}</section>`;
+${row("Obsidian", "Your notes and daily journal on your page. This page moves into your vault and stays at the same address.", pr.kind ? `<span class="mut">Coming soon</span>` : richerObsidian ? `<form method="post" action="/settings/obsidian" style="margin:0"><button class="btn small ghost" type="submit">Connect Obsidian</button></form>` : `<span class="mut">Coming soon</span>`)}</section>`;
   }
   function settingsPage(res: http.ServerResponse, acct: any, msg = "") {
     const pr: Profile = JSON.parse(acct.content || "{}"), log: any[] = JSON.parse(acct.log || "[]"), last = log.length ? log[log.length - 1].ts : acct.updated;
@@ -294,6 +299,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
   // keepPage: `pr` is only for a new page, never merged into an existing one.
   async function finishVerified(req: http.IncomingMessage, res: http.ServerResponse, email: string, pr: Profile, back: string, inv: string, opts: { keepPage?: boolean } = {}): Promise<boolean> {
       let acct = q("SELECT * FROM email_accounts WHERE email_hash=?").get(hash(email)) as any, created = false;
+      if (acct?.claimed) { res.writeHead(302, { location: back || `/@${acct.handle}/`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true; }   // moved to a vault: just sign in
       // the address became a GitHub or Obsidian member's after this link went out (or the link predates this check): the
       // link proves the address, so it signs in to THAT page; the pasted profile is only for email pages
       const other = acct ? null : c.memberByEmail?.(email) || null;
@@ -334,6 +340,8 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
   };
   // Google-first sign-up (Mike 2026-11-02): off until data/google-first.json says {"on":true} and the client exists. ?gf=1 previews one page.
   const googleFirst = (url?: URL | null) => { if (url?.searchParams.get("gf") === "1") return true; if (!googleClient()) return false; try { return JSON.parse(fs.readFileSync(path.join(c.dataDir, "google-first.json"), "utf8")).on === true; } catch { return false; } };
+  // Connect Obsidian needs the plugin release that understands CAL-P- codes: separate flag {"obsidian":true}; ?gf=1 previews.
+  const obsidianOn = (url?: URL | null) => { if (url?.searchParams.get("gf") === "1") return true; try { return JSON.parse(fs.readFileSync(path.join(c.dataDir, "google-first.json"), "utf8")).obsidian === true; } catch { return false; } };
   const GOOGLE_COOKIE = "cal_gs", googleRedirect = () => c.publicUrl.replace(/\/$/, "") + "/auth/google/callback";
   const googleCookie = (val: string, age: number) => `${GOOGLE_COOKIE}=${encodeURIComponent(val)}; Path=/auth/google; HttpOnly; SameSite=Lax; Max-Age=${age}${c.publicUrl.startsWith("https:") ? "; Secure" : ""}`;
   const googleFail = (res: http.ServerResponse, title: string, why: string) => c.page(res, 400, title, `${STYLE}<main class="ep"><h1>${esc(title)}</h1><p class="lede">${esc(why)}</p><p><a class="btn" href="/signin">Back to sign in</a></p></main>`);
@@ -380,8 +388,50 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     return finishVerified(req, res, email, pr as Profile, okBack(st.back), okInv(st.inv), { keepPage: true });
   }
 
+  // The page as the vault's settings want it. The plugin only fills fields the vault has empty, so a publish from the vault doesn't wipe the page.
+  const pageForVault = (pr: Profile) => ({
+    name: pr.name || "", headline: pr.headline || "", summary: pr.about || "", now: pr.now || [], links: pr.links || [], timeline: pr.timeline || [],
+    projects: (pr.projects || []).map(x => [x.name, x.about || x.status || x.url || x.name]),
+  });
+  const claimHash = (code: string) => crypto.createHash("sha256").update(code).digest("hex");
+  async function pageClaimRoute(req: http.IncomingMessage, res: http.ServerResponse, url: URL, p: string): Promise<boolean> {
+    const J = (st: number, b: any) => { res.writeHead(st, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(b)); return true; };
+    if (p === "/settings/obsidian" && req.method === "POST") {
+      const acct = acctOf(c.memberOf(req)); if (!acct) { res.writeHead(302, { location: "/signin" }); res.end(); return true; }
+      if (!c.sameOrigin(req)) { settingsPage(res, acct, "Wrong origin."); return true; }
+      if (!obsidianOn(null) && !googleFirst(new URL(String(req.headers.referer || "http://x/")))) { settingsPage(res, acct, "Not available yet."); return true; }
+      const pr = JSON.parse(acct.content || "{}") as Profile;
+      if (pr.kind) { settingsPage(res, acct, "Not available for this kind of page yet."); return true; }
+      if (c.tooMany("page-claim:" + acct.profile_id, 10)) { settingsPage(res, acct, "Too many codes. Try again in an hour."); return true; }
+      const code = "CAL-P-" + crypto.randomBytes(18).toString("base64url");
+      q("DELETE FROM page_claims WHERE profile_id=?").run(acct.profile_id);
+      q("INSERT INTO page_claims VALUES (?,?,?,NULL)").run(claimHash(code), acct.profile_id, Date.now() + 15 * 60_000);
+      c.page(res, 200, "Connect Obsidian", `${STYLE}<main class="ep"><h1>Connect Obsidian</h1><p class="lede">Your vault takes over this page: same address, same friends. After that you edit it from Obsidian.</p>
+<section class="card"><ol><li>In Obsidian, install the Caldera plugin (version 0.29 or newer).</li><li>Open Settings &gt; Caldera &gt; Import a sign-up and paste this code. It works for 15 minutes.</li></ol><pre id="p-code">${esc(code)}</pre><button type="button" class="btn small" data-copy="p-code">Copy the code</button>
+<p class="mut">Your About, projects, timeline and links move with it. Anything already in your vault stays as it is.${pr.ghPublic ? " Your unverified city is replaced by the repos in your vault; connect GitHub any time." : ""}</p></section><p><a href="/settings">Back to your page</a></p></main>${copyJs}`);
+      return true;
+    }
+    if ((p === "/v1/page/claim" || p === "/v1/page/claim/confirm") && req.method === "POST") {
+      if (c.tooMany("page-claim-ip:" + ipKey(req), 30)) return J(429, { error: "too many tries" });
+      let body: any = {}; try { let raw = ""; for await (const x of req) { raw += x; if (raw.length > 4096) break; } body = JSON.parse(raw); } catch { /* falls through */ }
+      const code = String(body.code || ""); if (!/^CAL-P-[\w-]{10,}$/.test(code)) return J(404, { error: "unknown or expired code" });
+      const row = q("SELECT * FROM page_claims WHERE code_hash=?").get(claimHash(code)) as any;
+      const live = row && (row.opened ? row.opened + DAY > Date.now() : row.expires > Date.now());   // opened: a day to confirm, so a dropped reply can be retried
+      const acct = live ? acctOf(row.profile_id) : null; if (!acct || !acct.key_sealed) return J(404, { error: "unknown or expired code" });
+      if (p === "/v1/page/claim") {
+        if (!row.opened) q("UPDATE page_claims SET opened=? WHERE code_hash=?").run(Date.now(), row.code_hash);
+        return J(200, { identity: JSON.parse(c.unseal(acct.key_sealed)), handle: acct.handle, page: pageForVault(JSON.parse(acct.content || "{}")) });
+      }
+      q("UPDATE email_accounts SET key_sealed='', claimed=? WHERE profile_id=?").run(new Date().toISOString(), acct.profile_id);
+      q("DELETE FROM page_claims WHERE profile_id=?").run(acct.profile_id);
+      return J(200, { ok: true });
+    }
+    return false;
+  }
+
   async function route(req: http.IncomingMessage, res: http.ServerResponse, url: URL, p: string): Promise<boolean> {
     if (await googleRoute(req, res, url, p)) return true;
+    if (await pageClaimRoute(req, res, url, p)) return true;
     if (p === "/start" && req.method === "GET") {
       if (url.searchParams.get("via") === "gh-return") c.track?.(req, "gh-return");   // the offer after leaving GitHub (site.js)
       startPage(res, "", "", "", okBack(url.searchParams.get("back")), okInv(url.searchParams.get("invite"))); return true; }
@@ -550,7 +600,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     if (p === "/settings/page" || ((p === "/settings" || p === "/me") && req.method === "GET")) {
       const acct = acctOf(c.memberOf(req));
       if (!acct) { if (p === "/settings/page") { res.writeHead(302, { location: "/signin" }); res.end(); return true; } return false; }   // not an email page: the usual settings
-      if (req.method === "GET") { richerPreview = googleFirst(url); settingsPage(res, acct, url && url.searchParams && url.searchParams.get("photo") ? "ok:Your photo is up and your page is republished." : url?.searchParams?.get("saved") ? "ok:Saved and republished." : url?.searchParams?.get("new") ? `ok:Your page is live at caldera.social/@${acct.handle}. Add your ${JSON.parse(acct.content || "{}").kind === "business" ? "companies" : "work"} below.` : ""); return true; }
+      if (req.method === "GET") { richerPreview = googleFirst(url); richerObsidian = obsidianOn(url); settingsPage(res, acct, url && url.searchParams && url.searchParams.get("photo") ? "ok:Your photo is up and your page is republished." : url?.searchParams?.get("saved") ? "ok:Saved and republished." : url?.searchParams?.get("new") ? `ok:Your page is live at caldera.social/@${acct.handle}. Add your ${JSON.parse(acct.content || "{}").kind === "business" ? "companies" : "work"} below.` : ""); return true; }
       if (!c.sameOrigin(req)) { settingsPage(res, acct, "Wrong origin."); return true; }
       const f = await form(req), act = f.get("do");
       if (act === "delete") {
@@ -575,7 +625,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
 
   /** daily: republish (so new pages get listed after 3 days and windows dim) and send the weekly nudge to quiet pages */
   async function daily() {
-    for (const a of q("SELECT * FROM email_accounts").all() as any[]) {
+    for (const a of q("SELECT * FROM email_accounts WHERE claimed IS NULL").all() as any[]) {
       try {
         const cur = JSON.parse(a.content || "{}") as Profile;   // an unverified public-GitHub city follows the public account
         if (cur.ghPublic && c.ghRead) { const g = await c.ghRead(cur.ghPublic.login); if (g.ok && !g.p.org) { cur.ghPublic = { login: g.p.login, city: g.p.city, fetched: g.p.fetched }; a.content = JSON.stringify(cur); q("UPDATE email_accounts SET content=? WHERE profile_id=?").run(a.content, a.profile_id); } }
