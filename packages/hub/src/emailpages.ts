@@ -408,7 +408,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       q("INSERT INTO page_claims VALUES (?,?,?,NULL)").run(claimHash(code), acct.profile_id, Date.now() + 15 * 60_000);
       c.page(res, 200, "Connect Obsidian", `${STYLE}<main class="ep"><h1>Connect Obsidian</h1><p class="lede">Your vault takes over this page: same address, same friends. After that you edit it from Obsidian.</p>
 <section class="card"><ol><li>In Obsidian, install the Caldera plugin (version 0.29 or newer).</li><li>Open Settings &gt; Caldera &gt; Import a sign-up and paste this code. It works for 15 minutes.</li></ol><pre id="p-code">${esc(code)}</pre><button type="button" class="btn small" data-copy="p-code">Copy the code</button>
-<p class="mut">Your About, projects, timeline and links move with it. Anything already in your vault stays as it is.${pr.ghPublic ? " Your unverified city is replaced by the repos in your vault; connect GitHub any time." : ""}</p></section><p><a href="/settings">Back to your page</a></p></main>${copyJs}`);
+<p class="mut">Your About, projects, timeline, links and photo move with it. Anything already in your vault stays as it is.${pr.ghPublic ? " Your unverified city is replaced by the repos in your vault; connect GitHub any time." : ""}</p></section><p><a href="/settings">Back to your page</a></p></main>${copyJs}`);
       return true;
     }
     if ((p === "/v1/page/claim" || p === "/v1/page/claim/confirm") && req.method === "POST") {
@@ -420,7 +420,8 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       const acct = live ? acctOf(row.profile_id) : null; if (!acct || !acct.key_sealed) return J(404, { error: "unknown or expired code" });
       if (p === "/v1/page/claim") {
         if (!row.opened) q("UPDATE page_claims SET opened=? WHERE code_hash=?").run(Date.now(), row.code_hash);
-        return J(200, { identity: JSON.parse(c.unseal(acct.key_sealed)), handle: acct.handle, page: pageForVault(JSON.parse(acct.content || "{}")) });
+        const ph = photoOf(acct.profile_id);
+        return J(200, { identity: JSON.parse(c.unseal(acct.key_sealed)), handle: acct.handle, page: { ...pageForVault(JSON.parse(acct.content || "{}")), photoExt: ph?.ext || "" } });
       }
       q("UPDATE email_accounts SET key_sealed='', claimed=? WHERE profile_id=?").run(new Date().toISOString(), acct.profile_id);
       q("DELETE FROM page_claims WHERE profile_id=?").run(acct.profile_id);

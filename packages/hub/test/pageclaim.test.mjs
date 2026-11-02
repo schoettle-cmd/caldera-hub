@@ -65,3 +65,10 @@ test("after the move the vault's signed publish updates the same page, and the o
   const set = await fetch(b.base + "/settings", { redirect: "manual", headers: { cookie: own } }); assert.equal(set.status, 200, "settings " + set.status + " " + set.headers.get("location"));
   assert.doesNotMatch(await set.text(), /Make your page richer/);
 } finally { stop(b); } });
+test("the claim says which photo to bring, only when there is one", async () => { const b = await boot(); try {
+  const { own } = await google(b, "h@example.com", "Hal Photo"); const none = await issue(b, own);
+  assert.equal((await (await post(b, "/v1/page/claim", none.code)).json()).page.photoExt, "");
+  const d0 = db(b), id = d0.prepare("SELECT profile_id p FROM email_accounts WHERE handle='hal-photo'").get().p; d0.close();
+  const dir = path.join(b.d, "uploads", "email", id.replace(/[^A-Za-z0-9]/g, "_")); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "photo.png"), "x");
+  const two = await issue(b, own); assert.equal((await (await post(b, "/v1/page/claim", two.code)).json()).page.photoExt, "png");
+} finally { stop(b); } });
