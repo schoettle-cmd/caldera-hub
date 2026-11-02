@@ -12,7 +12,10 @@ async function boot(configured = true) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-google-"));
   if (configured) fs.writeFileSync(path.join(d, "google-oauth.json"), JSON.stringify({ client_id: "cid.apps", client_secret: "shh" }));
   const st = { claims: {}, calls: [] };
-  const fake = async (u, init = {}) => { u = String(u); if (u.includes("oauth2.googleapis.com/token")) { st.calls.push(String(init.body)); return J({ id_token: jwt(st.claims) }); } return J({}, 404); };
+  const fake = async (u, init = {}) => { u = String(u); if (u.includes("oauth2.googleapis.com/token")) { st.calls.push(String(init.body)); return J({ id_token: jwt(st.claims) }); }
+    if (/\/users\/octo$/i.test(u)) return J({ login: "Octo", type: "User", name: "Octo Cat", html_url: "https://github.com/Octo", public_repos: 1, followers: 1, created_at: "2019-01-01T00:00:00Z" });
+    if (/\/users\/octo\/repos/i.test(u)) return J([{ name: "tool", full_name: "Octo/tool", fork: false, private: false, language: "Go", pushed_at: new Date().toISOString(), created_at: "2020-01-01T00:00:00Z", size: 10, html_url: "https://github.com/Octo/tool", stargazers_count: 1 }]);
+    return J({}, 404); };
   let base = "http://hub.test";
   const h = createHub({ dataDir: d, publicUrl: base, githubFetch: fake, limits: { newProfilesPerDay: 100 }, email: { send: async () => {} } });
   base = "http://127.0.0.1:" + await h.listen(0);
@@ -84,4 +87,63 @@ test("refused: state doesn't match its cookie, or no cookie", async () => {
 test("cancelled at Google: back to sign in", async () => {
   const b = await boot();
   try { const r = await fetch(b.base + "/auth/google/callback?error=access_denied", { redirect: "manual" }); assert.equal(r.headers.get("location"), "/signin"); } finally { b.h.server.closeAllConnections?.(); b.h.server.close(); }
+});
+
+const hubDb = b => { const { DatabaseSync } = process.getBuiltinModule("node:sqlite"); return new DatabaseSync(path.join(b.d, fs.readdirSync(b.d).find(f => /^hub\.(sqlite|db)$/.test(f)) || "hub.sqlite")); };
+const UA = { headers: { "user-agent": "Mozilla/5.0" } };
+test("Google-first is off by default: preview, career and join unchanged, ?gf=1 previews it, the flag turns it on", async () => {
+  const b = await boot();
+  try {
+    const off = await (await fetch(b.base + "/gh/octo", UA)).text();
+    assert.match(off, /Claim it with GitHub/); assert.doesNotMatch(off, /Continue with Google/);
+    assert.doesNotMatch(await (await fetch(b.base + "/join", UA)).text(), /door=google/);
+    const pv = await (await fetch(b.base + "/gh/octo?gf=1", UA)).text();
+    assert.match(pv, /auth\/google\?gh=Octo/); assert.match(pv, /Connect GitHub instead/); assert.doesNotMatch(pv, /Claim it with GitHub/);
+    assert.match(await (await fetch(b.base + "/join?gf=1", UA)).text(), /door=google/);
+    fs.writeFileSync(path.join(b.d, "google-first.json"), JSON.stringify({ on: true }));
+    assert.match(await (await fetch(b.base + "/gh/octo", UA)).text(), /Is this you\? Continue with Google/);
+  } finally { b.h.server.closeAllConnections?.(); b.h.server.close(); }
+});
+test("the flag alone does nothing without a Google client", async () => {
+  const b = await boot(false);
+  try {
+    fs.writeFileSync(path.join(b.d, "google-first.json"), JSON.stringify({ on: true }));
+    assert.doesNotMatch(await (await fetch(b.base + "/gh/octo", UA)).text(), /Continue with Google/);
+  } finally { b.h.server.closeAllConnections?.(); b.h.server.close(); }
+});
+test("from a preview: the page keeps that city, unverified, and offers Connect GitHub; no Daily or weekly email", async () => {
+  const b = await boot();
+  try {
+    const { r } = await signIn(b, { email: "o@example.com", name: "Olive Oak" }, { query: "?gh=Octo" });
+    assert.equal(r.headers.get("location"), "/settings?new=1");
+    const c = cookieOf(r), set = await (await fetch(b.base + "/settings?new=1", { headers: { cookie: c } })).text();
+    assert.match(set, /Make your page richer/); assert.match(set, /Verify @Octo/); assert.match(set, /Connect GitHub/); assert.match(set, /Coming soon/);
+    const db = hubDb(b), acct = db.prepare("SELECT content, nudge_off, profile_id FROM email_accounts WHERE handle='olive-oak'").get();
+    assert.equal(JSON.parse(acct.content).ghPublic.login, "Octo"); assert.equal(JSON.parse(acct.content).via, "google"); assert.equal(acct.nudge_off, 1);
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'email_sub%'").all();
+    for (const t of tables) { const n = db.prepare(`SELECT COUNT(*) n FROM ${t.name} WHERE confirmed IS NOT NULL`).get().n; assert.equal(n, 0, "nobody subscribed: " + t.name); }
+    db.close();
+  } finally { b.h.server.closeAllConnections?.(); b.h.server.close(); }
+});
+test("signing in again with ?gh= never changes an existing page", async () => {
+  const b = await boot();
+  try {
+    await signIn(b, { email: "p@example.com", name: "Pat Plain" });
+    const { r } = await signIn(b, { email: "p@example.com", name: "Pat Plain" }, { query: "?gh=Octo" });
+    assert.match(r.headers.get("location"), /^\/@pat-plain\//);
+    const db = hubDb(b), row = db.prepare("SELECT content FROM email_accounts WHERE handle='pat-plain'").get(); assert.equal(JSON.parse(row.content).ghPublic, undefined); db.close();
+  } finally { b.h.server.closeAllConnections?.(); b.h.server.close(); }
+});
+test("designer and business doors keep their type; a bad gh or type is ignored", async () => {
+  const b = await boot();
+  try {
+    const go = await fetch(b.base + "/join/go?door=google&type=designer&from=mike", { redirect: "manual" });
+    assert.equal(go.headers.get("location"), "/auth/google?type=designer&invite=mike");
+    await signIn(b, { email: "d1@example.com", name: "Dee Sign" }, { query: "?type=designer" });
+    await signIn(b, { email: "d2@example.com", name: "Bea Biz" }, { query: "?type=business" });
+    await signIn(b, { email: "d3@example.com", name: "Eve Odd" }, { query: "?type=admin&gh=../x" });
+    const db = hubDb(b), kind = h => JSON.parse(db.prepare("SELECT content FROM email_accounts WHERE handle=?").get(h).content);
+    assert.equal(kind("dee-sign").kind, "designer"); assert.equal(kind("bea-biz").kind, "business");
+    assert.equal(kind("eve-odd").kind, undefined); assert.equal(kind("eve-odd").ghPublic, undefined); db.close();
+  } finally { b.h.server.closeAllConnections?.(); b.h.server.close(); }
 });

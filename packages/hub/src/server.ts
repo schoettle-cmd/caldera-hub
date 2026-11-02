@@ -2091,7 +2091,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
 
   const emailPage = (res: http.ServerResponse, status: number, title: string, body: string) => { res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" });
     res.end(navify(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} - Caldera</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"></head><body>${body}</body></html>`)); };
-  JOIN = joinModule({ googleOn: () => !!EMP?.googleOn(), q, ipOf, page: emailPage, memberOf, byHandle, track: (req, step) => FUNNEL.track(req, step as any), devArm: (req) => { const v = FUNNEL.vid(req); return v ? devArm(v) : null; } });
+  JOIN = joinModule({ googleFirst: (u) => !!EMP?.googleFirst(u), googleOn: () => !!EMP?.googleOn(), q, ipOf, page: emailPage, memberOf, byHandle, track: (req, step) => FUNNEL.track(req, step as any), devArm: (req) => { const v = FUNNEL.vid(req); return v ? devArm(v) : null; } });
   EMP = emailPages({ googleFetch: (opts.githubFetch || fetch) as typeof fetch, ghRead: (l, r) => GHP.get(l, r ?? null) as any, ghMember: (l) => memberOfLogin(l), ghVerified: (id) => !!q("SELECT 1 FROM gh_links WHERE profile_id=?").get(id), q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
     startOwner, memberOf, sameOrigin, allowNewProfile, tooMany, note: (m) => mail.note(m),
     page: emailPage,
@@ -2167,7 +2167,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
     }
     return ghMembers.map.get(login.toLowerCase()) || null;
   };
-  const GHP = ghPreview({ dataDir: opts.dataDir, hub: () => hubUrl(), fetch: opts.githubFetch || fetch, token: () => GH.anyToken(), header: HEADER_MARK, tooMany, ipOf,
+  const GHP = ghPreview({ googleFirst: (u) => !!EMP?.googleFirst(u), dataDir: opts.dataDir, hub: () => hubUrl(), fetch: opts.githubFetch || fetch, token: () => GH.anyToken(), header: HEADER_MARK, tooMany, ipOf,
     saveArm: (req) => { const v = FUNNEL.vid(req); return v ? saveArm(v) : null; }, track: (req, step) => FUNNEL.track(req, step, SAVE_TEST),
     careerArm: (req) => { const v = FUNNEL.vid(req); return v ? careerArm(v) : null; }, trackCareer: (req, step) => FUNNEL.track(req, step, CAREER_TEST),
     memberOf: memberOfLogin, memberCity: (h: string) => { const pr = byHandle(h); return pr && !modOf(pr.handle, pr.id) ? publicCityOf(h) : null; }, pause: opts.githubFetch ? 0 : 150 });

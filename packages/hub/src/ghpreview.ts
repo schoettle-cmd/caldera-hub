@@ -13,6 +13,7 @@ import { cityArt, cardSvg, toPng, ogTags } from "./cards";
 import { careerEval } from "./career";
 
 export interface GhPreviewCtx {
+  /** Google-first sign-up on, or previewed with ?gf=1 */ googleFirst?: (url?: URL | null) => boolean;
   dataDir: string; hub: () => string; fetch: typeof fetch; token: () => Promise<string | null>;
   header: string; tooMany: (key: string, max: number, windowMs?: number) => boolean; ipOf: (req: http.IncomingMessage) => string;
   /** the member handle that owns this GitHub login, if any */
@@ -162,7 +163,7 @@ ${seeForm("", true)}<p class="ghp-ex">Try: ${ex.map(l => `<a href="/gh/${l}">@${
 <p class="ghp-small">Want yours to come alive, with live visitors, your AI agents flying over the repos they're working in, and people who build the same things? <a rel="nofollow" href="/auth/github?back=/me">Sign up with GitHub</a>.</p>`,
       ogTags({ url: `${c.hub()}/gh`, image: `${c.hub()}/world/preview.png`, title: "See any GitHub as a city", description: "Type a GitHub username and walk their public repos as a living city. Caldera, the social network for GitHub and Obsidian." }));
   }
-  function careerPage(login: string, name: string, city: CityData, member: string | null, gated = false): string {
+  function careerPage(login: string, name: string, city: CityData, member: string | null, gated = false, gf = false): string {
     const e = careerEval(city), first = (name && name !== login ? name.split(/\s+/)[0] : "") || `@${login}`;
     const art = /^[AEIOU]/.test(e.style.name) ? "an" : "a";
     const cityUrl = member ? `/@${member}/city.html` : `/gh/${login}`;
@@ -171,7 +172,7 @@ ${seeForm("", true)}<p class="ghp-ex">Try: ${ex.map(l => `<a href="/gh/${l}">@${
     const shareUrl = `${c.hub()}/gh/${login}/career?s=1`, shareText = `${first} builds like ${art} ${e.style.name}. What does your GitHub say?`;
     const share = `<div class="ce-share"><span>Share this read</span><a href="https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}" target="_blank" rel="noopener">X</a><a href="https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}" target="_blank" rel="noopener">LinkedIn</a><a href="https://bsky.app/intent/compose?text=${encodeURIComponent(shareText + " " + shareUrl)}" target="_blank" rel="noopener">Bluesky</a></div>`;
     const sec = (t: string, inner: string) => `<section><h2>${t}</h2>${inner}</section>`;
-    const go = member ? `<a class="ce-go" href="${cityUrl}">See the city</a>` : `<a rel="nofollow" class="ce-go" href="/auth/github?back=${encodeURIComponent(cityUrl)}">Put this on my free profile</a><p class="ce-sub">30 seconds with GitHub. It never sees your code.</p>`;
+    const go = member ? `<a class="ce-go" href="${cityUrl}">See the city</a>` : gf ? `<a rel="nofollow" class="ce-go" href="/auth/google?gh=${esc(login)}">Put this on my free profile</a><p class="ce-sub">Continue with Google. Connect GitHub later if you like. By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>` : `<a rel="nofollow" class="ce-go" href="/auth/github?back=${encodeURIComponent(cityUrl)}">Put this on my free profile</a><p class="ce-sub">30 seconds with GitHub. It never sees your code.</p>`;
     const tail = member ? "" : `<div class="ce-end"><h2>Is this you?</h2><p>A free Caldera profile shows this work to people who can find and message you.</p>${go}<a class="ce-alt" href="${cityUrl}">See the city first</a></div>`;
     const body = !e.repos ? `<h1>No public work to read yet</h1><p class="ce-lead">@${esc(login)} has no public repos. Try another username below.</p>` : `<h1>${esc(first)} builds like ${art} ${esc(e.style.name)}.</h1><p class="ce-lead">${esc(e.style.line)}</p>
 <a class="ce-sky" href="${cityUrl}" aria-label="See the city"><img src="/gh/${esc(login)}/skyline.svg" alt="" width="780" height="200"></a>
@@ -202,13 +203,13 @@ ${tail}`}`;
   const careerFine = "We email you this city's link and README badge once. No mailing list.";
   const careerGate = (login: string) => `<form class="ce-gate" method="post" action="/signin/signup-email"><input type="hidden" name="city" value="${esc(login)}"><input type="hidden" name="from" value="career">${trap}<h2>See the rest of this read, free</h2><p>The jobs this work fits, your proof and what to do next.</p><label for="ce-email">Your email</label><input id="ce-email" type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com"><button class="ce-go" type="submit">Show my full read</button><p class="ce-sub">${careerFine}</p></form>`;
   const careerOffer = (login: string) => `<form class="ghp-save" method="post" action="/signin/signup-email"><input type="hidden" name="city" value="${esc(login)}"><input type="hidden" name="from" value="career">${trap}<label for="ghp-se">What jobs does this GitHub fit? Get the free career read: builder style, jobs, proof and what to do next.</label><span class="ghp-se-row"><input id="ghp-se" type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com"><button class="ghp-btn ghost" type="submit">Show my career read</button></span><span class="ghp-mut ghp-fineprint">${careerFine}</span></form>`;
-  function previewPage(p: Preview, back: string, save = false, offer = false): string {
+  function previewPage(p: Preview, back: string, save = false, offer = false, gf = false): string {
     const hub = c.hub(), url = `${hub}/gh/${p.login}`, who = p.name && p.name !== p.login ? `${p.name} (@${p.login})` : `@${p.login}`;
     let html = renderCity({ name: p.name || p.login, github: p.html_url, theme: "dark" }, p.city);
     const md = snippet(url, `${url}/badge.svg?style=card`, "My GitHub city on Caldera"), share = `${who}'s public GitHub as a living city`;
     // above the city: one short line + the claim button + what claiming adds (Mike 2026-10-30: why no sign-ups; the preview gave
   // the city, badge and share links away and never said what signing up adds), so the city itself is on the first screen (phones too)
-    const top = `<section class="ghp-top" aria-label="About this preview"><span class="ghp-pill">Preview</span><span class="ghp-top-t"><b>@${esc(p.login)}'s public GitHub as a city.</b> <span class="ghp-mut">Not on Caldera yet.</span></span>${p.org ? "" : `<a class="ghp-btn ghost" href="/gh/${esc(p.login)}/career">See the career read</a>`}${p.org ? `<a class="ghp-btn ghost" href="#ghp-md">Put it on your site</a>` : `<a rel="nofollow" class="ghp-btn" href="/auth/github?back=${encodeURIComponent(back)}">Is this you? Claim it with GitHub</a><a rel="nofollow" class="ghp-btn ghost" href="/join/developer?gh=${esc(p.login)}">Use email instead, no GitHub connection</a><p class="ghp-why">Claiming brings it alive: add one line to your site and its visitors parachute in as they arrive, your AI agents fly over the repos they're working in, it rebuilds every 6 hours, and you can meet developers who build the same things. Free, about 30 seconds, read-only.</p>`}${save && !p.org ? (offer ? careerOffer(p.login) : saveForm(p.login)) : ""}</section>`;
+    const top = `<section class="ghp-top" aria-label="About this preview"><span class="ghp-pill">Preview</span><span class="ghp-top-t"><b>@${esc(p.login)}'s public GitHub as a city.</b> <span class="ghp-mut">Not on Caldera yet.</span></span>${p.org ? "" : `<a class="ghp-btn ghost" href="/gh/${esc(p.login)}/career">See the career read</a>`}${p.org ? `<a class="ghp-btn ghost" href="#ghp-md">Put it on your site</a>` : `${gf ? `<a rel="nofollow" class="ghp-btn" href="/auth/google?gh=${esc(p.login)}">Is this you? Continue with Google</a><a rel="nofollow" class="ghp-btn ghost" href="/auth/github?back=${encodeURIComponent(back)}">Connect GitHub instead</a>` : `<a rel="nofollow" class="ghp-btn" href="/auth/github?back=${encodeURIComponent(back)}">Is this you? Claim it with GitHub</a>`}<a rel="nofollow" class="ghp-btn ghost" href="/join/developer?gh=${esc(p.login)}">Use email instead, no GitHub connection</a><p class="ghp-why">Claiming brings it alive: add one line to your site and its visitors parachute in as they arrive, your AI agents fly over the repos they're working in, it rebuilds every 6 hours, and you can meet developers who build the same things. Free, about 30 seconds, read-only.</p>`}${save && !p.org ? (offer ? careerOffer(p.login) : saveForm(p.login)) : ""}</section>`;
     // under the city: the README badge in plain view (the main way a city spreads), sharing, another lookup, the fine print
     const below = `<section class="ghp-banner ghp-below" aria-label="Share this city">
 <div class="ghp-badge open">${p.org ? `<h2 class="ghp-h">Put this city in your README or careers page</h2><p class="ghp-mut">Paste this into the org profile README (github.com/${esc(p.login)}/.github, profile/README.md) or link it from your engineering or careers page. It stays up to date on its own.</p>` : `<h2 class="ghp-h">Put this city in your GitHub README</h2><p class="ghp-mut">Paste this into your profile README (github.com/${esc(p.login)}/${esc(p.login)}). It stays up to date on its own.</p>`}<img src="/gh/${esc(p.login)}/badge.svg?style=card" alt="GitHub city badge" width="420" height="92"><pre id="ghp-md">${esc(md)}</pre><button class="ghp-btn" type="button" data-copy-el="ghp-md">Copy Markdown</button> <span class="ghp-mut">A smaller one: <code>/badge.svg</code> without <code>?style=card</code>.</span></div>
@@ -258,7 +259,7 @@ ${tail}`}`;
       if (m[2] === "/card.png") { res.writeHead(302, { location: `/@${member}/card.png` }); res.end(); return true; }
       res.writeHead(302, { location: `/@${member}/city.html` }); res.end(); return true;
     }
-    if (m[2] === "/") { res.writeHead(301, { location: `/gh/${login}` }); res.end(); return true; }
+    if (m[2] === "/") { res.writeHead(301, { location: `/gh/${login}${url.searchParams.get("gf") === "1" ? "?gf=1" : ""}` }); res.end(); return true; }
     if (removed(login)) {
       if (m[2] === "/badge.svg") { send(res, 404, "image/svg+xml; charset=utf-8", badgeSvg({ who: "@" + login, repos: 0, commits: 0, style }), "no-cache"); return true; }
       if (m[2] === "/card.png") { res.writeHead(302, { location: "/world/preview.png" }); res.end(); return true; }
@@ -280,19 +281,19 @@ ${tail}`}`;
       return true;
     }
     if (!g.ok) { send(res, g.status, "text/html; charset=utf-8", notFound(login, g.why), "no-cache", { "content-security-policy": CSP }); return true; }
-    if (g.p.login !== login) { res.writeHead(301, { location: `/gh/${g.p.login}${m[2] === "/career" ? "/career" : ""}` }); res.end(); return true; }   // canonical case
+    if (g.p.login !== login) { res.writeHead(301, { location: `/gh/${g.p.login}${m[2] === "/career" ? "/career" : ""}${url.searchParams.get("gf") === "1" ? "?gf=1" : ""}` }); res.end(); return true; }   // canonical case
     if (m[2] === "/career") {
       if (g.p.org) { res.writeHead(302, { location: `/gh/${g.p.login}` }); res.end(); return true; }
       const cg = c.careerArm ? c.careerArm(req) : null, full = url.searchParams.get("full") === "1";
       if (cg && !full && c.trackCareer) c.trackCareer(req, cg === "b" ? "cg-b" : "cg-a");
-      send(res, 200, "text/html; charset=utf-8", careerPage(g.p.login, g.p.name, g.p.city, null, cg === "b" && !full), c.careerArm ? "private, max-age=0" : "public, max-age=600", { "content-security-policy": CSP }); return true;
+      send(res, 200, "text/html; charset=utf-8", careerPage(g.p.login, g.p.name, g.p.city, null, cg === "b" && !full, !!c.googleFirst?.(url)), c.careerArm ? "private, max-age=0" : "public, max-age=600", { "content-security-policy": CSP }); return true;
     }
     const arm = c.saveArm ? c.saveArm(req) : null;
     // save1 ended 2026-10-30 (Mike: yes): everyone gets the email box; still counted as save-b. Crawlers (null) don't.
     if (arm && c.track) c.track(req, "save-b");
     const cg = !g.p.org && c.careerArm ? c.careerArm(req) : null;
     if (cg && c.trackCareer) c.trackCareer(req, cg === "b" ? "cg-b" : "cg-a");
-    send(res, 200, "text/html; charset=utf-8", previewPage(g.p, `/gh/${g.p.login}`, !!arm, cg === "b"), c.saveArm ? "private, max-age=0" : "public, max-age=600", { "content-security-policy": CSP }); return true;
+    send(res, 200, "text/html; charset=utf-8", previewPage(g.p, `/gh/${g.p.login}`, !!arm, cg === "b", !!c.googleFirst?.(url)), c.saveArm ? "private, max-age=0" : "public, max-age=600", { "content-security-policy": CSP }); return true;
   }
   return { route, memberBadge, get, badgeSnippet: (handle: string) => snippet(`${c.hub()}/@${handle}/city.html`, `${c.hub()}/@${handle}/badge.svg?style=card`, "My GitHub city on Caldera") };
 }

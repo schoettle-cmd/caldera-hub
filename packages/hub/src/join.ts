@@ -18,7 +18,7 @@ export const TOUCHPOINTS = ["header", "home-designer", "home-business", "home", 
   "gift", "invite", "people-blur", "bar-feed", "bar-people", "bar-world", "bar-city", "bar-gardens", "bar-group", "world-card", "people-cta", "link-messages", "link-install", "link-github", "messages", "signin-page", "direct"] as const;
 export const okTp = (v: unknown) => (TOUCHPOINTS as readonly string[]).includes(String(v)) ? String(v) : "";
 export const EVENTS = ["shown", "click", "door", "signup"] as const;
-export type Door = "code" | "obsidian" | "designer" | "business" | "email";
+export type Door = "google" | "code" | "obsidian" | "designer" | "business" | "email";
 export const PROFILE_TYPES = ["developer", "designer", "business"] as const;
 export type ProfileType = typeof PROFILE_TYPES[number];
 export const okType = (v: unknown): ProfileType | "" => (PROFILE_TYPES as readonly string[]).includes(String(v)) ? String(v) as ProfileType : "";
@@ -42,6 +42,7 @@ const TP_COOKIE = "cal_tp";
 
 export interface JoinCtx {
   googleOn?: () => boolean;
+  googleFirst?: (url?: URL | null) => boolean;
   q: (sql: string) => any;
   ipOf: (req: http.IncomingMessage) => string;
   page: (res: http.ServerResponse, status: number, title: string, body: string) => void;
@@ -89,12 +90,14 @@ export function joinModule(c: JoinCtx) {
 .jn-b:focus-visible{outline:2px solid #fff;outline-offset:2px}.jn-foot{text-align:center;margin:26px 0 0;font-size:14px;color:var(--text-muted,#8F89A0)}.jn-foot a{color:inherit}
 .jn-sel{outline:3px solid currentColor;outline-offset:3px}</style>`;
 
-  const doorHref = (door: Door, tp: string, from: string) => `/join/go?door=${door}${tp ? `&tp=${tp}` : ""}${from ? `&from=${from}` : ""}`;
-  function selectorPage(req: http.IncomingMessage, res: http.ServerResponse, tp: string, from: string, pre: string) {
+  const doorHref = (door: Door, tp: string, from: string, type = "") => `/join/go?door=${door}${tp ? `&tp=${tp}` : ""}${from ? `&from=${from}` : ""}${type ? `&type=${type}` : ""}`;
+  function selectorPage(req: http.IncomingMessage, res: http.ServerResponse, tp: string, from: string, pre: string, url?: URL) {
+    // Google-first: Google leads each door, what was there stays beside it (jd1's arms unchanged)
+    const gf = !!c.googleFirst?.(url), gBtn = (k: ProfileType, bg: string, ink: string) => gf ? `<a class="jn-b" rel="nofollow" href="${doorHref("google", tp, from, k === "developer" ? "" : k)}" style="background:${bg};color:${ink}">Continue with Google</a>` : "";
     const who = from ? c.byHandle(from) : null, nm = who?.name || (from ? "@" + from : "");
     const T = TYPE_THEME;
     const arm = c.devArm?.(req) || null, emailFirst = arm === "b"; if (arm) c.track?.(req, "jd-" + arm);
-    const door = (k: ProfileType, title: string, body: string, steps: string[], icon: string, btns: string) => `<div class="jn-door${pre === k ? " jn-sel" : ""}" id="door-${k}" style="background:${T[k].surface};border-color:${T[k].line};color:${T[k].ink}">
+    const door = (k: ProfileType, title: string, body: string, steps: string[], icon: string, btns0: string, btns = gBtn(k, T[k].ink, T[k].ground) + btns0) => `<div class="jn-door${pre === k ? " jn-sel" : ""}" id="door-${k}" style="background:${T[k].surface};border-color:${T[k].line};color:${T[k].ink}">
 <div class="jn-ic" style="background:${T[k].ground}">${icon}</div><h2>${title}</h2><p style="color:${T[k].mut}">${body}</p><ol>${steps.map(s => `<li>${s}</li>`).join("")}</ol><div class="jn-btns">${btns}</div></div>`;
     const svg = (col: string, d: string) => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
     c.page(res, 200, "Create your profile", `${JOIN_CSS}<main class="jn"><div class="jn-head"><p class="jn-eb">Get your own page</p><h1>What do you make?</h1>
@@ -109,7 +112,7 @@ ${door("designer", "I design", "Your portfolio becomes your page. Each project b
 ${door("business", "I build companies", "Your companies become your city. Show what you've built and what you're looking for.", ["Start with your email", "Add your companies and roles", "Say what you're looking for: hiring, raising, partners"],
       svg(T.business.accent, '<rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>'),
       `<a class="jn-b" href="${doorHref("business", tp, from)}" style="background:${T.business.accent};color:#1E1607">Start with email</a>`)}
-</div>${c.googleOn?.() ? `<p class="jn-foot"><a rel="nofollow" href="/auth/google${from ? `?invite=${from}` : ""}">Or continue with Google</a></p>` : ""}<p class="jn-foot">Already on Caldera? <a href="/signin">Sign in</a>. Do more than one? Pick the main one; your page can show more later.</p></main>`);
+</div>${c.googleOn?.() && !gf ? `<p class="jn-foot"><a rel="nofollow" href="/auth/google${from ? `?invite=${from}` : ""}">Or continue with Google</a></p>` : ""}<p class="jn-foot">Already on Caldera? <a href="/signin">Sign in</a>. Do more than one? Pick the main one; your page can show more later.</p></main>`);
   }
 
   async function route(req: http.IncomingMessage, res: http.ServerResponse, url: URL, p: string): Promise<boolean> {
@@ -118,13 +121,13 @@ ${door("business", "I build companies", "Your companies become your city. Show w
       if (c.memberOf(req) && !url.searchParams.get("preview")) { res.writeHead(302, { location: from ? `/@${from}/` : "/me", "cache-control": "no-store" }); res.end(); return true; }
       if (tp) { record(req, tp, "click"); res.setHeader("set-cookie", `${TP_COOKIE}=${tp}; Path=/; Max-Age=${30 * 86400}; SameSite=Lax; Secure`); }
       else if (!cookieTp(req)) record(req, "direct", "click");
-      selectorPage(req, res, tp, from, pre); return true;
+      selectorPage(req, res, tp, from, pre, url); return true;
     }
     if (p === "/join/go" && req.method === "GET") {
       const door = String(url.searchParams.get("door") || "") as Door, tp = okTp(url.searchParams.get("tp")) || cookieTp(req) || "direct", from = okHandle(url.searchParams.get("from"));
-      const to = door === "code" ? `/auth/github${from ? `?invite=${from}` : ""}` : door === "obsidian" ? `/${from ? `?invite=${from}` : ""}#obsidian`
+      const to = door === "google" ? `/auth/google${(() => { const t = String(url.searchParams.get("type") || ""), qs = [["designer", "business"].includes(t) ? `type=${t}` : "", from ? `invite=${from}` : ""].filter(Boolean).join("&"); return qs ? "?" + qs : ""; })()}` : door === "code" ? `/auth/github${from ? `?invite=${from}` : ""}` : door === "obsidian" ? `/${from ? `?invite=${from}` : ""}#obsidian`
         : door === "designer" ? `/join/designer${from ? `?invite=${from}` : ""}` : door === "business" ? `/join/business${from ? `?invite=${from}` : ""}` : door === "email" ? `/join/developer${from ? `?invite=${from}` : ""}` : "/join";
-      if (["code", "obsidian", "designer", "business", "email"].includes(door)) { record(req, tp, "door"); c.track?.(req, "door-" + door); }
+      if (["google", "code", "obsidian", "designer", "business", "email"].includes(door)) { record(req, tp, "door"); c.track?.(req, "door-" + door); }
       res.writeHead(302, { location: to, "cache-control": "no-store" }); res.end(); return true;
     }
     // touchpoint events from pages (gate shown): "tp:ev", any origin (hosted pages are sandboxed: Origin null), no cookie

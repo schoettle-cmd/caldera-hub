@@ -41,6 +41,7 @@ export interface Profile extends Typed {
   /** a city built from a public GitHub account named at sign-up (Mike 2026-11-02: developers won't connect GitHub). Unverified:
    *  never in `links`, so it can't count as a claim on that account or block the real owner's sign-up (github.ts claimants). */
   ghPublic?: { login: string; city: any; fetched: string };
+  /** made with Continue with Google: shows the "Make your page richer" card */ via?: "google";
 }
 const LIST_KEYS = ["links", "now", "projects", "timeline", "topics", "worked_on", "worked on"];
 
@@ -247,11 +248,22 @@ ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(
 <p class="mut">Already made your page this way? Enter just your email above (leave the box empty) and we send a sign-in link. Use GitHub? <a rel="nofollow" href="/auth/github${back || inv ? `?${[back ? `back=${encodeURIComponent(back)}` : "", inv ? `invite=${encodeURIComponent(inv)}` : ""].filter(Boolean).join("&")}` : ""}">Sign up with GitHub</a> instead: your repos become your city.</p></main>${copyJs}`);
   }
 
+  let richerPreview = false;   // ?gf=1 on this request
+  /** After a Google sign-up: what connecting adds, one main action. Obsidian can't attach to a page made this way yet, so it says so instead of making a second page. */
+  function richerCard(acct: any, pr: Profile) {
+    const verified = !!c.ghVerified?.(acct.profile_id), linkBack = `/auth/github?back=${encodeURIComponent(`/@${acct.handle}/`)}`;
+    const row = (t: string, d: string, act: string) => `<div class="row" style="justify-content:space-between;border-top:1px solid var(--line);padding:10px 0;margin:0;flex-wrap:nowrap"><div><b>${t}</b><br><span class="mut">${d}</span></div><div style="flex:none">${act}</div></div>`;
+    const city = pr.ghPublic ? `Verify @${esc(pr.ghPublic.login)} so your city counts as yours. Read-only.` : "Your repos become your city. Read-only.";
+    return `<section class="card" id="richer"><h2>Make your page richer</h2><p class="mut">Your page is live. Add more whenever you like.</p>
+${verified ? "" : row("GitHub", city, `<a rel="nofollow" class="btn small" href="${linkBack}">Connect GitHub</a>`)}
+${pr.kind ? "" : row("Your AI", "ChatGPT or Claude writes your About, projects and links.", `<a class="btn small ghost" href="#update">Write it</a>`)}
+${row("Obsidian", "Your notes and daily journal on your page.", `<span class="mut">Coming soon</span>`)}</section>`;
+  }
   function settingsPage(res: http.ServerResponse, acct: any, msg = "") {
     const pr: Profile = JSON.parse(acct.content || "{}"), log: any[] = JSON.parse(acct.log || "[]"), last = log.length ? log[log.length - 1].ts : acct.updated;
     c.page(res, 200, "Your page", `${STYLE}<main class="ep"><h1>Your page</h1>
 <p class="lede"><a href="/@${esc(acct.handle)}/">caldera.social/@${esc(acct.handle)}</a> &middot; <a href="/@${esc(acct.handle)}/city.html">your city</a> &middot; last updated ${esc(String(last || "").slice(0, 10))}</p>
-${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(msg.replace(/^ok:/, ""))}</p>` : ""}${pr.ghPublic && !c.ghVerified?.(acct.profile_id) ? `<section class="card" id="verify"><h2>Your city is unverified</h2><p class="mut">It comes from the public GitHub URL for <b>@${esc(pr.ghPublic.login)}</b>. It stays that way unless you sign in once with that GitHub account, which is read-only and optional.</p><a rel="nofollow" class="btn small" href="/auth/github?back=${encodeURIComponent(`/@${acct.handle}/`)}">Verify with GitHub</a></section>` : ""}${pr.kind ? typedEditor(pr, acct.handle) : ""}
+${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(msg.replace(/^ok:/, ""))}</p>` : ""}${pr.via === "google" || richerPreview ? richerCard(acct, pr) : ""}${(pr.via === "google" || richerPreview) ? "" : pr.ghPublic && !c.ghVerified?.(acct.profile_id) ? `<section class="card" id="verify"><h2>Your city is unverified</h2><p class="mut">It comes from the public GitHub URL for <b>@${esc(pr.ghPublic.login)}</b>. It stays that way unless you sign in once with that GitHub account, which is read-only and optional.</p><a rel="nofollow" class="btn small" href="/auth/github?back=${encodeURIComponent(`/@${acct.handle}/`)}">Verify with GitHub</a></section>` : ""}${pr.kind ? typedEditor(pr, acct.handle) : ""}
 ${pr.kind ? "" : `<section class="card" id="update"><h2>What's new? Update your page in a minute</h2><p class="mut">Copy this into ChatGPT or Claude, then paste its answer below. Every project you mention grows its building in your city; this week's get lit windows.</p>
 <pre id="p-up">${esc(UPDATE_PROMPT)}</pre><button type="button" class="btn small" data-copy="p-up">Copy the update prompt</button>
 <form method="post" action="/settings/page" style="margin-top:12px"><input type="hidden" name="do" value="update"><textarea name="text" maxlength="20000" required placeholder="now:&#10;- ...&#10;worked_on:&#10;- Project | what I did"></textarea>
@@ -302,14 +314,15 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       c.rememberEmail(acct.profile_id, email);
       try { publish(acct); } catch (e: any) { c.page(res, 500, "Not yet", `${STYLE}<main class="ep"><h1>We couldn't publish your page</h1><p class="mut">${esc(e.message)}</p><p><a class="btn" href="/start">Try again</a></p></main>`); return true; }
       c.onPublished?.(acct.profile_id, created);
-      if (created) c.track?.(req, "email-created", pr.kind || (pr.ghPublic ? "gh" : inv ? "invite" : ""));
+      if (created) c.track?.(req, "email-created", opts.keepPage ? "google" + (pr.ghPublic ? "-gh" : pr.kind ? "-" + pr.kind : "") : pr.kind || (pr.ghPublic ? "gh" : inv ? "invite" : ""));
+      if (created && opts.keepPage) q("UPDATE email_accounts SET nudge_off=1 WHERE profile_id=?").run(acct.profile_id);   // never asked for the weekly email; Settings can turn it on
       // joined from someone's invite (e.g. their Message button): credit them, and the new member follows them
       if (created && inv && inv !== acct.handle) try {
         const inviter = c.recordReferral?.(acct.profile_id, inv, "email");
         if (inviter) c.accept(C.sign(JSON.parse(c.unseal(acct.key_sealed)), "friend.request", { to: inviter, note: "I joined Caldera from your invite." }));
       } catch { /* best effort */ }
       const hasCity = fs.existsSync(path.join(c.dataDir, "profiles", acct.handle, "city.html"));   // no repos yet: their page, not a 404
-      if (created && !pr.kind && !back && opts.keepPage) { res.writeHead(302, { location: "/settings?new=1", "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true; }   // a Google sign-up has only a name so far
+      if (created && !back && opts.keepPage) { res.writeHead(302, { location: "/settings?new=1", "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true; }   // a Google sign-up has only a name so far
       if (created && pr.kind && !back) { res.writeHead(302, { location: `/settings?new=1#${pr.kind === "designer" ? "work" : "companies"}`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true; }   // straight to adding their work
       res.writeHead(302, { location: back || `/@${acct.handle}/${hasCity ? "city.html" : ""}?welcome=1`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true;
   }
@@ -319,6 +332,8 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
   const googleClient = (): { client_id: string; client_secret: string } | null => {
     try { const j = JSON.parse(fs.readFileSync(path.join(c.dataDir, "google-oauth.json"), "utf8")); return j.client_id && j.client_secret ? j : null; } catch { return null; }
   };
+  // Google-first sign-up (Mike 2026-11-02): off until data/google-first.json says {"on":true} and the client exists. ?gf=1 previews one page.
+  const googleFirst = (url?: URL | null) => { if (url?.searchParams.get("gf") === "1") return true; if (!googleClient()) return false; try { return JSON.parse(fs.readFileSync(path.join(c.dataDir, "google-first.json"), "utf8")).on === true; } catch { return false; } };
   const GOOGLE_COOKIE = "cal_gs", googleRedirect = () => c.publicUrl.replace(/\/$/, "") + "/auth/google/callback";
   const googleCookie = (val: string, age: number) => `${GOOGLE_COOKIE}=${encodeURIComponent(val)}; Path=/auth/google; HttpOnly; SameSite=Lax; Max-Age=${age}${c.publicUrl.startsWith("https:") ? "; Secure" : ""}`;
   const googleFail = (res: http.ServerResponse, title: string, why: string) => c.page(res, 400, title, `${STYLE}<main class="ep"><h1>${esc(title)}</h1><p class="lede">${esc(why)}</p><p><a class="btn" href="/signin">Back to sign in</a></p></main>`);
@@ -331,7 +346,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       if (c.tooMany("google:" + ipKey(req), 30)) { googleFail(res, "Too many tries", "Wait a little while, then try again."); return true; }
       const state = crypto.randomBytes(16).toString("hex");
       const q2 = new URLSearchParams({ client_id: client.client_id, redirect_uri: googleRedirect(), response_type: "code", scope: "openid email profile", state, nonce: state, prompt: "select_account" });
-      const sealed = c.seal(JSON.stringify({ state, back: okBack(url.searchParams.get("back")), inv: okInv(url.searchParams.get("invite")), exp: Date.now() + 10 * 60_000 }));
+      const sealed = c.seal(JSON.stringify({ state, back: okBack(url.searchParams.get("back")), inv: okInv(url.searchParams.get("invite")), gh: /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(String(url.searchParams.get("gh") || "")) ? url.searchParams.get("gh") : "", type: ["designer", "business"].includes(String(url.searchParams.get("type"))) ? url.searchParams.get("type") : "", exp: Date.now() + 10 * 60_000 }));
       res.writeHead(302, { location: "https://accounts.google.com/o/oauth2/v2/auth?" + q2, "set-cookie": googleCookie(sealed, 600), "cache-control": "no-store" }); res.end();
       return true;
     }
@@ -354,7 +369,15 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     if (claims.email_verified !== true || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { googleFail(res, "We need a verified email", "Google hasn't verified that account's email address. Use a code by email instead."); return true; }
     c.track?.(req, "google-signin");
     const name = String(claims.name || "").replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, 80);
-    return finishVerified(req, res, email, name ? { name } as Profile : {} as Profile, okBack(st.back), okInv(st.inv), { keepPage: true });
+    const pr: any = { via: "google", ...(name ? { name } : {}) };
+    if (st.type === "designer") Object.assign(pr, { kind: "designer", disciplines: [], work: [] });
+    else if (st.type === "business") Object.assign(pr, { kind: "business", companies: [], looking: {} });
+    // from a city preview: a new page keeps that public city, labeled unverified, unless someone has verified that login (same rule as email)
+    const isNew = !q("SELECT 1 FROM email_accounts WHERE email_hash=?").get(hash(email)) && !c.memberByEmail?.(email);
+    if (isNew && st.gh && !st.type && !c.ghMember?.(String(st.gh).toLowerCase())) {
+      try { const g = await c.ghRead?.(st.gh, req); if (g?.ok && !g.p.org) pr.ghPublic = { login: g.p.login, city: g.p.city, fetched: g.p.fetched }; } catch (e: any) { console.error("google gh city", e?.message); }
+    }
+    return finishVerified(req, res, email, pr as Profile, okBack(st.back), okInv(st.inv), { keepPage: true });
   }
 
   async function route(req: http.IncomingMessage, res: http.ServerResponse, url: URL, p: string): Promise<boolean> {
@@ -527,7 +550,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     if (p === "/settings/page" || ((p === "/settings" || p === "/me") && req.method === "GET")) {
       const acct = acctOf(c.memberOf(req));
       if (!acct) { if (p === "/settings/page") { res.writeHead(302, { location: "/signin" }); res.end(); return true; } return false; }   // not an email page: the usual settings
-      if (req.method === "GET") { settingsPage(res, acct, url && url.searchParams && url.searchParams.get("photo") ? "ok:Your photo is up and your page is republished." : url?.searchParams?.get("saved") ? "ok:Saved and republished." : url?.searchParams?.get("new") ? `ok:Your page is live at caldera.social/@${acct.handle}. Add your ${JSON.parse(acct.content || "{}").kind === "business" ? "companies" : "work"} below.` : ""); return true; }
+      if (req.method === "GET") { richerPreview = googleFirst(url); settingsPage(res, acct, url && url.searchParams && url.searchParams.get("photo") ? "ok:Your photo is up and your page is republished." : url?.searchParams?.get("saved") ? "ok:Saved and republished." : url?.searchParams?.get("new") ? `ok:Your page is live at caldera.social/@${acct.handle}. Add your ${JSON.parse(acct.content || "{}").kind === "business" ? "companies" : "work"} below.` : ""); return true; }
       if (!c.sameOrigin(req)) { settingsPage(res, acct, "Wrong origin."); return true; }
       const f = await form(req), act = f.get("do");
       if (act === "delete") {
@@ -630,5 +653,5 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     a.content = JSON.stringify(pr); q("UPDATE email_accounts SET content=? WHERE profile_id=?").run(a.content, id); publish(a); return true;
   }
   function republish(id: string) { const a = acctOf(id); if (a) publish(a); }
-  return { googleOn: () => !!googleClient(), verifyPublicCity, republish, stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
+  return { googleFirst, googleOn: () => !!googleClient(), verifyPublicCity, republish, stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
 }
