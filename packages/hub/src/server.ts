@@ -2675,7 +2675,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           if (tooMany("signup-mail-ip:" + ip, 6) || tooMany("signup-mail:" + mail.hashOf(email), 3)) { signinPage(res, 429, "Sign up", `<h1>Too many tries</h1><p class="lede">Wait an hour, then try again. Or <a href="/auth/github" rel="nofollow">sign up with GitHub</a> on this device.</p>`); return; }
           const fromCareer = !!city && f.get("from") === "career";   // cg1 "b": the email unlocks the career read
           if (fromCareer) FUNNEL.track(req, "cg-email", CAREER_TEST);
-          FLOWS.start(req, "email", doorOf(req)); FUNNEL.track(req, "email-start", city ? "city" : okB ? "from " + okB.split("/").slice(0, 2).join("/") : "");
+          if (!city) FLOWS.start(req, "email", doorOf(req)); FUNNEL.track(req, "email-start", city ? "city" : okB ? "from " + okB.split("/").slice(0, 2).join("/") : "");
           const pubB = (opts.publicUrl || "https://caldera.social").replace(/\/$/, ""), qs = (o: Record<string, string>) => { const s = new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString(); return s ? "?" + s : ""; };
           const startBack = /^\/(messages|messages\/@[a-z0-9-]+|feed|people|world)$/.test(okB) ? okB : "";
           const ghLink = `${pubB}/auth/github${qs({ back: okB, invite: inv })}`, startLink = `${pubB}/start${qs({ back: startBack, invite: inv })}`;
