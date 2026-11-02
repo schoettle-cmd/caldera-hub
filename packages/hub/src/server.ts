@@ -26,7 +26,7 @@ import { gifts } from "./gifts";
 import { funnel, BOT_UA, funnelDay } from "./funnel";
 import { devArm, HOME_TEST, homeArm, armHome, SAVE_TEST, saveArm, CAREER_TEST, careerArm, PRIMARY_TEST, primaryArm, primaryHome } from "./hometest";
 import { GATE_CSS, GATE_JS, okGateKind } from "./signupgate";
-import { emailPages } from "./emailpages";
+import { emailPages, GOOGLE_ICON } from "./emailpages";
 import { joinModule, gateScript } from "./join";
 import { signinCodes, codeMail } from "./signincode";
 import { messages } from "./messages";
@@ -1971,7 +1971,7 @@ body{overflow-x:hidden}.kd{max-width:440px;margin:0 auto;padding:22px 16px 40px}
   const signupCards = (q2: string, after: string, bq: string) => `<div class="card"><h2>Sign up free</h2><p class="mut">Takes about a minute. Your public repos become a living city on the world map, and your page fills itself in from GitHub.</p>
 <form method="get" action="/auth/github" style="margin:0">${q2.split("&").filter(Boolean).map(kv => { const [k, v = ""] = kv.split("="); return `<input type="hidden" name="${escAttr(decodeURIComponent(k))}" value="${escAttr(decodeURIComponent(v))}">`; }).join("")}<input type="hidden" name="digest" value="0">
 <label style="display:flex;gap:10px;align-items:flex-start;margin:0 0 12px;cursor:pointer"><input type="checkbox" name="digest" value="1" style="margin-top:3px;flex:none"><span><b>Send me the Caldera Daily</b><br><span class="mut" style="font-size:13px">Unread messages, new members, new tools and the day's AI news, to your GitHub email. Only on days something happens; one-click unsubscribe.</span></span></label>
-<div class="row"><button class="btn" type="submit" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">${GH_ICON}Sign up with GitHub</button><a class="btn ghost" href="/start${q2 ? "?" + q2 : ""}">Sign up with email</a><a class="btn ghost" href="https://community.obsidian.md/plugins/caldera" target="_blank" rel="noopener">Sign up with Obsidian</a></div></form>
+<div class="row"><button class="btn" type="submit" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">${GH_ICON}Sign up with GitHub</button>${EMP?.googleOn() ? `<a rel="nofollow" class="btn ghost" href="/auth/google${(() => { const k = q2.split("&").filter(kv => /^(back|invite)=/.test(kv)).join("&"); return k ? "?" + k : ""; })()}" style="display:inline-flex;align-items:center;gap:8px">${GOOGLE_ICON}Sign up with Google</a>` : ""}<a class="btn ghost" href="/start${q2 ? "?" + q2 : ""}">Sign up with email</a><a class="btn ghost" href="https://community.obsidian.md/plugins/caldera" target="_blank" rel="noopener">Sign up with Obsidian</a></div></form>
 <p class="mut" style="font-size:13px;margin-top:10px">No GitHub needed for email: ChatGPT or Claude writes your page, you confirm your email. A designer or building companies? <a href="/join?tp=${/back=%2Fmessages%2F%40/.test(q2) ? "messages" : "signin-page"}${(q2.match(/(?:^|&)invite=([a-z0-9-]+)/) || [])[1] ? "&amp;from=" + (q2.match(/(?:^|&)invite=([a-z0-9-]+)/) || [])[1] : ""}">Pick your profile type</a>.</p>
 <p class="mut" style="font-size:13px;margin-top:10px">&#128274; Read-only: your public GitHub profile and email. No access to your code or private repos.</p>
 <form method="post" action="/signin/signup-email" style="margin:10px 0 0">${q2.split("&").filter(kv => /^(back|invite)=/.test(kv)).map(kv => { const [k, v = ""] = kv.split("="); return `<input type="hidden" name="${escAttr(k)}" value="${escAttr(decodeURIComponent(v))}">`; }).join("")}<span style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden" aria-hidden="true"><input type="text" name="website" tabindex="-1" autocomplete="off"></span><label class="mut" style="font-size:13px;display:block;margin-bottom:6px" for="su-email">Not signed in to GitHub on this device? Get a sign-up link by email.</label><div class="row"><input id="su-email" type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com" style="flex:1;min-width:180px"><button class="btn small ghost" type="submit">Email me a link</button></div></form>
@@ -1988,6 +1988,7 @@ body{overflow-x:hidden}.kd{max-width:440px;margin:0 auto;padding:22px 16px 40px}
 ${email ? `<form method="post" action="/signin/code"><input type="hidden" name="email" value="${escAttr(email)}">${back ? `<input type="hidden" name="back" value="${escAttr(back)}">` : ""}<input name="code" required autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 \\-]*" maxlength="7" placeholder="123 456" aria-label="6-digit code" autofocus style="font-size:22px;letter-spacing:.12em;max-width:12ch"><button class="btn" type="submit">Sign in</button></form>` : ""}
 <p class="mut">The code works once, for 15 minutes. You can also tap the link in the email. Nothing there in a minute? Check spam, or <a href="/signin">try again</a>.</p>`);
   }
+  const googleBtn = (qs = "") => EMP?.googleOn() ? `<a rel="nofollow" class="btn ghost" href="/auth/google${qs}" style="display:inline-flex;align-items:center;gap:8px">${GOOGLE_ICON}Continue with Google</a>` : "";
   function signinGeneral(res: http.ServerResponse, back = "", req?: http.IncomingMessage) {
     const bq = /^\/(messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|alerts)$/.test(back) ? `?back=${encodeURIComponent(back)}` : "";   // come back to the page that asked (e.g. a conversation)
     // "Message" on someone's page, signed out: say why, offer sign-up first (credited to them), and land in the conversation after
@@ -2011,7 +2012,7 @@ ${signupCards(q2, `tap Message on @${e(h)}'s page again`, bq)}
       return;
     }
     signinPage(res, 200, "Sign in", `<h1>Sign in to Caldera</h1><p class="lede">Sign this browser in as the owner of your page. It stays signed in for a year.</p>
-<div class="card"><a rel="nofollow" class="btn" href="/auth/github${bq}" style="display:inline-flex;align-items:center;gap:8px">${GH_ICON}Continue with GitHub</a>
+<div class="card"><div class="row" style="flex-wrap:wrap;gap:10px"><a rel="nofollow" class="btn" href="/auth/github${bq}" style="display:inline-flex;align-items:center;gap:8px">${GH_ICON}Continue with GitHub</a>${googleBtn(bq)}</div>
 ${CODE_OR}${codeForm("", signinBack(back))}<p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
 <div class="card"><h2>Made your page in Obsidian?</h2><p class="mut">Open your page and tap <b>Sign in</b> in the bar at the top for an email link or a code from Obsidian. Or in Obsidian, run <b>Caldera: Open my public page (as owner)</b>.</p></div>
 <h2 style="margin-top:22px">No page yet?</h2>
@@ -2090,8 +2091,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
 
   const emailPage = (res: http.ServerResponse, status: number, title: string, body: string) => { res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" });
     res.end(navify(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} - Caldera</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"></head><body>${body}</body></html>`)); };
-  JOIN = joinModule({ q, ipOf, page: emailPage, memberOf, byHandle, track: (req, step) => FUNNEL.track(req, step as any), devArm: (req) => { const v = FUNNEL.vid(req); return v ? devArm(v) : null; } });
-  EMP = emailPages({ ghRead: (l, r) => GHP.get(l, r ?? null) as any, ghMember: (l) => memberOfLogin(l), ghVerified: (id) => !!q("SELECT 1 FROM gh_links WHERE profile_id=?").get(id), q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
+  JOIN = joinModule({ googleOn: () => !!EMP?.googleOn(), q, ipOf, page: emailPage, memberOf, byHandle, track: (req, step) => FUNNEL.track(req, step as any), devArm: (req) => { const v = FUNNEL.vid(req); return v ? devArm(v) : null; } });
+  EMP = emailPages({ googleFetch: (opts.githubFetch || fetch) as typeof fetch, ghRead: (l, r) => GHP.get(l, r ?? null) as any, ghMember: (l) => memberOfLogin(l), ghVerified: (id) => !!q("SELECT 1 FROM gh_links WHERE profile_id=?").get(id), q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
     startOwner, memberOf, sameOrigin, allowNewProfile, tooMany, note: (m) => mail.note(m),
     page: emailPage,
     hasFollower: (id) => !!q("SELECT 1 FROM friends WHERE a=? OR b=? LIMIT 1").get(id, id) || !!q("SELECT 1 FROM friend_intents WHERE target=? AND kind='add' LIMIT 1").get(id),
@@ -2211,7 +2212,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         const me = memberOf(req), pr = me ? profile(me) : null;
         res.writeHead(302, { location: pr?.handle ? `/@${pr.handle}/city.html` : "/signin", "cache-control": "no-store" }); return res.end(); }
       if (/^\/(join(\/go)?|v1\/gate\/ev)$/.test(p) && await JOIN!.route(req, res, url, p)) return;   // the profile-type selector + touchpoint counts
-      if (/^\/(start(\/confirm)?|settings(\/page|\/photo|\/typed|\/typed\/img)?|me|join\/(designer|business|developer))$/.test(p) && await EMP!.route(req, res, url, p)) return;   // email pages (falls through for everyone else)   // email pages (falls through for everyone else)
+      if (/^\/(auth\/google(\/callback)?|start(\/confirm)?|settings(\/page|\/photo|\/typed|\/typed\/img)?|me|join\/(designer|business|developer))$/.test(p) && await EMP!.route(req, res, url, p)) return;   // email pages (falls through for everyone else)   // email pages (falls through for everyone else)
       if (/^\/(auth\/github|me$|me\/upload$|settings$|settings\/(status|claim)$|alerts$|v1\/github\/)/.test(p) && await GH.route(req, res, url)) return;
       if (/^\/(feed(\/|$)|v1\/feed$|v1\/posts|v1\/comments\/|v1\/me\/notices$)/.test(p) && await FEED!.route(req, res, url, p)) return;
       if (p.startsWith("/v1/gifts") && await GIFTS!.route(req, res, p)) return;

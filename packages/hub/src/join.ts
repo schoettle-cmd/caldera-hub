@@ -41,6 +41,7 @@ const okHandle = (v: unknown) => String(v || "").toLowerCase().replace(/[^a-z0-9
 const TP_COOKIE = "cal_tp";
 
 export interface JoinCtx {
+  googleOn?: () => boolean;
   q: (sql: string) => any;
   ipOf: (req: http.IncomingMessage) => string;
   page: (res: http.ServerResponse, status: number, title: string, body: string) => void;
@@ -108,7 +109,7 @@ ${door("designer", "I design", "Your portfolio becomes your page. Each project b
 ${door("business", "I build companies", "Your companies become your city. Show what you've built and what you're looking for.", ["Start with your email", "Add your companies and roles", "Say what you're looking for: hiring, raising, partners"],
       svg(T.business.accent, '<rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>'),
       `<a class="jn-b" href="${doorHref("business", tp, from)}" style="background:${T.business.accent};color:#1E1607">Start with email</a>`)}
-</div><p class="jn-foot">Already on Caldera? <a href="/signin">Sign in</a>. Do more than one? Pick the main one; your page can show more later.</p></main>`);
+</div>${c.googleOn?.() ? `<p class="jn-foot"><a rel="nofollow" href="/auth/google${from ? `?invite=${from}` : ""}">Or continue with Google</a></p>` : ""}<p class="jn-foot">Already on Caldera? <a href="/signin">Sign in</a>. Do more than one? Pick the main one; your page can show more later.</p></main>`);
   }
 
   async function route(req: http.IncomingMessage, res: http.ServerResponse, url: URL, p: string): Promise<boolean> {

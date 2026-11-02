@@ -107,6 +107,7 @@ export interface EmailCtx {
   q: (sql: string) => any; seal: (s: string) => string; unseal: (s: string) => string;
   accept: (e: C.Envelope) => { status: number; body: any };
   dataDir: string; publicUrl: string; reserved: Set<string>;
+  /** token call for Google sign-in (tests fake it) */ googleFetch: typeof fetch;
   byHandle: (h: string) => any; profile: (id: string) => any;
   startOwner: (id: string) => string; memberOf: (req: http.IncomingMessage) => string | null;
   sameOrigin: (req: http.IncomingMessage) => boolean; allowNewProfile: (req: http.IncomingMessage) => boolean;
@@ -117,7 +118,7 @@ export interface EmailCtx {
   /** remember the confirmed address so message alerts and the daily summary can reach them */
   rememberEmail: (owner: string, email: string) => void;
   /** count a sign-up funnel step (funnel.ts) */
-  track?: (req: http.IncomingMessage, step: "confirm-open" | "form-submit" | "email-created" | "gh-return" | "ghe-open" | "ghe-sent" | "typed-form" | "typed-sent" | "typed-bot", detail?: string) => void;
+  track?: (req: http.IncomingMessage, step: "confirm-open" | "form-submit" | "email-created" | "google-signin" | "gh-return" | "ghe-open" | "ghe-sent" | "typed-form" | "typed-sent" | "typed-bot", detail?: string) => void;
   /** delete the member and everything tied to them (the hub's own erase) */
   eraseProfile: (id: string) => void;
   onPublished?: (id: string, created: boolean) => void;
@@ -134,6 +135,8 @@ export interface EmailCtx {
   /** has this page proved it owns a GitHub account (gh_links)? */
   ghVerified?: (id: string) => boolean;
 }
+
+export const GOOGLE_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.4h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7c2.2-2 3.4-5 3.4-8.5z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.7H1.8v3A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.6 14.7a7.2 7.2 0 0 1 0-4.600v-3H1.8a12 12 0 0 0 0 10.6l3.8-3z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.400 1.700l3.300-3.300A12 12 0 0 0 1.8 7.1l3.8 3C6.5 6.8 9 4.8 12 4.8z"/></svg>`;
 
 export function emailPages(c: EmailCtx) {
   const { q } = c, pub = c.publicUrl.replace(/\/$/, "");
@@ -232,6 +235,7 @@ export function emailPages(c: EmailCtx) {
     const to = back.match(/^\/messages\/@([a-z0-9-]+)$/)?.[1] || "";
     c.page(res, msg.startsWith("ok:") ? 200 : 200, "Sign up with email", `${STYLE}<main class="ep"><h1>Make your page with ChatGPT or Claude</h1>
 <p class="lede">No GitHub or Obsidian needed. Your AI writes your profile; you paste it here and confirm your email. Change anything later the same way.</p>
+${googleClient() ? `<p><a rel="nofollow" class="btn ghost" href="/auth/google${back || inv ? `?${[back ? `back=${encodeURIComponent(back)}` : "", inv ? `invite=${encodeURIComponent(inv)}` : ""].filter(Boolean).join("&")}` : ""}" style="display:inline-flex;align-items:center;gap:8px">${GOOGLE_ICON}Continue with Google</a></p>` : ""}
 ${to ? `<p class="ok" role="status">Make your page, confirm your email, and you go straight to your conversation with <b>@${esc(to)}</b>. Already on Caldera? Enter just your email below for a sign-in link.</p>` : ""}
 ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(msg.replace(/^ok:/, ""))}</p>` : ""}
 <section class="card"><h2><span class="n">1</span>Copy this prompt into ChatGPT, Claude or any AI</h2><pre id="p-start">${esc(START_PROMPT)}</pre><div class="row"><button type="button" class="btn small" data-copy="p-start">Copy the prompt</button><span class="mut">It works best in a chat that already knows you.</span></div></section>
@@ -274,7 +278,87 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
   const okInv = (v: unknown) => String(v || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 31);
   const carry = (back: string, inv: string) => `${back ? `&back=${encodeURIComponent(back)}` : ""}${inv ? `&invite=${encodeURIComponent(inv)}` : ""}`;
 
+  // The address is proven (email link, or Google says it verified it): sign in to the page it belongs to, or make one.
+  // keepPage: `pr` is only for a new page, never merged into an existing one.
+  async function finishVerified(req: http.IncomingMessage, res: http.ServerResponse, email: string, pr: Profile, back: string, inv: string, opts: { keepPage?: boolean } = {}): Promise<boolean> {
+      let acct = q("SELECT * FROM email_accounts WHERE email_hash=?").get(hash(email)) as any, created = false;
+      // the address became a GitHub or Obsidian member's after this link went out (or the link predates this check): the
+      // link proves the address, so it signs in to THAT page; the pasted profile is only for email pages
+      const other = acct ? null : c.memberByEmail?.(email) || null;
+      if (other) {
+        res.writeHead(302, { location: back || `/@${other.handle}/`, "set-cookie": c.startOwner(other.id), "cache-control": "no-store" }); res.end(); return true;
+      }
+      if (!acct) {
+        if (!c.allowNewProfile(req)) { c.page(res, 429, "One moment", `${STYLE}<main class="ep"><h1>Lots of people are joining right now</h1><p>Open the link again in a minute.</p></main>`); return true; }
+        const id = C.newIdentity(), handle = handleFor(pr.name || "", email), now = new Date().toISOString();
+        q("INSERT INTO email_accounts (profile_id, handle, email_hash, email_sealed, key_sealed, content, log, created, updated) VALUES (?,?,?,?,?,?,?,?,?)")
+          .run(id.id, handle, hash(email), c.seal(email), c.seal(JSON.stringify(id)), JSON.stringify(pr), "[]", now, now);
+        acct = q("SELECT * FROM email_accounts WHERE profile_id=?").get(id.id); created = true;
+      } else if (Object.keys(pr).length && !opts.keepPage) {
+        const merged = merge(JSON.parse(acct.content || "{}"), pr);
+        q("UPDATE email_accounts SET content=?, updated=? WHERE profile_id=?").run(JSON.stringify(merged), new Date().toISOString(), acct.profile_id);
+        acct = q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id);
+      }
+      c.rememberEmail(acct.profile_id, email);
+      try { publish(acct); } catch (e: any) { c.page(res, 500, "Not yet", `${STYLE}<main class="ep"><h1>We couldn't publish your page</h1><p class="mut">${esc(e.message)}</p><p><a class="btn" href="/start">Try again</a></p></main>`); return true; }
+      c.onPublished?.(acct.profile_id, created);
+      if (created) c.track?.(req, "email-created", pr.kind || (pr.ghPublic ? "gh" : inv ? "invite" : ""));
+      // joined from someone's invite (e.g. their Message button): credit them, and the new member follows them
+      if (created && inv && inv !== acct.handle) try {
+        const inviter = c.recordReferral?.(acct.profile_id, inv, "email");
+        if (inviter) c.accept(C.sign(JSON.parse(c.unseal(acct.key_sealed)), "friend.request", { to: inviter, note: "I joined Caldera from your invite." }));
+      } catch { /* best effort */ }
+      const hasCity = fs.existsSync(path.join(c.dataDir, "profiles", acct.handle, "city.html"));   // no repos yet: their page, not a 404
+      if (created && !pr.kind && !back && opts.keepPage) { res.writeHead(302, { location: "/settings?new=1", "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true; }   // a Google sign-up has only a name so far
+      if (created && pr.kind && !back) { res.writeHead(302, { location: `/settings?new=1#${pr.kind === "designer" ? "work" : "companies"}`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true; }   // straight to adding their work
+      res.writeHead(302, { location: back || `/@${acct.handle}/${hasCity ? "city.html" : ""}?welcome=1`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true;
+  }
+
+  // "Continue with Google": name and email only (openid email profile), no access to mail. Client id + secret in data/google-oauth.json;
+  // no file, no button and these routes say not found. What Google verified goes through the same path as the email link.
+  const googleClient = (): { client_id: string; client_secret: string } | null => {
+    try { const j = JSON.parse(fs.readFileSync(path.join(c.dataDir, "google-oauth.json"), "utf8")); return j.client_id && j.client_secret ? j : null; } catch { return null; }
+  };
+  const GOOGLE_COOKIE = "cal_gs", googleRedirect = () => c.publicUrl.replace(/\/$/, "") + "/auth/google/callback";
+  const googleCookie = (val: string, age: number) => `${GOOGLE_COOKIE}=${encodeURIComponent(val)}; Path=/auth/google; HttpOnly; SameSite=Lax; Max-Age=${age}${c.publicUrl.startsWith("https:") ? "; Secure" : ""}`;
+  const googleFail = (res: http.ServerResponse, title: string, why: string) => c.page(res, 400, title, `${STYLE}<main class="ep"><h1>${esc(title)}</h1><p class="lede">${esc(why)}</p><p><a class="btn" href="/signin">Back to sign in</a></p></main>`);
+
+  async function googleRoute(req: http.IncomingMessage, res: http.ServerResponse, url: URL, p: string): Promise<boolean> {
+    if (p !== "/auth/google" && p !== "/auth/google/callback") return false;
+    if (req.method !== "GET") return false;
+    const client = googleClient(); if (!client) return false;
+    if (p === "/auth/google") {
+      if (c.tooMany("google:" + ipKey(req), 30)) { googleFail(res, "Too many tries", "Wait a little while, then try again."); return true; }
+      const state = crypto.randomBytes(16).toString("hex");
+      const q2 = new URLSearchParams({ client_id: client.client_id, redirect_uri: googleRedirect(), response_type: "code", scope: "openid email profile", state, nonce: state, prompt: "select_account" });
+      const sealed = c.seal(JSON.stringify({ state, back: okBack(url.searchParams.get("back")), inv: okInv(url.searchParams.get("invite")), exp: Date.now() + 10 * 60_000 }));
+      res.writeHead(302, { location: "https://accounts.google.com/o/oauth2/v2/auth?" + q2, "set-cookie": googleCookie(sealed, 600), "cache-control": "no-store" }); res.end();
+      return true;
+    }
+    if (url.searchParams.get("error")) { res.writeHead(302, { location: "/signin", "cache-control": "no-store" }); res.end(); return true; }   // they cancelled
+    let st: any = null;
+    try { const raw = String(req.headers.cookie || "").split(/;\s*/).find(x => x.startsWith(GOOGLE_COOKIE + "="))?.slice(GOOGLE_COOKIE.length + 1) || ""; st = JSON.parse(c.unseal(decodeURIComponent(raw))); } catch { /* missing or forged */ }
+    const state = String(url.searchParams.get("state") || ""), code = String(url.searchParams.get("code") || "");
+    if (!st || !state || st.state !== state || st.exp < Date.now() || !code) { googleFail(res, "That sign-in timed out", "Please try again. Nothing was changed."); return true; }
+    let claims: any = null;
+    try {
+      const r = await c.googleFetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ code, client_id: client.client_id, client_secret: client.client_secret, redirect_uri: googleRedirect(), grant_type: "authorization_code" }).toString() });
+      const j: any = await r.json();
+      // straight from Google over TLS, so the claims are checked but the signature needn't be (OpenID Connect Core 3.1.3.7)
+      if (r.ok && j.id_token) claims = JSON.parse(Buffer.from(String(j.id_token).split(".")[1], "base64url").toString("utf8"));
+    } catch (e: any) { console.error("google sign-in", e?.message); }
+    const iss = String(claims?.iss || ""), email = String(claims?.email || "").trim().toLowerCase();
+    const good = claims && (iss === "https://accounts.google.com" || iss === "accounts.google.com") && claims.aud === client.client_id && claims.nonce === st.state && Number(claims.exp) * 1000 > Date.now();
+    if (!good) { googleFail(res, "Google sign-in didn't finish", "Please try again, or use a code by email."); return true; }
+    if (claims.email_verified !== true || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { googleFail(res, "We need a verified email", "Google hasn't verified that account's email address. Use a code by email instead."); return true; }
+    c.track?.(req, "google-signin");
+    const name = String(claims.name || "").replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, 80);
+    return finishVerified(req, res, email, name ? { name } as Profile : {} as Profile, okBack(st.back), okInv(st.inv), { keepPage: true });
+  }
+
   async function route(req: http.IncomingMessage, res: http.ServerResponse, url: URL, p: string): Promise<boolean> {
+    if (await googleRoute(req, res, url, p)) return true;
     if (p === "/start" && req.method === "GET") {
       if (url.searchParams.get("via") === "gh-return") c.track?.(req, "gh-return");   // the offer after leaving GitHub (site.js)
       startPage(res, "", "", "", okBack(url.searchParams.get("back")), okInv(url.searchParams.get("invite"))); return true; }
@@ -318,37 +402,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       const back = okBack(cf.get("back")), inv = okInv(cf.get("invite"));
       if (!row || row.expires < Date.now()) { c.page(res, 400, "Link expired", `${STYLE}<main class="ep"><h1>That link expired or was already used</h1><p><a class="btn" href="/start">Start again</a> &middot; <a href="/signin">Sign in</a></p></main>`); return true; }
       q("DELETE FROM email_pending WHERE token_hash=?").run(hash(t));
-      const email = c.unseal(row.email_sealed), pr = JSON.parse(row.content || "{}") as Profile;
-      let acct = q("SELECT * FROM email_accounts WHERE email_hash=?").get(hash(email)) as any, created = false;
-      // the address became a GitHub or Obsidian member's after this link went out (or the link predates this check): the
-      // link proves the address, so it signs in to THAT page; the pasted profile is only for email pages
-      const other = acct ? null : c.memberByEmail?.(email) || null;
-      if (other) {
-        res.writeHead(302, { location: back || `/@${other.handle}/`, "set-cookie": c.startOwner(other.id), "cache-control": "no-store" }); res.end(); return true;
-      }
-      if (!acct) {
-        if (!c.allowNewProfile(req)) { c.page(res, 429, "One moment", `${STYLE}<main class="ep"><h1>Lots of people are joining right now</h1><p>Open the link again in a minute.</p></main>`); return true; }
-        const id = C.newIdentity(), handle = handleFor(pr.name || "", email), now = new Date().toISOString();
-        q("INSERT INTO email_accounts (profile_id, handle, email_hash, email_sealed, key_sealed, content, log, created, updated) VALUES (?,?,?,?,?,?,?,?,?)")
-          .run(id.id, handle, hash(email), c.seal(email), c.seal(JSON.stringify(id)), JSON.stringify(pr), "[]", now, now);
-        acct = q("SELECT * FROM email_accounts WHERE profile_id=?").get(id.id); created = true;
-      } else if (Object.keys(pr).length) {
-        const merged = merge(JSON.parse(acct.content || "{}"), pr);
-        q("UPDATE email_accounts SET content=?, updated=? WHERE profile_id=?").run(JSON.stringify(merged), new Date().toISOString(), acct.profile_id);
-        acct = q("SELECT * FROM email_accounts WHERE profile_id=?").get(acct.profile_id);
-      }
-      c.rememberEmail(acct.profile_id, email);
-      try { publish(acct); } catch (e: any) { c.page(res, 500, "Not yet", `${STYLE}<main class="ep"><h1>We couldn't publish your page</h1><p class="mut">${esc(e.message)}</p><p><a class="btn" href="/start">Try again</a></p></main>`); return true; }
-      c.onPublished?.(acct.profile_id, created);
-      if (created) c.track?.(req, "email-created", pr.kind || (pr.ghPublic ? "gh" : inv ? "invite" : ""));
-      // joined from someone's invite (e.g. their Message button): credit them, and the new member follows them
-      if (created && inv && inv !== acct.handle) try {
-        const inviter = c.recordReferral?.(acct.profile_id, inv, "email");
-        if (inviter) c.accept(C.sign(JSON.parse(c.unseal(acct.key_sealed)), "friend.request", { to: inviter, note: "I joined Caldera from your invite." }));
-      } catch { /* best effort */ }
-      const hasCity = fs.existsSync(path.join(c.dataDir, "profiles", acct.handle, "city.html"));   // no repos yet: their page, not a 404
-      if (created && pr.kind && !back) { res.writeHead(302, { location: `/settings?new=1#${pr.kind === "designer" ? "work" : "companies"}`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true; }   // straight to adding their work
-      res.writeHead(302, { location: back || `/@${acct.handle}/${hasCity ? "city.html" : ""}?welcome=1`, "set-cookie": c.startOwner(acct.profile_id), "cache-control": "no-store" }); res.end(); return true;
+      return finishVerified(req, res, c.unseal(row.email_sealed), JSON.parse(row.content || "{}") as Profile, back, inv);
     }
 
     // ---- Designer and Business sign-up (2026-10-30): a short form instead of the AI prompt; the same confirm link
@@ -576,5 +630,5 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     a.content = JSON.stringify(pr); q("UPDATE email_accounts SET content=? WHERE profile_id=?").run(a.content, id); publish(a); return true;
   }
   function republish(id: string) { const a = acctOf(id); if (a) publish(a); }
-  return { verifyPublicCity, republish, stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
+  return { googleOn: () => !!googleClient(), verifyPublicCity, republish, stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
 }
