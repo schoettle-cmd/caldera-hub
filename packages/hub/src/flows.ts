@@ -22,7 +22,7 @@ export const isOwnAddress = (email: string) => OWN.test(String(email || "").trim
 /** where this person started, from the page that sent them (same-site navigations carry the full URL) */
 export function doorOf(req: http.IncomingMessage, url?: URL, ownHost = ""): string {
   const t = url?.searchParams.get("type"); if (t === "designer" || t === "business") return "join-" + t;
-  if (url?.searchParams.get("from") === "signin") return "signin";   // /signin sends no referrer (on purpose): its buttons say so
+  const fr = url?.searchParams.get("from"); if (fr === "signin" || fr === "gate") return fr;   // /signin sends no referrer (on purpose): its buttons say so
   let ref: URL | null = null; try { ref = new URL(String(req.headers.referer || "")); } catch { /* none */ }
   if (!ref) return "direct";
   if (ref.host !== ownHost && ref.host !== String(req.headers.host || "")) return "external";

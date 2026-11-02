@@ -87,3 +87,11 @@ test("left out: our own addresses, a page deleted the same day, and crawlers", a
   assert.equal(f["join:google"].start, 1, "only the earlier real person, not ours and not the crawler");
   assert.equal(f["start:google"], undefined, "deleted the same day");
 });
+test("the sign-in page's cards say where they are: signin, or gate when a page sent them", async () => {
+  const si = await (await fetch(base + "/signin", { headers: H("10.0.1.1") })).text();
+  assert.match(si, /auth\/google\?from=signin/);
+  const g = await (await fetch(base + "/signin?back=%2Fmessages%2F%40someone", { headers: H("10.0.1.1") })).text();
+  if (/Sign up with Google/.test(g)) assert.match(g, /from=gate/);
+  await fetch(base + "/auth/google?from=gate", { redirect: "manual", headers: H("10.0.1.2") });
+  assert.equal(flows()["gate:google"].start, 1);
+});
