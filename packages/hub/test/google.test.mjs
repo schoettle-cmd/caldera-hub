@@ -98,7 +98,7 @@ test("Google-first is off by default: preview, career and join unchanged, ?gf=1 
     assert.match(off, /Claim it with GitHub/); assert.doesNotMatch(off, /Save your scan with Google/);
     assert.doesNotMatch(await (await fetch(b.base + "/join", UA)).text(), /door=google/);
     const pv = await (await fetch(b.base + "/gh/octo?gf=1", UA)).text();
-    assert.match(pv, /auth\/google\?gh=Octo/); assert.match(pv, /Connect GitHub instead/); assert.doesNotMatch(pv, /Claim it with GitHub/);
+    assert.match(pv, /auth\/google\?gh=Octo/); assert.match(pv, /use GitHub<\/a> or/); assert.doesNotMatch(pv, /Claim it with GitHub/);
     assert.match(await (await fetch(b.base + "/join?gf=1", UA)).text(), /door=google/);
     fs.writeFileSync(path.join(b.d, "google-first.json"), JSON.stringify({ on: true }));
     assert.match(await (await fetch(b.base + "/gh/octo", UA)).text(), /Save your scan with Google/);
