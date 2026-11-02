@@ -42,7 +42,7 @@ export { cleanText, renderText } from "./messages";
 import { emailer, type Mail, type You } from "./email";
 export { tagLinks } from "./email";
 import { weatherService, dayStats, ownerSetup, extrasScript } from "./cityextra";
-import { buildWorld, foldLive, worldPage, type World, type WorldMemberIn } from "./world";
+import { closenessOrder, buildWorld, foldLive, worldPage, type World, type WorldMemberIn } from "./world";
 import { citySnapshot, applyPrivateMode, rewriteCityPage, upgradeCityScript, type CityData } from "../../../../caldera/packages/plugin/src/city";
 import { mentionSearch } from "./mentions.js";
 import { privateModes, scrubPrivateLive } from "./privatemode";
@@ -841,7 +841,24 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     // "same stack" lines: each member's top 2 similar-stack matches (a friendship between the two wins over it)
     for (const pr of prs) for (const x of (() => { try { return B.similarStacks(pr, 2); } catch { return []; } })())
       pairs.push([pr.handle, x.handle, "stack", x.shared.slice(0, 3).map(s => s.dep).join(", ")]);
-    const w = buildWorld(members, pairs, opts.founder ? opts.founder.toLowerCase() : null, opts.publicUrl || "https://caldera.social");
+    // closeness: who talks to whom (messages both ways, comments on each other's posts, friend links); recomputed once a day
+    let hint: string[] | undefined;
+    try {
+      const day = new Date().toISOString().slice(0, 10), saved = q("SELECT v FROM hub_meta WHERE k='world_order'").get() as any;
+      const prevO = saved ? JSON.parse(saved.v) : null;
+      if (prevO && prevO.day === day) hint = prevO.order;
+      else {
+        const ties = new Map<string, number>(), add = (a?: string, b?: string, n = 1) => { if (!a || !b || a === b) return; const k = a < b ? a + "|" + b : b + "|" + a; ties.set(k, (ties.get(k) || 0) + n); };
+        for (const r of q("SELECT t.a, t.b, COUNT(m.id) n, COUNT(DISTINCT m.sender) senders FROM msg_threads t JOIN msg_messages m ON m.thread=t.id GROUP BY t.id").all() as any[]) add(ids.get(r.a), ids.get(r.b), Math.min(20, r.n) * (r.senders > 1 ? 2 : 1));
+        for (const r of q("SELECT c.author a, p.author b, COUNT(*) n FROM post_comments c JOIN posts p ON p.id=c.post WHERE c.author<>p.author GROUP BY 1,2").all() as any[]) add(ids.get(r.a), ids.get(r.b), 2 * Math.min(10, r.n));
+        for (const [a, b, kind] of pairs as any[]) if (kind !== "stack" && kind !== "founder") add(a, b, 3);
+        const fo = opts.founder ? String(opts.founder).toLowerCase() : null;
+        const base = buildWorld(members, pairs, fo, opts.publicUrl || "https://caldera.social").members.map(m => m.handle);
+        hint = closenessOrder(base, ties, fo, prevO ? prevO.order : null);
+        q("INSERT INTO hub_meta VALUES ('world_order', ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").run(JSON.stringify({ day, order: hint }));
+      }
+    } catch (e: any) { console.error("world closeness", e?.message); }
+    const w = buildWorld(members, pairs, opts.founder ? opts.founder.toLowerCase() : null, opts.publicUrl || "https://caldera.social", Date.now(), hint);
     worldCache = { at: Date.now(), w }; return w;
   }
   function worldLive(since: string | null) {
@@ -3258,3 +3275,4 @@ if (import.meta.url === `file://${process.argv[1]}` && /server\.js$/.test(proces
 }
 export { guideSteps, welcomeText } from "./setupguide";
 export { newsToday } from "./news";
+export { closenessOrder } from "./world";

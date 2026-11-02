@@ -51,12 +51,43 @@ export function cleanRepo(r: CityRepo, project: string): CityRepo {
 const siteList = (r: CityRepo) => { const s = cleanSites(r.sites); return s ? { sites: s } : {}; };
 
 /** Lay out the world: members ordered so groups cluster together and the newest sit at the edge. */
-export function buildWorld(members: WorldMemberIn[], friendships: ([string, string] | [string, string, string?, string?])[], founder: string | null, hub: string, now = Date.now()): World {
+/** Closeness order (Mike 2026-11-02: "people that talk more on our platform, their plots become closer to each other").
+ *  The world lays districts out in member order, so neighbours in the list are neighbours in the city.
+ *  ties: "a|b" (handles, sorted) -> weight. base: today's default order. prev: last night's order (stability).
+ *  Greedy chain: the founder first (the hub at the centre), then whoever is most tied to the last few placed; people with
+ *  no ties keep their place; each member moves at most maxShift places per run. Deterministic. */
+export function closenessOrder(base: string[], ties: Map<string, number>, founder: string | null, prev: string[] | null, maxShift = 4): string[] {
+  const w = (a: string, b: string) => ties.get(a < b ? a + "|" + b : b + "|" + a) || 0;
+  const deg = new Map<string, number>(); for (const [k, v] of ties) for (const h of k.split("|")) deg.set(h, (deg.get(h) || 0) + v);
+  const pIdx = new Map((prev || []).map((h, i) => [h, i] as [string, number])), bIdx = new Map(base.map((h, i) => [h, i] as [string, number]));
+  const rankOf = (h: string) => pIdx.has(h) ? pIdx.get(h)! : 1e6 + bIdx.get(h)!;
+  const connected = base.filter(h => (deg.get(h) || 0) > 0);
+  const placed: string[] = [], left = new Set(connected);
+  const take = (h: string) => { placed.push(h); left.delete(h); };
+  if (founder && left.has(founder)) take(founder);
+  while (left.size) {
+    const recent = placed.slice(-3);
+    let best: string | null = null, bs = -1;
+    for (const h of left) { const sc = recent.reduce((t, r) => t + w(h, r), 0); if (sc > bs || (sc === bs && best !== null && (rankOf(h) < rankOf(best)))) { best = h; bs = sc; } }
+    if (bs <= 0) { best = [...left].sort((a, b) => (deg.get(b) || 0) - (deg.get(a) || 0) || rankOf(a) - rankOf(b))[0]!; }
+    take(best!);
+  }
+  // desired slots: the connected chain takes the slots the connected members held, in chain order; strangers stay put
+  const slots = base.map((h, i) => ({ h, key: rankOf(h) === 1e6 + i ? 1e6 + i : rankOf(h) }));
+  const cSlots = slots.filter(x => (deg.get(x.h) || 0) > 0).map(x => x.key).sort((a, b) => a - b);
+  const key = new Map<string, number>();
+  for (const x of slots) if (!((deg.get(x.h) || 0) > 0)) key.set(x.h, x.key);
+  placed.forEach((h, i) => { const want = cSlots[i]!, from = rankOf(h); key.set(h, from >= 1e6 ? want : Math.max(from - maxShift - 0.5, Math.min(from + maxShift + 0.5, want))); });
+  return [...base].sort((a, b) => key.get(a)! - key.get(b)! || bIdx.get(a)! - bIdx.get(b)!);
+}
+
+export function buildWorld(members: WorldMemberIn[], friendships: ([string, string] | [string, string, string?, string?])[], founder: string | null, hub: string, now = Date.now(), orderHint?: string[]): World {
   const base = hub.replace(/\/$/, "");
   const isNew = (m: WorldMemberIn) => now - Date.parse(m.created) < NEW_MS;
   const order = [...members].sort((a, b) => Number(isNew(a)) - Number(isNew(b))
     || (a.groups[0] || "￿").localeCompare(b.groups[0] || "￿")
     || b.busy - a.busy || a.handle.localeCompare(b.handle));
+  if (orderHint && orderHint.length) { const oi = new Map(orderHint.map((h, i) => [h, i] as [string, number])); order.sort((a, b) => (oi.has(a.handle) ? oi.get(a.handle)! : 1e9) - (oi.has(b.handle) ? oi.get(b.handle)! : 1e9)); }   // closeness, computed nightly
   // each member keeps their own districts (the same public projects their own city shows; private ones are already
   // merged into one "Private" district there), so the world can label them. Buildings are capped per member.
   let left = MAX_BUILDINGS;
