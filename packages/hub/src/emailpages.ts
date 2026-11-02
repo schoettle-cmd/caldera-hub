@@ -109,6 +109,7 @@ export interface EmailCtx {
   accept: (e: C.Envelope) => { status: number; body: any };
   dataDir: string; publicUrl: string; reserved: Set<string>;
   /** token call for Google sign-in (tests fake it) */ googleFetch: typeof fetch;
+  /** Agency Super: keep a creator's click with the address the sign-up link goes to (agencysuper.ts) */ asRemember?: (req: http.IncomingMessage, email: string) => void;
   /** sign-up flow counts (flows.ts) */ flows?: { start: (req: http.IncomingMessage, m: "google" | "email", door: string) => void; fail: (req: http.IncomingMessage, m: "google" | "email") => void; ok: (req: http.IncomingMessage, m: "google" | "email", owner: string, created: boolean) => void; firstValue: (owner: string) => void; door: (req: http.IncomingMessage, url?: URL) => string };
   byHandle: (h: string) => any; profile: (id: string) => any;
   startOwner: (id: string) => string; memberOf: (req: http.IncomingMessage) => string | null;
@@ -447,6 +448,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       const f = await form(req), text = String(f.get("text") || ""), email = String(f.get("email") || "").trim().toLowerCase();
       const back = okBack(f.get("back")), inv = okInv(f.get("invite")), again = (m: string) => startPage(res, m, text, email, back, inv);
       if (!okEmail(email)) { again("That email doesn't look right."); return true; }
+      c.asRemember?.(req, email);
       const pr = parseProfile(text), ex = q("SELECT handle FROM email_accounts WHERE email_hash=?").get(hash(email)) as any;
       // the address already belongs to a GitHub or Obsidian member: one person, one page. They get the way back into
       // their own page instead (the screen says the same either way, so nobody learns who is a member)
@@ -522,7 +524,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       else { const co = clean(o.a, 60); pr.companies = co ? [{ id: newId(), name: co, role: o.b || undefined }] : []; pr.looking = {}; }
       const inbox = /@(gmail|googlemail)\.com$/.test(o.email) ? `<p><a class="btn" href="https://mail.google.com/mail/u/0/#search/from%3Acaldera.social" target="_blank" rel="noopener">Open Gmail</a></p>` : "";
       const sent = () => c.page(res, 200, "Check your email", `${STYLE}<main class="ep"><h1>Check your email</h1><p class="lede">We sent a link to <b>${esc(o.email)}</b> from hello@caldera.social. Open it and your page goes live.</p>${inbox}<p class="mut">Nothing there in a minute? Check spam, or <a href="/join/${kind}">try again</a>.</p></main>`);
-      c.flows?.start(req, "email", c.flows.door(req)); if (pr.ghPublic) c.track?.(req, "ghe-sent");
+      c.asRemember?.(req, o.email); c.flows?.start(req, "email", c.flows.door(req)); if (pr.ghPublic) c.track?.(req, "ghe-sent");
       const ex = q("SELECT handle FROM email_accounts WHERE email_hash=?").get(hash(o.email)) as any, other = ex ? null : c.memberByEmail?.(o.email) || null;
       if (other) { try { await c.mailExisting?.(other, o.email, "", o.inv); } catch (e: any) { page(502, { ...o, msg: "We couldn't send the email: " + e.message }); return true; } sent(); return true; }
       c.track?.(req, "form-submit", kind);

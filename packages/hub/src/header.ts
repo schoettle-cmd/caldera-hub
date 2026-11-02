@@ -8,6 +8,7 @@
  *
  * Self-contained: inline styles scoped to .ch, line icons drawn inline, menus are <details> (work in sandboxed pages).
  */
+import { ASC_JS } from "./agencysuper";
 
 export interface HeaderViewer {
   handle: string;
@@ -176,7 +177,7 @@ export function appHeader(o: HeaderOpts): string {
   if (!v) {
     const signin = o.signinHref || `${hub}/signin`, join = o.joinHref || `${hub}/join?tp=header`;
     return `${HEADER_CSS}<header class="ch" id="caldera-bar" data-state="out">${mobile}${brand}<nav class="ch-nav" aria-label="Main">${navLinks.join("")}</nav>`
-      + `<div class="ch-right"><a class="ch-text" href="${e(signin)}" rel="nofollow">Sign in</a><a class="ch-cta" href="${e(join)}">Get started</a></div></header>`
+      + `<div class="ch-right"><a class="ch-text" href="${e(signin)}" rel="nofollow">Sign in</a><a class="ch-cta" href="${e(join)}">Get started</a></div></header>${ASC_JS}`
       + tabs([...base3, tab("downloads", "Downloads", `${hub}/downloads`, icon("downloads", 22), cur === "downloads"), tab("guide", "Guide", `${hub}/guide`, icon("guide", 22), cur === "guide")]);
   }
   const own = o.own || null;
@@ -218,7 +219,7 @@ document.addEventListener('click',function(ev){ds.forEach(function(d){if(d.open&
 document.addEventListener('keydown',function(ev){if(ev.key==='Escape')ds.forEach(function(d){d.open=false})});
 ${BADGE_JS}})()</script>`;
   return `${HEADER_CSS}<header class="ch" id="caldera-bar" data-state="${own ? "own" : "in"}" data-hub="${e(hub)}"${v.badgeToken ? ` data-bt="${e(v.badgeToken)}"` : ""} data-m="${mu}" data-g="${mg}" data-a="${v.unread}" data-from="${e(from.join(", "))}">${mobile}${brand}<nav class="ch-nav" aria-label="Main">${navLinks.join("")}</nav>`
-    + `<div class="ch-right">${stale}${seg}${items}${bell}${acct}</div></header>${strip}${bottom}${js}${FEEDBACK_JS}`;
+    + `<div class="ch-right">${stale}${seg}${items}${bell}${acct}</div></header>${strip}${bottom}${js}${FEEDBACK_JS}${ASC_JS}`;
 }
 
 /** Which nav item a path belongs to. */
