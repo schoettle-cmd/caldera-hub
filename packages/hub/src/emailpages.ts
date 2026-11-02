@@ -709,5 +709,18 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     a.content = JSON.stringify(pr); q("UPDATE email_accounts SET content=? WHERE profile_id=?").run(a.content, id); publish(a); c.flows?.firstValue(id); return true;
   }
   function republish(id: string) { const a = acctOf(id); if (a) publish(a); }
-  return { googleFirst, googleOn: () => !!googleClient(), verifyPublicCity, republish, stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
+  /** GitHub connected from an email page (Settings > Connect GitHub, or a GitHub sign-in that matched this page's
+   *  verified address): its public repos become the page's city and GitHub goes on its links. Before 2026-11-02 that
+   *  path only signed the member in, so "connect" changed nothing (Arsen Yeremin, "Is github integration not working yet?"). */
+  async function connectGitHub(id: string, login: string): Promise<boolean> {
+    const a = acctOf(id); if (!a || !c.ghRead) return false;
+    const g = await c.ghRead(login); if (!g?.ok || g.p.org) return false;
+    const pr = JSON.parse(a.content || "{}") as Profile;
+    pr.ghPublic = { login: g.p.login, city: g.p.city, fetched: g.p.fetched };
+    const url = `https://github.com/${g.p.login}`;
+    if (!(pr.links || []).some(l => l[1].toLowerCase() === url.toLowerCase())) pr.links = [...(pr.links || []), ["GitHub", url]];
+    a.content = JSON.stringify(pr); q("UPDATE email_accounts SET content=? WHERE profile_id=?").run(a.content, id); publish(a); c.flows?.firstValue(id);
+    return true;
+  }
+  return { googleFirst, googleOn: () => !!googleClient(), verifyPublicCity, connectGitHub, republish, stuckClaim, route, publish, daily, schedule, erase, isEmailPage: (id: string) => !!acctOf(id), accountByEmail, signinLinkFor, kindOf };
 }

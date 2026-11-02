@@ -27,6 +27,7 @@ export interface GhCtx {
   /** an email page's unverified public-GitHub city (emailpages.ts): mark it as this login's, then rebuild once linked */
   verifyPublicCity?: (id: string, login: string) => boolean;
   republishEmail?: (id: string) => void;
+  connectEmailGitHub?: (id: string, login: string) => Promise<boolean>;
   /** apps and websites members list (details looked up and cached by the hub) */
   listings?: () => { resolve: (refs: ListingRef[], mayFetch?: boolean) => Promise<ListingMeta[]>; refsOf: (lines: unknown, kind: ListingKind) => ListingRef[] } | null;
   /** how often a page view may check GitHub for new repos, per member (default 10 minutes; tests use 0) */
@@ -811,7 +812,15 @@ ${sug.length ? `<p style="margin:.8em 0 .3em">People you might know:</p>${sug.ma
           const mine = (await verifiedEmails(tok.access)).map(x => ctx.memberByEmail!(x)).find(Boolean);
           if (mine) {
             ctx.track?.(req, "signin", "matched verified email", mine.id); addCookie(res, ctx.owner.start(mine.id)); await captureEmail(mine.id, tok.access, me);
-            done(backTo || `/@${mine.handle}/`); return true;
+            // the verified address proves both are this member's: link the GitHub account and build its city (was sign-in only)
+            let built = false;
+            if (!q("SELECT 1 FROM gh_links WHERE gh_id=? AND profile_id=?").get(me.id, mine.id)) {
+              q("INSERT OR REPLACE INTO gh_links VALUES (?,?,?,?)").run(me.id, me.login, mine.id, new Date().toISOString());
+              try { built = !!(await ctx.connectEmailGitHub?.(mine.id, me.login)); } catch (e: any) { console.error("connect github city", me.login, e?.message); }
+              if (!built) try { ctx.verifyPublicCity?.(mine.id, me.login); ctx.republishEmail?.(mine.id); } catch { /* best effort */ }
+              ctx.track?.(req, "signin", "linked by verified email", mine.id); ctx.firstValue?.(mine.id);
+            }
+            done(backTo ? backTo + (backTo.includes("?") ? "&" : "?") + "gh=connected" : `/@${mine.handle}/${built ? "city.html" : ""}?gh=connected`); return true;
           }
         }
         const held = !(ctx.accountOk ? ctx.accountOk(me) : true);
