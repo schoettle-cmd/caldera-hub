@@ -88,7 +88,7 @@ export function joinModule(c: JoinCtx) {
 .jn-door p{margin:0;font-size:14.5px;line-height:1.55}.jn-door ol{margin:0;padding-left:20px;font-size:14px;line-height:1.7}.jn-ic{width:48px;height:48px;border-radius:12px;display:grid;place-items:center}
 .jn-btns{margin-top:auto;display:flex;flex-direction:column;gap:10px}.jn-alt{font-size:13px;color:#B7B2C4;text-align:center}.jn-alt:hover{color:#ECE9F2}.jn-b{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;border-radius:12px;font:600 15px 'IBM Plex Sans',Arial,sans-serif;text-decoration:none!important;box-sizing:border-box;padding:0 14px}
 .jn-b:focus-visible{outline:2px solid #fff;outline-offset:2px}.jn-foot{text-align:center;margin:26px 0 0;font-size:14px;color:var(--text-muted,#8F89A0)}.jn-foot a{color:inherit}
-.jn-sel{outline:3px solid currentColor;outline-offset:3px}</style>`;
+.jn-sel{outline:3px solid currentColor;outline-offset:3px}.jn-gf .jn-b:not(:first-child){background:none!important;color:inherit!important;border:1px solid currentColor!important}</style>`;
 
   const doorHref = (door: Door, tp: string, from: string, type = "") => `/join/go?door=${door}${tp ? `&tp=${tp}` : ""}${from ? `&from=${from}` : ""}${type ? `&type=${type}` : ""}`;
   function selectorPage(req: http.IncomingMessage, res: http.ServerResponse, tp: string, from: string, pre: string, url?: URL) {
@@ -97,8 +97,8 @@ export function joinModule(c: JoinCtx) {
     const who = from ? c.byHandle(from) : null, nm = who?.name || (from ? "@" + from : "");
     const T = TYPE_THEME;
     const arm = c.devArm?.(req) || null, emailFirst = arm === "b"; if (arm) c.track?.(req, "jd-" + arm);
-    const door = (k: ProfileType, title: string, body: string, steps: string[], icon: string, btns0: string, btns = gBtn(k, T[k].ink, T[k].ground) + btns0) => `<div class="jn-door${pre === k ? " jn-sel" : ""}" id="door-${k}" style="background:${T[k].surface};border-color:${T[k].line};color:${T[k].ink}">
-<div class="jn-ic" style="background:${T[k].ground}">${icon}</div><h2>${title}</h2><p style="color:${T[k].mut}">${body}</p><ol>${steps.map(s => `<li>${s}</li>`).join("")}</ol><div class="jn-btns">${btns}</div></div>`;
+    const door = (k: ProfileType, title: string, body: string, steps: string[], icon: string, btns0: string, btns = gBtn(k, T[k].ink, T[k].ground) + btns0, stepsNow = gf ? ["Continue with Google", "Your page goes live right away", k === "developer" ? "Connect GitHub when you like: your repos become your city" : k === "designer" ? "Add your work: images, case studies, links" : "Add your companies and what you're looking for"] : steps) => `<div class="jn-door${pre === k ? " jn-sel" : ""}" id="door-${k}" style="background:${T[k].surface};border-color:${T[k].line};color:${T[k].ink}">
+<div class="jn-ic" style="background:${T[k].ground}">${icon}</div><h2>${title}</h2><p style="color:${T[k].mut}">${body}</p><ol>${stepsNow.map(s => `<li>${s}</li>`).join("")}</ol><div class="jn-btns${gf ? " jn-gf" : ""}">${btns}</div></div>`;
     const svg = (col: string, d: string) => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
     c.page(res, 200, "Create your profile", `${JOIN_CSS}<main class="jn"><div class="jn-head"><p class="jn-eb">Get your own page</p><h1>What do you make?</h1>
 <p class="jn-lede">Your answer sets your page's look, what it shows and how your city gets built. You can change it later.</p>${nm ? `<p class="jn-for">You'll be able to follow and message <b>${esc(nm)}</b> once your profile is up.</p>` : ""}</div>

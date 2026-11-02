@@ -254,7 +254,7 @@ ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(
     const verified = !!c.ghVerified?.(acct.profile_id), linkBack = `/auth/github?back=${encodeURIComponent(`/@${acct.handle}/`)}`;
     const row = (t: string, d: string, act: string) => `<div class="row" style="justify-content:space-between;border-top:1px solid var(--line);padding:10px 0;margin:0;flex-wrap:nowrap"><div><b>${t}</b><br><span class="mut">${d}</span></div><div style="flex:none">${act}</div></div>`;
     const city = pr.ghPublic ? `Verify @${esc(pr.ghPublic.login)} so your city counts as yours. Read-only.` : "Your repos become your city. Read-only.";
-    return `<section class="card" id="richer"><h2>Make your page richer</h2><p class="mut">Your page is live. Add more whenever you like.</p>
+    return `<section class="card" id="richer"><h2>Make your page richer</h2><p class="mut">Add more whenever you like. All of it is optional.</p>
 ${verified ? "" : row("GitHub", city, `<a rel="nofollow" class="btn small" href="${linkBack}">Connect GitHub</a>`)}
 ${pr.kind ? "" : row("Your AI", "ChatGPT or Claude writes your About, projects and links.", `<a class="btn small ghost" href="#update">Write it</a>`)}
 ${row("Obsidian", "Your notes and daily journal on your page.", `<span class="mut">Coming soon</span>`)}</section>`;
