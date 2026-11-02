@@ -72,7 +72,7 @@ document.querySelectorAll(".prompt-expand").forEach(function (b) {
   var box = document.getElementById("newcomers"), list = document.getElementById("nc-list"); if (!box || !list) return;
   fetch("/v1/directory?sort=new").then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
     if (!d) return;
-    var wk = Date.now() - 7 * 864e5, fresh = (d.profiles || []).filter(function (p) { return Date.parse(p.created) > wk; });
+    var wk = Date.now() - 7 * 864e5, fresh = (d.profiles || []).filter(function (p) { var h = String(p.handle || "").toLowerCase(), v = h.replace(/[^aeiouy]/g, "").length; return Date.parse(p.created) > wk && !(h.length >= 14 && h.indexOf("-") < 0 && v / h.length < 0.25); });   // keeps random-string handles out of the homepage list; they stay on People
     if (!fresh.length) return;
     fresh.slice(0, 8).forEach(function (p) {
       var a = document.createElement("a"); a.className = "nc"; a.href = "/@" + p.handle + "/";
