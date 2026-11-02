@@ -75,8 +75,11 @@ export function setupGuide(c: GuideCtx) {
 
   /** Every few minutes: welcome new members (joined since the guide went live, at least 30 minutes ago), and send the
    *  day-3 and day-8 follow-ups to anyone who still has a step left. Returns what it sent. */
+  /** the founder's switch (hub_meta setup_guide_on): OFF unless turned on (Mike 2026-11-02: "turn OFF my automated welcome message") */
+  const isOn = () => (q("SELECT v FROM hub_meta WHERE k='setup_guide_on'").get() as any)?.v === "1";
+  function setOn(on: boolean) { q("INSERT INTO hub_meta VALUES ('setup_guide_on', ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").run(on ? "1" : "0"); return { on }; }
   function tick(now = Date.now()) {
-    const founder = c.founder(); if (!founder) return { welcomed: 0, nudged: 0 };
+    const founder = c.founder(); if (!founder || !isOn()) return { welcomed: 0, nudged: 0 };
     let welcomed = 0, nudged = 0;
     const cut = new Date(now - 30 * 60_000).toISOString();
     for (const r of q("SELECT p.id FROM profiles p LEFT JOIN setup_guide g ON g.member=p.id WHERE p.handle IS NOT NULL AND p.id<>? AND g.member IS NULL AND p.created > ? AND p.created < ?").all(founder, since(), cut) as any[])
@@ -107,5 +110,5 @@ export function setupGuide(c: GuideCtx) {
     return out;
   }
   const erase = (id: string) => { q("DELETE FROM setup_guide WHERE member=?").run(id); };
-  return { tick, backfill, erase };
+  return { tick, backfill, erase , isOn, setOn };
 }

@@ -2241,6 +2241,14 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (/^\/(tools|downloads|v1\/tools)(\/|$)/.test(p) && TOOLS && await TOOLS.route(req, res, url, p)) return;
       if (p.startsWith("/v1/listings/") && LISTINGS && await LISTINGS.route(req, res, p)) return;
       // founder only: send the setup guide to members who joined before it existed ({dry:true} previews it)
+      if (p === "/v1/admin/setup-guide/switch" && GUIDE && (req.method === "POST" || req.method === "GET")) {   // founder: welcome + setup nudges on/off (default off)
+        const me = memberOf(req), f = opts.founder ? byHandle(String(opts.founder).toLowerCase()) : null;
+        if (!me || !f || me !== f.id) return json(res, 403, { error: "founder only" });
+        if (req.method === "GET") return json(res, 200, { on: GUIDE.isOn() });
+        if (!sameOrigin(req)) return json(res, 403, { error: "cross-site request refused" });
+        const b = await readBody(req).catch(() => ({})) as any;
+        return json(res, 200, GUIDE.setOn(!!b?.on));
+      }
       if (p === "/v1/admin/setup-guide" && req.method === "POST" && GUIDE) {
         const me = memberOf(req), f = opts.founder ? byHandle(String(opts.founder).toLowerCase()) : null;
         if (!me || !f || me !== f.id) return json(res, 403, { error: "founder only" });

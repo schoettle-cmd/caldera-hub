@@ -22,6 +22,8 @@ test("setup guide: welcomes new members by DM with only what's missing, follows 
     db.prepare("INSERT OR REPLACE INTO hub_meta VALUES ('setup_guide_since', ?)").run("2026-06-01T00:00:00.000Z");
     const msgs = h => db.prepare("SELECT m.* FROM msg_messages m JOIN msg_threads t ON t.id=m.thread JOIN profiles p ON (p.id=t.a OR p.id=t.b) WHERE p.handle=? ORDER BY m.ts").all(h);
 
+    assert.deepEqual(hub.guide.tick(), { welcomed: 0, nudged: 0 }, "off by default: no welcome, no nudges (Mike 2026-11-02)");
+    hub.guide.setOn(true);
     let r = hub.guide.tick();
     assert.deepEqual(r, { welcomed: 1, nudged: 0 }, "only the new member (joined after the guide went live) is welcomed");
     assert.equal(msgs("old").length, 0);
