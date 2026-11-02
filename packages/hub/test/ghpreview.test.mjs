@@ -112,7 +112,7 @@ test("/gh/<login>/career: free evaluation from public data, noindex, not a ratin
     const h = await r.text();
     assert.match(h, /<h1>Octo builds like (an Explorer|a Steady Maintainer)\.<\/h1>/); assert.match(h, /noindex/); assert.match(h, /isn't a rating/);
     assert.match(h, /Frontend or full-stack engineer/, "TypeScript led"); assert.match(h, /TypeScript leads your public work/); assert.match(h, /public repos/);
-    assert.match(h, /Put this on my free profile/); assert.doesNotMatch(h, /secret@example\.com/); assert.doesNotMatch(h, /forked/);
+    assert.match(h, /Put this on my free profile/); assert.match(h, /Share this read/); assert.match(h, /career%3Fs%3D1/); assert.match(h, /og:title" content="Octo builds like/); assert.doesNotMatch(h, /secret@example\.com/); assert.doesNotMatch(h, /forked/);
     const sky = await S.get("/gh/Octo/skyline.svg"); assert.equal(sky.status, 200); assert.match(await sky.text(), /<rect/);
     assert.match(await (await S.get("/gh/Octo")).text(), /\/gh\/Octo\/career/, "preview links to it");
     assert.equal((await S.get("/gh/acme/career")).headers.get("location"), "/gh/acme", "orgs get the city");
