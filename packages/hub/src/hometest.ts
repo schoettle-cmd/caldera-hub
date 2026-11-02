@@ -69,3 +69,12 @@ export const saveArm = (vid: string): "a" | "b" => (crypto.createHash("sha256").
 
 /** developer-door test jd1 (Oct 31): GitHub first vs email first; same one-day visitor hash */
 export const devArm = (vid: string): "a" | "b" => (crypto.createHash("sha256").update("jd1|" + vid).digest()[0]! & 1 ? "b" : "a");
+
+/**
+ * Career read email test "cg1" (Mike 2026-11-02: free thing in exchange for an email). "a": the preview's "save my city" box
+ * and an open career read, as before. "b": the box offers the career read, and the read shows its top half (style, skyline,
+ * numbers) until the visitor gives an email. Same one-day visitor hash; crawlers get "a". Views: funnel steps cg-a / cg-b on
+ * the preview or the read. Emails: cg-email. Read emails, claims and created per view, by arm.
+ */
+export const CAREER_TEST = "cg1";
+export const careerArm = (vid: string): "a" | "b" => (crypto.createHash("sha256").update(CAREER_TEST + "|" + vid).digest()[0]! & 1 ? "b" : "a");

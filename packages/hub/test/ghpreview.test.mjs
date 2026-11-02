@@ -25,11 +25,12 @@ const fake = async (u) => { u = String(u); calls++;
 
 async function setup() {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-ghp-"));
-  const hub = createHub({ dataDir: d, publicUrl: "http://hub.test", githubFetch: fake, limits: { newProfilesPerDay: 100 } });
+  const sent = [];
+  const hub = createHub({ dataDir: d, publicUrl: "http://hub.test", githubFetch: fake, limits: { newProfilesPerDay: 100 }, email: { send: async m => { sent.push(m); } } });
   const base = "http://127.0.0.1:" + await hub.listen(0);
   const post = (p, body) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
   const get = (p, h = {}) => fetch(base + p, { headers: { ...UA, ...h }, redirect: "manual" });
-  return { hub, d, base, post, get };
+  return { hub, d, base, post, get, sent };
 }
 
 test("/gh/<login>: a preview city from public data, cached, never the email; badges; org and unknown users", async () => {
@@ -89,9 +90,10 @@ test("'Email me my city' for everyone (save1 ended 4d09685); the email carries t
       const r = await fetch(base + "/gh/Octo", { headers: { ...NAV, "user-agent": CH + " s" + i } }); assert.equal(r.status, 200);
       assert.equal(r.headers.get("cache-control"), "private, max-age=0");
       const h = await r.text(); assert.match(h, /Claim it with GitHub/);
-      if (h.includes("Email me my city")) { b++; bUa = CH + " s" + i; assert.match(h, /name="city" value="Octo"/); assert.match(h, /name="website"/); } else a++;
+      assert.match(h, /name="city" value="Octo"/); assert.match(h, /name="website"/);
+      if (h.includes("Email me my city")) { b++; bUa = CH + " s" + i; } else if (h.includes("Show my career read")) a++; else assert.fail("no email box");
     }
-    assert.deepEqual({ a, b }, { a: 0, b: 20 }, "the experiment ended: every visitor gets the box");
+    assert.equal(a + b, 20, "every visitor gets an email box: the city (cg1 a) or the career read (cg1 b)"); assert.ok(b > 0);
     const bot = await (await fetch(base + "/gh/Octo", { headers: { "user-agent": "Googlebot/2.1" } })).text();
     assert.doesNotMatch(bot, /Email me my city/);
     const r = await fetch(base + "/signin/signup-email", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", origin: "http://hub.test", ...NAV, "user-agent": bUa }, body: new URLSearchParams({ email: "dev@person.dev", city: "Octo", website: "" }).toString() });
@@ -106,7 +108,7 @@ test("/gh/<login>/career: free evaluation from public data, noindex, not a ratin
   const S = await setup();
   try {
     assert.equal((await S.get("/gh/octo/career")).headers.get("location"), "/gh/Octo/career", "canonical case keeps the page");
-    const r = await S.get("/gh/Octo/career"); assert.equal(r.status, 200);
+    const r = await S.get("/gh/Octo/career?full=1"); assert.equal(r.status, 200);
     const h = await r.text();
     assert.match(h, /<h1>Octo builds like (an Explorer|a Steady Maintainer)\.<\/h1>/); assert.match(h, /noindex/); assert.match(h, /isn't a rating/);
     assert.match(h, /Frontend or full-stack engineer/, "TypeScript led"); assert.match(h, /TypeScript leads your public work/); assert.match(h, /public repos/);
@@ -116,5 +118,30 @@ test("/gh/<login>/career: free evaluation from public data, noindex, not a ratin
     assert.equal((await S.get("/gh/acme/career")).headers.get("location"), "/gh/acme", "orgs get the city");
     assert.doesNotMatch(await (await S.get("/gh/acme")).text(), /career read/i);
     assert.equal((await S.get("/gh/nobody-here/career")).status, 404);
+  } finally { S.hub.server.close(); }
+});
+
+test("cg1: arm b holds back the rest of the read until an email, sends the existing city mail once, and bots get it open", async () => {
+  const S = await setup();
+  try {
+    const CH = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
+    const NAV = { "sec-fetch-mode": "navigate", "sec-fetch-site": "none", accept: "text/html" };
+    await S.get("/gh/octo");
+    let gated = "", open = 0, ua = "";
+    for (let i = 0; i < 30; i++) {
+      const u = CH + " c" + i, r = await fetch(S.base + "/gh/Octo/career", { headers: { ...NAV, "user-agent": u } }); assert.equal(r.headers.get("cache-control"), "private, max-age=0");
+      const h = await r.text();
+      if (h.includes("See the rest of this read")) { gated = h; ua = u; } else { open++; assert.match(h, /Jobs this work fits/); }
+    }
+    assert.ok(gated && open, "both arms served");
+    assert.match(gated, /builds like/); assert.match(gated, /skyline\.svg/); assert.doesNotMatch(gated, /Jobs this work fits/); assert.doesNotMatch(gated, /Do these next/);
+    assert.match(gated, /once\. No mailing list\./, "says what the email is for");
+    assert.doesNotMatch(await (await fetch(S.base + "/gh/Octo/career", { headers: { "user-agent": "Googlebot/2.1" } })).text(), /See the rest of this read/);
+    const r = await fetch(S.base + "/signin/signup-email", { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: "http://hub.test", ...NAV, "user-agent": ua }, body: new URLSearchParams({ email: "dev@person.dev", city: "Octo", from: "career" }) });
+    assert.equal(r.status, 303); assert.equal(r.headers.get("location"), "/gh/Octo/career?full=1");
+    assert.equal(S.sent.length, 1); assert.match(S.sent[0].subject, /Your GitHub city: @Octo/);
+    assert.match(await (await fetch(S.base + "/gh/Octo/career?full=1", { headers: { ...NAV, "user-agent": ua } })).text(), /Jobs this work fits/);
+    const n = Object.fromEntries(S.hub.db.prepare("SELECT step, COUNT(*) n FROM funnel_events WHERE step LIKE 'cg-%' GROUP BY 1").all().map(x => [x.step, x.n]));
+    assert.equal(n["cg-email"], 1); assert.ok(n["cg-a"] > 0 && n["cg-b"] > 0);
   } finally { S.hub.server.close(); }
 });

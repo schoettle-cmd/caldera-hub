@@ -24,7 +24,7 @@ import { feed, sentenceText, postTags } from "./feed";
 import { newsToday } from "./news";
 import { gifts } from "./gifts";
 import { funnel, BOT_UA, funnelDay } from "./funnel";
-import { devArm, HOME_TEST, homeArm, armHome, SAVE_TEST, saveArm } from "./hometest";
+import { devArm, HOME_TEST, homeArm, armHome, SAVE_TEST, saveArm, CAREER_TEST, careerArm } from "./hometest";
 import { GATE_CSS, GATE_JS, okGateKind } from "./signupgate";
 import { emailPages } from "./emailpages";
 import { joinModule, gateScript } from "./join";
@@ -2168,6 +2168,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   };
   const GHP = ghPreview({ dataDir: opts.dataDir, hub: () => hubUrl(), fetch: opts.githubFetch || fetch, token: () => GH.anyToken(), header: HEADER_MARK, tooMany, ipOf,
     saveArm: (req) => { const v = FUNNEL.vid(req); return v ? saveArm(v) : null; }, track: (req, step) => FUNNEL.track(req, step, SAVE_TEST),
+    careerArm: (req) => { const v = FUNNEL.vid(req); return v ? careerArm(v) : null; }, trackCareer: (req, step) => FUNNEL.track(req, step, CAREER_TEST),
     memberOf: memberOfLogin, memberCity: (h: string) => { const pr = byHandle(h); return pr && !modOf(pr.handle, pr.id) ? publicCityOf(h) : null; }, pause: opts.githubFetch ? 0 : 150 });
 
   // the big footer from the site build (assets/footer.html), re-read when the site is redeployed
@@ -2657,6 +2658,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
             return;
           }
           if (tooMany("signup-mail-ip:" + ip, 6) || tooMany("signup-mail:" + mail.hashOf(email), 3)) { signinPage(res, 429, "Sign up", `<h1>Too many tries</h1><p class="lede">Wait an hour, then try again. Or <a href="/auth/github" rel="nofollow">sign up with GitHub</a> on this device.</p>`); return; }
+          const fromCareer = !!city && f.get("from") === "career";   // cg1 "b": the email unlocks the career read
+          if (fromCareer) FUNNEL.track(req, "cg-email", CAREER_TEST);
           FUNNEL.track(req, "email-start", city ? "city" : okB ? "from " + okB.split("/").slice(0, 2).join("/") : "");
           const pubB = (opts.publicUrl || "https://caldera.social").replace(/\/$/, ""), qs = (o: Record<string, string>) => { const s = new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString(); return s ? "?" + s : ""; };
           const startBack = /^\/(messages|messages\/@[a-z0-9-]+|feed|people|world)$/.test(okB) ? okB : "";
@@ -2680,6 +2683,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           }
           try { if (await mail.note({ to: email, ...m, src: "signup-email" })) FUNNEL.track(req, "email-sent", live ? "existing" : city ? "city" : "new"); }
           catch (err: any) { console.error("signup mail", err?.message); }
+          if (fromCareer) { res.writeHead(303, { location: `/gh/${city}/career?full=1`, "cache-control": "no-store" }); return res.end(); }
           if (city) { signinPage(res, 200, "Check your email", `<h1>Your city is on its way</h1><p class="lede">We sent <b>@${e(city)}</b>'s city to <b>${e(email)}</b>, with the link, your README badge and a one-click way to claim it.</p><p><a class="btn" href="/gh/${e(city)}">Back to the city</a></p><p class="mut">Nothing there in a minute? Check spam.</p>`); return; }
           signinPage(res, 200, "Check your email", `<h1>Check your email</h1><p class="lede">We sent a link to <b>${e(email)}</b>. Open it on any device where you use GitHub, or start without GitHub from the same email.</p><p class="mut">Nothing there in a minute? Check spam, or <a href="/#install">try again</a>.</p>`);
           return;
