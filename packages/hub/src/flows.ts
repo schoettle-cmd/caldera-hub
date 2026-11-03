@@ -5,7 +5,10 @@
  * - method: google | github | email | obsidian. door: where the person started (home, preview, career, join, join-designer,
  *   join-business, join-developer, signin, start, gate, external, direct, obsidian).
  * - A person is the funnel's one-day visitor hash (no cookie, nothing personal). Crawlers and scripts are never counted.
- * - start: began that flow. A sign-in that arrives with no recorded start (an email link opened elsewhere, a bookmark, a
+ * - start: began that flow. For Google and GitHub (2026-11-03, Growth Engine: datacenter scripts and crawlers wearing browser
+ *   agents opened members' Message gates every hour and inflated starts with no sign-in behind them): only a navigation a
+ *   person activated counts at once (Sec-Fetch-User: ?1, sent by Chrome 76+, Firefox 90+, Safari 16.4+). Any other start
+ *   is held as start_unv with its door, and becomes a start only if that person reaches the callback (auth_ok/auth_fail). A sign-in that arrives with no recorded start (an email link opened elsewhere, a bookmark, a
  *   link from another site) gets its start recorded then, under the door "external", so start >= auth_ok always.
  * - auth_ok / auth_fail: finished or failed sign-in. created: a new account. Existing members signing in are auth_ok only.
  * - first_value: a new account that made the page its own the same day: connected GitHub (a GitHub sign-up does at once),
@@ -38,6 +41,9 @@ export function doorOf(req: http.IncomingMessage, url?: URL, ownHost = ""): stri
   return "other";
 }
 
+/** a navigation the person activated (a click or a key), as modern browsers report it */
+export const humanClick = (req: http.IncomingMessage) => req.headers["sec-fetch-user"] === "?1";
+
 export function flows(c: { q: (sql: string) => any; vid: (req: http.IncomingMessage) => string | null; emailOf: (owner: string) => string | null }) {
   const { q } = c;
   q("CREATE TABLE IF NOT EXISTS flow_events (day TEXT, vid TEXT, flow TEXT, ev TEXT, ts TEXT, PRIMARY KEY (day, vid, flow, ev))").run();
@@ -53,7 +59,7 @@ export function flows(c: { q: (sql: string) => any; vid: (req: http.IncomingMess
   const safe = (fn: () => void) => { try { fn(); } catch (e: any) { console.error("flows", e?.message); } };   // counting never breaks a request
   const flowFor = (day: string, vid: string, method: Method) => {
     const d = (q("SELECT door FROM flow_doors WHERE day=? AND vid=? AND method=?").get(day, vid, method) as any)?.door;
-    if (d) return `${d}:${method}`;
+    if (d) { put(day, vid, `${d}:${method}`, "start"); return `${d}:${method}`; }   // a held (start_unv) start counts once they reach the callback
     q("INSERT OR IGNORE INTO flow_doors VALUES (?,?,?,?)").run(day, vid, method, "external"); put(day, vid, `external:${method}`, "start");
     return `external:${method}`;
   };
@@ -66,6 +72,7 @@ export function flows(c: { q: (sql: string) => any; vid: (req: http.IncomingMess
     start(req: http.IncomingMessage, method: Method, door: string) {
       safe(() => { const vid = c.vid(req); if (!vid) return; const day = funnelDay();
         q("INSERT OR IGNORE INTO flow_doors VALUES (?,?,?,?)").run(day, vid, method, door);
+        if ((method === "google" || method === "github") && !humanClick(req)) { const d = (q("SELECT door FROM flow_doors WHERE day=? AND vid=? AND method=?").get(day, vid, method) as any)?.door || door; put(day, vid, `${d}:${method}`, "start_unv"); return; }
         put(day, vid, flowFor(day, vid, method), "start"); });
     },
     fail(req: http.IncomingMessage, method: Method) {

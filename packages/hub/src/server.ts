@@ -2261,6 +2261,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         const me = memberOf(req), pr = me ? profile(me) : null;
         res.writeHead(302, { location: pr?.handle ? `/@${pr.handle}/city.html` : "/signin", "cache-control": "no-store" }); return res.end(); }
       if (/^\/(join(\/go)?|v1\/gate\/ev)$/.test(p) && await JOIN!.route(req, res, url, p)) return;   // the profile-type selector + touchpoint counts
+      // crawlers never start OAuth (they ignore robots.txt's /auth/ rule and opened every member's Message gate, 11-02)
+      if (/^\/auth\/(github|google)(\/callback)?$/.test(p) && BOT_UA.test(String(req.headers["user-agent"] || ""))) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" }); return res.end("Sign-in needs a browser."); }
       if (/^\/(v1\/page\/claim(\/confirm)?|auth\/google(\/callback)?|start(\/confirm)?|settings(\/page|\/photo|\/typed|\/typed\/img|\/obsidian)?|me|join\/(designer|business|developer))$/.test(p) && await EMP!.route(req, res, url, p)) return;   // email pages (falls through for everyone else)   // email pages (falls through for everyone else)
       if (/^\/(auth\/github|me$|me\/upload$|settings$|settings\/(status|claim)$|alerts$|v1\/github\/)/.test(p) && await GH.route(req, res, url)) return;
       if (/^\/(feed(\/|$)|v1\/feed$|v1\/posts|v1\/comments\/|v1\/me\/notices$)/.test(p) && await FEED!.route(req, res, url, p)) return;

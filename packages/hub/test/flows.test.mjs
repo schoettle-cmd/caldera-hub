@@ -92,6 +92,26 @@ test("the sign-in page's cards say where they are: signin, or gate when a page s
   assert.match(si, /auth\/google\?from=signin/);
   const g = await (await fetch(base + "/signin?back=%2Fmessages%2F%40someone", { headers: H("10.0.1.1") })).text();
   if (/Sign up with Google/.test(g)) assert.match(g, /from=gate/);
-  await fetch(base + "/auth/google?from=gate", { redirect: "manual", headers: H("10.0.1.2") });
+  await fetch(base + "/auth/google?from=gate", { redirect: "manual", headers: H("10.0.1.2", { "sec-fetch-user": "?1" }) });
   assert.equal(flows()["gate:google"].start, 1);
+});
+
+// 2026-11-03 (Growth Engine): scripts wearing browser agents opened every member's Message gate and inflated starts
+test("an OAuth start counts at once only for a person's click; others count only if they reach the callback; crawlers get 403", async () => {
+  // no user activation and no callback (a script following a gate link): held, not a start
+  await fetch(base + "/auth/google", { redirect: "manual", headers: H("10.0.2.1", { referer: ORIGIN + "/" }) });
+  let f = flows()["home:google"] || {}; assert.equal(f.start, undefined); assert.equal(f.start_unv, 1);
+  // also without user activation, but the person does come back from Google: counted, under its door
+  await fetch(base + "/auth/google?type=business", { redirect: "manual", headers: H("10.0.2.2") });
+  assert.equal((flows()["join-business:google"] || {}).start, undefined);
+  await fetch(base + "/auth/google/callback?error=access_denied", { redirect: "manual", headers: H("10.0.2.2") });
+  f = flows()["join-business:google"]; assert.equal(f.start, 1); assert.equal(f.auth_fail, 1);
+  // a real click (Sec-Fetch-User: ?1) counts at once
+  await fetch(base + "/auth/google", { redirect: "manual", headers: H("10.0.2.3", { referer: ORIGIN + "/people", "sec-fetch-user": "?1", "sec-fetch-mode": "navigate", "sec-fetch-site": "same-origin" }) });
+  assert.equal(flows()["gate:google"].start, 2);   // the earlier gate test's click plus this one
+  // crawlers (robots.txt disallows /auth/) never start OAuth
+  for (const ua of ["Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)", "\\x22Mozilla/5.0 (Windows NT 10.0) Chrome/120.0 Safari/537.36\\x22"]) {
+    const r = await fetch(base + "/auth/github?back=%2F", { redirect: "manual", headers: { ...H("10.0.2.4"), "user-agent": ua } });
+    assert.equal(r.status, 403, ua);
+  }
 });
