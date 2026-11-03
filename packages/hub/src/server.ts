@@ -27,7 +27,7 @@ import { funnel, BOT_UA, funnelDay } from "./funnel";
 import { devArm, HOME_TEST, homeArm, armHome, SAVE_TEST, saveArm, CAREER_TEST, careerArm, PRIMARY_TEST, primaryArm, primaryHome } from "./hometest";
 import { GATE_CSS, GATE_JS, okGateKind } from "./signupgate";
 import { emailPages, GOOGLE_ICON } from "./emailpages";
-import { flows, doorOf as doorOfRaw } from "./flows";
+import { flows, doorOf as doorOfRaw, humanClick } from "./flows";
 import { joinModule, gateScript } from "./join";
 import { signinCodes, codeMail } from "./signincode";
 import { messages } from "./messages";
@@ -2220,7 +2220,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   };
   const GHP = ghPreview({ googleFirst: (u) => !!EMP?.googleFirst(u), dataDir: opts.dataDir, hub: () => hubUrl(), fetch: opts.githubFetch || fetch, token: () => GH.anyToken(), header: HEADER_MARK, tooMany, ipOf,
     saveArm: (req) => { const v = FUNNEL.vid(req); return v ? saveArm(v) : null; }, track: (req, step) => FUNNEL.track(req, step, SAVE_TEST),
-    careerArm: (req) => { const v = FUNNEL.vid(req); return v ? careerArm(v) : null; }, trackCareer: (req, step) => FUNNEL.track(req, step, CAREER_TEST),
+    careerArm: (req) => { const v = FUNNEL.vid(req); return v ? careerArm(v) : null; }, trackCareer: (req, step) => { FUNNEL.track(req, step, CAREER_TEST); if (humanClick(req)) FUNNEL.track(req, step === "cg-b" ? "cg-b-h" : "cg-a-h", CAREER_TEST); },
     memberOf: memberOfLogin, memberCity: (h: string) => { const pr = byHandle(h); return pr && !modOf(pr.handle, pr.id) ? publicCityOf(h) : null; }, pause: opts.githubFetch ? 0 : 150 });
 
   // the big footer from the site build (assets/footer.html), re-read when the site is redeployed
@@ -2358,6 +2358,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
             if (v) FUNNEL.track(req, (b ? "h2-" + arm : "h2-a") as any, HOME_TEST);
             const pb = v && primaryArm(v) === "b" ? primaryHome(b || page) : null;
             if (v) FUNNEL.track(req, pb ? "pb-b" : "pb-a", PRIMARY_TEST);
+            // the same view counted only when a person opened it (Sec-Fetch-User ?1): read pb1 on these (Growth Conversion 11-03)
+            if (v && humanClick(req)) FUNNEL.track(req, pb ? "pb-b-h" : "pb-a-h", PRIMARY_TEST);
             res.writeHead(200, { "content-type": MIME[ext] || "text/html; charset=utf-8", "cache-control": "private, max-age=0" });
             return res.end(withLive(pb || b || page));
           }

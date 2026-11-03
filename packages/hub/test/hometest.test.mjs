@@ -56,13 +56,15 @@ test("pb1: b drops the hero button, keeps sign-up and consent, both arms counted
     const CH = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
     const seen = { a: 0, b: 0 };
     for (let i = 0; i < 30; i++) {
-      const page = await (await fetch(base2 + "/", { headers: { "sec-fetch-mode": "navigate", "sec-fetch-site": "none", accept: "text/html", "user-agent": CH + " p" + i } })).text();
+      const page = await (await fetch(base2 + "/", { headers: { "sec-fetch-mode": "navigate", "sec-fetch-site": "none", ...(i % 2 ? { "sec-fetch-user": "?1" } : {}), accept: "text/html", "user-agent": CH + " p" + i } })).text();
       assert.match(page, /Show my city/);
       if (page.includes('class="cta hh-cta"')) seen.a++; else { seen.b++; assert.match(page, />Or sign up<\/a>\. By signing up you agree/); }
     }
     assert.ok(seen.a && seen.b, "both arms served: the hero still matches the swap");
     const rows = Object.fromEntries(h.db.prepare("SELECT step, COUNT(*) n FROM funnel_events WHERE step LIKE 'pb-%' GROUP BY step").all().map(r => [r.step, r.n]));
     assert.equal(rows["pb-a"], seen.a); assert.equal(rows["pb-b"], seen.b);
+    // human views (Growth Conversion 11-03): only the navigations a person activated (Sec-Fetch-User ?1), half of the 30
+    assert.equal((rows["pb-a-h"] || 0) + (rows["pb-b-h"] || 0), 15);
     const bot = await (await fetch(base2 + "/", { headers: { "user-agent": "Googlebot/2.1" } })).text();
     assert.match(bot, /class="cta hh-cta"/);
   } finally { h.server.close(); fs.rmSync(dataDir, { recursive: true, force: true }); }
