@@ -14,7 +14,7 @@ import crypto from "node:crypto";
 export const STEPS = ["google-signin", "door-google", "jd-a", "jd-b", "door-email", "door-code", "door-obsidian", "door-designer", "door-business", "form-submit", "confirm-open", "view", "preview", "gate", "click", "back", "created", "signin", "fail", "landed", "email-start", "email-sent", "email-created", "gh-return", "click-ext", "career", "career-shared", "home-a", "home-b", "h2-a", "h2-b", "h2-c", "h2-d", "h2-e", "h2-f", "h2-g", "h2-h", "h2-i", "h2-j", "save-a", "save-b", "ghe-open", "ghe-sent", "cg-a", "cg-b", "cg-email", "pb-a", "pb-b", "auth_start", "auth_code_sent", "auth_ok", "auth_fail", "typed-form", "typed-sent", "typed-bot"] as const;
 /** Crawlers, link previewers and scripts: never counted in the funnel or page views. Real browsers never match.
  *  Many crawlers ignore robots.txt and follow sign-up links (Meta's AI agents, GoogleOther, BigBug): named here. */
-export const BOT_UA = /^\\x22|^"|bot|crawl|spider|slurp|preview|fetch|curl|wget|python|node|headless|monitor|lighthouse|facebookexternalhit|facebookcatalog|embedly|discord|slack|telegram|whatsapp|externalagent|webindexer|googleother|google-inspectiontool|google-extended|bigbug|wrendex|scrapy|httpx|axios|okhttp|go-http|java\/|libwww|ia_archiver|barkrowler|dataprovider|petalsearch|yisou|sogou|seznam|ahrefs|semrush|mj12|bytespider|claude-user|claude-searchbot|anthropic-ai|perplexity|ccbot|cohere|diffbot|timpi|imagesift|omgili|youbot|qwant|yandex|baidu|meta-/i;
+export const BOT_UA = /^\\x22|^"|iPhone OS 13_2_3 like|bot|crawl|spider|slurp|preview|fetch|curl|wget|python|node|headless|monitor|lighthouse|facebookexternalhit|facebookcatalog|embedly|discord|slack|telegram|whatsapp|externalagent|webindexer|googleother|google-inspectiontool|google-extended|bigbug|wrendex|scrapy|httpx|axios|okhttp|go-http|java\/|libwww|ia_archiver|barkrowler|dataprovider|petalsearch|yisou|sogou|seznam|ahrefs|semrush|mj12|bytespider|claude-user|claude-searchbot|anthropic-ai|perplexity|ccbot|cohere|diffbot|timpi|imagesift|omgili|youbot|qwant|yandex|baidu|meta-/i;
 /** A browser that claims to be modern Chrome or Firefox always sends Sec-Fetch-Mode on a navigation; a request that
  *  claims to be one and doesn't is a script dressed up as a browser. Fetches that aren't navigations (prefetch, no-cors)
  *  aren't clicks either. Safari and older browsers without these headers still count. */
@@ -25,6 +25,10 @@ export function looksAutomated(req: http.IncomingMessage): boolean {
   if (!mode) {
     const ch = /Chrome\/(\d+)/.exec(ua), ff = /Firefox\/(\d+)/.exec(ua);
     if ((ch && +ch[1] >= 90 && !/Edge\/|OPR\/|SamsungBrowser|Electron/.test(ua)) || (ff && +ff[1] >= 95)) return true;
+    // Safari sends Sec-Fetch-Mode since 16.4: a "Safari 17+" without it is a crawler wearing Safari's agent (seen 11-02:
+    // cloud ranges opening every member's Message button through /auth/github)
+    const sf = !ch && /Safari\//.test(ua) ? /Version\/(\d+)/.exec(ua) : null;
+    if (sf && +sf[1] >= 17) return true;
   }
   return false;
 }
