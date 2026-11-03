@@ -389,7 +389,7 @@ export function createHub(opts: HubOptions) {
   const livePhoto = (pr: any) => {
     if (!pr?.handle) return;
     const rel = String(body(pr).photos?.avatar || "").replace(/^\.?\//, ""), dir = path.join(opts.dataDir, "profiles", pr.handle), f = rel ? path.join(dir, path.normalize(rel)) : "";
-    try { LIVE.check(pr.handle, rel || null, f && f.startsWith(dir + path.sep) ? f : null); } catch (e: any) { console.error("[live] check", pr.handle, e?.message); }
+    try { LIVE.check(pr.handle, rel || null, f && f.startsWith(dir + path.sep) ? f : null, pr.created); } catch (e: any) { console.error("[live] check", pr.handle, e?.message); }
   };
   const liveSweep = () => { for (const pr of q("SELECT * FROM profiles").all() as any[]) livePhoto(pr); };
   if (process.env.FAL_KEY) { setTimeout(liveSweep, 20_000).unref?.(); setInterval(liveSweep, 15 * 60_000).unref?.(); }   // GitHub/email-built pages included

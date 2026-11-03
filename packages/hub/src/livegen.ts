@@ -18,6 +18,10 @@ const PROMPT = "A living portrait. The person stays in the same pose and framing
   "Calm, hypnotic, cinematic, photorealistic. Camera locked off, no zoom, no cuts, no new objects, no talking.";
 const NEG = "blur, distort, morphing face, extra limbs, text, talking, camera movement, zoom";
 const CONCURRENCY = 3, MAX_TRIES = 3, RETRY_MS = 24 * 3600_000;
+// Spend limits (security fix 2026-11-03: any avatar change from any self-made keypair started a paid Kling job):
+// one video per profile per 14 days, profiles older than 24h only, and LIVE_DAILY_CAP fal submissions a day overall.
+const PER_PROFILE_MS = 14 * 24 * 3600_000, MIN_AGE_MS = 24 * 3600_000;
+const dailyCap = () => { const n = Number(process.env.LIVE_DAILY_CAP); return Number.isFinite(n) && n >= 0 ? n : 10; };
 
 type Row = { handle: string; src_hash: string; status: string; tries: number; updated: number; err: string | null };
 export interface LiveEntry { a: string; v: string }
@@ -30,7 +34,20 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
   const dir = path.join(o.dataDir, "live"); fs.mkdirSync(dir, { recursive: true });
   o.db.exec(`CREATE TABLE IF NOT EXISTS live_portraits (handle TEXT PRIMARY KEY, src_hash TEXT, status TEXT, tries INTEGER NOT NULL DEFAULT 0, updated INTEGER, err TEXT, avatar TEXT)`);
   const q = (sql: string) => o.db.prepare(sql);
-  const queue: { handle: string; file: string; avatar: string; hash: string }[] = [], running = new Set<string>();
+  // every paid fal submission, kept apart from live_portraits (whose rows are deleted when a photo changes)
+  o.db.exec(`CREATE TABLE IF NOT EXISTS live_gen_log (handle TEXT NOT NULL, at INTEGER NOT NULL)`);
+  o.db.exec(`CREATE INDEX IF NOT EXISTS live_gen_log_at ON live_gen_log (at)`);
+  const recentFor = (h: string) => !!q("SELECT 1 FROM live_gen_log WHERE handle=? AND at>? LIMIT 1").get(h, Date.now() - PER_PROFILE_MS);
+  const usedToday = () => Number((q("SELECT COUNT(*) AS n FROM live_gen_log WHERE at>?").get(Date.now() - 24 * 3600_000) as any)?.n || 0);
+  /** Why a paid job may not start now (null = it may). */
+  const spendBlock = (h: string, createdIso?: string | null) => {
+    const born = createdIso ? Date.parse(createdIso) : NaN;
+    if (!Number.isFinite(born) || Date.now() - born < MIN_AGE_MS) return "profile under 24h old";
+    if (recentFor(h)) return "one video per profile per 14 days";
+    if (usedToday() >= dailyCap()) return "daily cap reached";
+    return null;
+  };
+  const queue: { handle: string; file: string; avatar: string; hash: string; created?: string | null }[] = [], running = new Set<string>();
   let mapCache: { t: number; m: Record<string, LiveEntry> } | null = null;
 
   const files = (h: string) => ({ mp4: path.join(dir, h + ".mp4"), webp: path.join(dir, h + ".webp") });
@@ -41,12 +58,11 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
     q("DELETE FROM live_portraits WHERE handle=?").run(handle); mapCache = null;
   }
 
-  /** A photo (not a logo, identicon or flat graphic): enough distinct colors in a 32x32 thumbnail. */
+  /** A photo (not a logo, identicon or flat graphic), from a 32x32 thumbnail: see looksLikePhoto. */
   async function isPhoto(f: string) {
     try {
       const raw = await run("ffmpeg", ["-loglevel", "error", "-i", f, "-vf", "scale=32:32", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"], { timeout: 30_000 });
-      const seen = new Set<number>(); for (let i = 0; i + 2 < raw.length; i += 3) seen.add(((raw[i]! >> 4) << 8) | ((raw[i + 1]! >> 4) << 4) | (raw[i + 2]! >> 4));
-      return seen.size >= 40;
+      return looksLikePhoto(raw);
     } catch { return false; }
   }
   // fal gets the photo as a data URI (profile files are sandboxed/noindex and may be moderated, so no public fetch);
@@ -62,13 +78,16 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
     return r.json() as Promise<any>;
   }
 
-  async function make(j: { handle: string; file: string; avatar: string; hash: string }) {
+  async function make(j: { handle: string; file: string; avatar: string; hash: string; created?: string | null }) {
     const set = (status: string, err: string | null = null) => {
       q(`INSERT INTO live_portraits (handle, src_hash, status, tries, updated, err, avatar) VALUES (?,?,?,?,?,?,?)
         ON CONFLICT(handle) DO UPDATE SET src_hash=excluded.src_hash, status=excluded.status, tries=CASE WHEN excluded.status='failed' THEN live_portraits.tries+1 ELSE 0 END, updated=excluded.updated, err=excluded.err, avatar=excluded.avatar`)
         .run(j.handle, j.hash, status, status === "failed" ? 1 : 0, Date.now(), err, j.avatar); mapCache = null; };
     if (!(await isPhoto(j.file))) { set("skip", "not a photo"); return; }
     const img = await asDataUri(j.file), t0 = Date.now();
+    // re-checked right before spending (the queue can hold more than the cap)
+    const why = spendBlock(j.handle, j.created); if (why) { log(`[live] @${j.handle} not made: ${why}`); return; }
+    q("INSERT INTO live_gen_log (handle, at) VALUES (?, ?)").run(j.handle, Date.now());
     const sub = await fal("https://queue.fal.run/" + MODEL, { prompt: PROMPT, negative_prompt: NEG, image_url: img, tail_image_url: img, duration: "5" });
     for (;;) {
       await new Promise(r => setTimeout(r, 10_000));
@@ -103,7 +122,7 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
   }
 
   /** Bring one profile's loop in line with its current photo: make it when new/changed, drop it when gone. */
-  function check(handle: string, avatarRel: string | null | undefined, photoFile: string | null) {
+  function check(handle: string, avatarRel: string | null | undefined, photoFile: string | null, created?: string | null) {
     if (o.isModerated(handle)) { drop(handle); return; }
     if (!avatarRel || !photoFile || !fs.existsSync(photoFile)) { if (q("SELECT 1 FROM live_portraits WHERE handle=?").get(handle)) drop(handle); return; }
     const hash = hashOf(photoFile); if (!hash) return;
@@ -114,7 +133,8 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
     }
     if (row && row.src_hash !== hash && row.status === "ready") { const f = files(handle); for (const p of [f.mp4, f.webp]) fs.rmSync(p, { force: true }); q("DELETE FROM live_portraits WHERE handle=?").run(handle); mapCache = null; }
     if (!process.env.FAL_KEY || running.has(handle) || queue.some(x => x.handle === handle)) return;
-    queue.push({ handle, file: photoFile, avatar: avatarRel, hash }); pump();
+    if (spendBlock(handle, created)) return;   // the 15-minute sweep tries again once the profile is old enough / the window opens
+    queue.push({ handle, file: photoFile, avatar: avatarRel, hash, created }); pump();
   }
 
   /** handle -> { a: avatar path inside the profile, v: photo hash } for every ready loop (cached a minute). */
@@ -127,6 +147,25 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
   }
 
   return { check, drop, map, files, status: () => ({ queued: queue.length, running: [...running] }) };
+}
+
+/** rgb24 pixels of a 32x32 thumbnail -> is it a photo? Colour: 40+ distinct 4-bit colours. Black-and-white photos have
+ *  at most 16 such colours (r=g=b), which skipped every B&W portrait (2026-11-03: davidtphung, kim-kistler), so a grey
+ *  image instead needs a spread of tones: 16+ of 32 brightness bands used and no two bands holding half the pixels
+ *  (a black-on-white logo is almost all two bands; its anti-aliasing adds only a few in-between greys). */
+export function looksLikePhoto(raw: Uint8Array): boolean {
+  const n = Math.floor(raw.length / 3); if (!n) return false;
+  const seen = new Set<number>(), bands = new Array(32).fill(0); let grey = 0;
+  for (let i = 0; i + 2 < raw.length; i += 3) {
+    const r = raw[i]!, g = raw[i + 1]!, b = raw[i + 2]!;
+    seen.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+    if (Math.max(r, g, b) - Math.min(r, g, b) <= 18) grey++;
+    bands[Math.min(31, Math.round(0.299 * r + 0.587 * g + 0.114 * b) >> 3)]++;
+  }
+  if (seen.size >= 40) return true;
+  if (grey / n < 0.9) return false;
+  const used = bands.filter(c => c > 0).length, top2 = [...bands].sort((a, b) => b - a).slice(0, 2).reduce((a, b) => a + b, 0);
+  return used >= 16 && top2 / n < 0.5;
 }
 
 /** Client: swap every same-origin <img> of a member's photo for its loop (poster = the photo, so nothing flashes);
