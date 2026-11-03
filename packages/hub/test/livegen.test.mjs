@@ -13,7 +13,7 @@ import { build } from "esbuild";
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cal-livegen-"));
 const out = path.join(tmp, "livegen.mjs");
 await build({ entryPoints: [new URL("../src/livegen.ts", import.meta.url).pathname], bundle: true, platform: "node", format: "esm", packages: "external", outfile: out, logLevel: "error" });
-const { liveGen, looksLikePhoto } = await import(out);
+const { liveGen, looksLikePhoto, isGreyThumb } = await import(out);
 
 const ff = (args) => execFileSync("ffmpeg", ["-loglevel", "error", "-y", ...args]);
 const thumb = (f) => ff(["-i", f, "-vf", "scale=32:32", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]);
@@ -30,6 +30,8 @@ test("black-and-white photos count as photos; identicons don't", () => {
   assert.equal(looksLikePhoto(thumb(color)), true);
   assert.equal(looksLikePhoto(thumb(icon)), false);
   assert.equal(looksLikePhoto(thumb(greyLogo)), false);
+  assert.equal(isGreyThumb(thumb(bw)), true, "a grey photo's loop is kept grey");
+  assert.equal(isGreyThumb(thumb(color)), false);
 });
 
 test("loops from an older prompt are remade once (owner first), a failed remake keeps the working loop, young profiles wait", async () => {
@@ -55,7 +57,7 @@ test("loops from an older prompt are remade once (owner first), a failed remake 
     posts.length = 0; L2.check("mike", "img/m.png", color, old); await new Promise((r) => setTimeout(r, 300));
     assert.equal(posts.length, 0, "a failed remake isn't retried in the same process");
     db.prepare("UPDATE live_portraits SET prompt_v=2 WHERE handle='mike'").run();
-    const m = mk().map(); assert.match(m.mike.v, /-p2$/, "the cache key moves with the prompt"); assert.doesNotMatch(m.alice.v, /-p/);
+    const m = mk().map(); assert.match(m.mike.v, /-p2-[0-9a-z]+$/, "the cache key moves with the prompt and the file"); assert.doesNotMatch(m.alice.v, /-p\d/);
     posts.length = 0; mk().check("alice", "img/a.png", bw, new Date().toISOString()); await new Promise((r) => setTimeout(r, 300));
     assert.equal(posts.length, 0, "profiles under 24h old wait");
   } finally { globalThis.fetch = realFetch; delete process.env.FAL_KEY; }

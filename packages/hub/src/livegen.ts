@@ -69,12 +69,8 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
   }
 
   /** A photo (not a logo, identicon or flat graphic), from a 32x32 thumbnail: see looksLikePhoto. */
-  async function isPhoto(f: string) {
-    try {
-      const raw = await run("ffmpeg", ["-loglevel", "error", "-i", f, "-vf", "scale=32:32", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"], { timeout: 30_000 });
-      return looksLikePhoto(raw);
-    } catch { return false; }
-  }
+  async function thumb(f: string) { return run("ffmpeg", ["-loglevel", "error", "-i", f, "-vf", "scale=32:32", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"], { timeout: 30_000 }); }
+  async function isPhoto(f: string) { try { return looksLikePhoto(await thumb(f)); } catch { return false; } }
   // fal gets the photo as a data URI (profile files are sandboxed/noindex and may be moderated, so no public fetch);
   // Kling needs >= 300px, so small photos are upscaled to 512 and big ones capped at 1024
   async function asDataUri(f: string) {
@@ -96,6 +92,9 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
         ON CONFLICT(handle) DO UPDATE SET src_hash=excluded.src_hash, status=excluded.status, tries=CASE WHEN excluded.status='failed' THEN live_portraits.tries+1 ELSE 0 END, updated=excluded.updated, err=excluded.err, avatar=excluded.avatar, prompt_v=excluded.prompt_v`)
         .run(j.handle, j.hash, status, status === "failed" ? 1 : 0, Date.now(), err, j.avatar, status === "ready" ? PROMPT_V : null); mapCache = null; };
     if (!(await isPhoto(j.file))) { set("skip", "not a photo"); return; }
+    // a black-and-white photo stays black-and-white (the prompt's "warm light" tinted Mike's B&W portrait orange)
+    let grey = false; try { grey = isGreyThumb(await thumb(j.file)); } catch { /* colour */ }
+    const desat = grey ? ",hue=s=0" : "";
     const img = await asDataUri(j.file), t0 = Date.now();
     // re-checked right before spending (the queue can hold more than the cap)
     const why = spendBlock(j.handle, j.created, !!j.upgrade); if (why) { log(`[live] @${j.handle} not made: ${why}`); return; }
@@ -111,7 +110,7 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
     const raw = path.join(dir, `.${j.handle}.raw.mp4`), tmp = path.join(dir, `.${j.handle}.tmp.mp4`), tw = path.join(dir, `.${j.handle}.tmp.webp`), f = files(j.handle);
     fs.writeFileSync(raw, Buffer.from(await vr.arrayBuffer()));
     try {
-      await run("ffmpeg", ["-y", "-loglevel", "error", "-i", raw, "-an", "-vf", "scale='if(gt(iw,ih),-2,480)':'if(gt(iw,ih),480,-2)'", "-c:v", "libx264", "-crf", "25", "-preset", "slow",
+      await run("ffmpeg", ["-y", "-loglevel", "error", "-i", raw, "-an", "-vf", "scale='if(gt(iw,ih),-2,480)':'if(gt(iw,ih),480,-2)'" + desat, "-c:v", "libx264", "-crf", "25", "-preset", "slow",
         "-pix_fmt", "yuv420p", "-movflags", "+faststart", tmp]);
       await run("ffmpeg", ["-y", "-loglevel", "error", "-i", tmp, "-an", "-vf", "fps=12,scale=240:-2:flags=lanczos", "-c:v", "libwebp", "-lossless", "0", "-q:v", "55", "-compression_level", "6", "-loop", "0", tw]);
       // the member changed (or removed) their photo, or was moderated, while this ran: throw the loop away
@@ -165,7 +164,11 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
     if (mapCache && Date.now() - mapCache.t < 60_000) return mapCache.m;
     const m: Record<string, LiveEntry> = {};
     for (const r of q("SELECT handle, src_hash, avatar, prompt_v FROM live_portraits WHERE status='ready'").all() as any[])   // v carries the prompt version: the files are cached for a year per ?v=
-      if (r.avatar && !o.isModerated(r.handle) && fs.existsSync(files(r.handle).mp4)) m[r.handle] = { a: String(r.avatar).replace(/^\.?\//, ""), v: r.src_hash + (Number(r.prompt_v) > 1 ? "-p" + r.prompt_v : "") };
+      if (r.avatar && !o.isModerated(r.handle) && fs.existsSync(files(r.handle).mp4)) {
+        // + the loop file's mtime: any rewrite of the clip (a remake, a re-encode) gets a fresh URL past the 1-year cache
+        let t = ""; try { t = "-" + Math.round(fs.statSync(files(r.handle).mp4).mtimeMs / 1000).toString(36); } catch { /* gone */ }
+        m[r.handle] = { a: String(r.avatar).replace(/^\.?\//, ""), v: r.src_hash + (Number(r.prompt_v) > 1 ? "-p" + r.prompt_v : "") + t };
+      }
     mapCache = { t: Date.now(), m }; return m;
   }
 
@@ -176,6 +179,12 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
  *  at most 16 such colours (r=g=b), which skipped every B&W portrait (2026-11-03: davidtphung, kim-kistler), so a grey
  *  image instead needs a spread of tones: 16+ of 32 brightness bands used and no two bands holding half the pixels
  *  (a black-on-white logo is almost all two bands; its anti-aliasing adds only a few in-between greys). */
+/** 90%+ of the thumbnail's pixels are grey (r, g, b within 18). */
+export function isGreyThumb(raw: Uint8Array): boolean {
+  const n = Math.floor(raw.length / 3); if (!n) return false; let grey = 0;
+  for (let i = 0; i + 2 < raw.length; i += 3) { const r = raw[i]!, g = raw[i + 1]!, b = raw[i + 2]!; if (Math.max(r, g, b) - Math.min(r, g, b) <= 18) grey++; }
+  return grey / n >= 0.9;
+}
 export function looksLikePhoto(raw: Uint8Array): boolean {
   const n = Math.floor(raw.length / 3); if (!n) return false;
   const seen = new Set<number>(), bands = new Array(32).fill(0); let grey = 0;
