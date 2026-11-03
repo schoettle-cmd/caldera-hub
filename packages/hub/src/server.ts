@@ -1558,6 +1558,9 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   const autoOff = (pr: any) => { const b = body(pr); return b.autoConnectGithub === false || b.autoConnectRepos === false; };
   const circleHooks: { joined?: (id: string) => void; signedIn?: (id: string) => void } = {};
   const FUNNEL = funnel({ q, ipOf, botUa: BOT_UA });
+  // named crawlers and the quote-prefixed Tor agent: refused on /auth/* (scripts with generic agents are only kept out of
+  // the counts by looksAutomated, so test clients and health checks still work)
+  const AUTH_CRAWLER_UA = /^\\x22|^"|\+https?:\/\/|bot\/|crawler|spider|slurp|externalagent|claudebot|claude-user|claude-searchbot|anthropic-ai|gptbot|chatgpt-user|oai-searchbot|perplexity|bytespider|facebookexternalhit|ahrefs|semrush|mj12|petalsearch|yandex|baiduspider/i;
   // sign-up flows, one shape for every way in (flows.ts); caldera-agg reads them as .flows
   const PUB_HOST = (() => { try { return new URL(opts.publicUrl || "https://caldera.social").host; } catch { return ""; } })();
   const doorOf = (r: http.IncomingMessage, u?: URL) => doorOfRaw(r, u, PUB_HOST);
@@ -2262,7 +2265,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         res.writeHead(302, { location: pr?.handle ? `/@${pr.handle}/city.html` : "/signin", "cache-control": "no-store" }); return res.end(); }
       if (/^\/(join(\/go)?|v1\/gate\/ev)$/.test(p) && await JOIN!.route(req, res, url, p)) return;   // the profile-type selector + touchpoint counts
       // crawlers never start OAuth (they ignore robots.txt's /auth/ rule and opened every member's Message gate, 11-02)
-      if (/^\/auth\/(github|google)(\/callback)?$/.test(p) && BOT_UA.test(String(req.headers["user-agent"] || ""))) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" }); return res.end("Sign-in needs a browser."); }
+      if (/^\/auth\/(github|google)(\/callback)?$/.test(p) && AUTH_CRAWLER_UA.test(String(req.headers["user-agent"] || ""))) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" }); return res.end("Sign-in needs a browser."); }
       if (/^\/(v1\/page\/claim(\/confirm)?|auth\/google(\/callback)?|start(\/confirm)?|settings(\/page|\/photo|\/typed|\/typed\/img|\/obsidian)?|me|join\/(designer|business|developer))$/.test(p) && await EMP!.route(req, res, url, p)) return;   // email pages (falls through for everyone else)   // email pages (falls through for everyone else)
       if (/^\/(auth\/github|me$|me\/upload$|settings$|settings\/(status|claim)$|alerts$|v1\/github\/)/.test(p) && await GH.route(req, res, url)) return;
       if (/^\/(feed(\/|$)|v1\/feed$|v1\/posts|v1\/comments\/|v1\/me\/notices$)/.test(p) && await FEED!.route(req, res, url, p)) return;
