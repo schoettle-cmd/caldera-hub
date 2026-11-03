@@ -2040,7 +2040,7 @@ ${email ? `<form method="post" action="/signin/code"><input type="hidden" name="
 <p class="mut">The code works once, for 15 minutes. You can also tap the link in the email. Nothing there in a minute? Check spam, or <a href="/signin">try again</a>.</p>`);
   }
   const googleBtn = (qs = "") => EMP?.googleOn() ? `<a rel="nofollow" class="btn ghost" href="/auth/google${qs}" style="display:inline-flex;align-items:center;gap:8px">${GOOGLE_ICON}Continue with Google</a>` : "";
-  function signinGeneral(res: http.ServerResponse, back = "", req?: http.IncomingMessage) {
+  function signinGeneral(res: http.ServerResponse, back = "", req?: http.IncomingMessage, note = "") {
     const bq = /^\/(messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|alerts)$/.test(back) ? `?back=${encodeURIComponent(back)}` : "";   // come back to the page that asked (e.g. a conversation)
     // "Message" on someone's page, signed out: say why, offer sign-up first (credited to them), and land in the conversation after
     const mh = back.match(/^\/messages\/@([a-z0-9-]+)$/)?.[1] || "", them = mh ? byHandle(mh) : null;
@@ -2062,7 +2062,7 @@ ${signupCards(q2, `tap Message on @${e(h)}'s page again`, bq)}
 <p class="mut"><a href="/@${e(h)}/">Back to ${e(who)}'s page</a></p>`);
       return;
     }
-    signinPage(res, 200, "Sign in", `<h1>Sign in to Caldera</h1><p class="lede">Sign this browser in as the owner of your page. It stays signed in for a year.</p>
+    signinPage(res, 200, "Sign in", `${note ? `<div class="card" role="status">${note}</div>` : ""}<h1>Sign in to Caldera</h1><p class="lede">Sign this browser in as the owner of your page. It stays signed in for a year.</p>
 <div class="card"><div class="row" style="flex-wrap:wrap;gap:10px"><a rel="nofollow" class="btn" href="/auth/github${bq ? bq + "&" : "?"}from=signin" style="display:inline-flex;align-items:center;gap:8px">${GH_ICON}Continue with GitHub</a>${googleBtn((bq ? bq + "&" : "?") + "from=signin")}</div>
 ${CODE_OR}${codeForm("", signinBack(back))}<p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
 <div class="card"><h2>Made your page in Obsidian?</h2><p class="mut">Open your page and tap <b>Sign in</b> in the bar at the top for an email link or a code from Obsidian. Or in Obsidian, run <b>Caldera: Open my public page (as owner)</b>.</p></div>
@@ -2674,7 +2674,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         if (req.method === "POST" && origin && pubOrigin && origin !== pubOrigin && !sameOrigin(req)) return json(res, 403, { error: "wrong origin" });
         const ip = ipOf(req);
         if (req.method === "GET" && p === "/signin") {
-          if (!url.searchParams.get("h")) { signinGeneral(res, String(url.searchParams.get("back") || ""), req); return; }
+          if (!url.searchParams.get("h")) { signinGeneral(res, String(url.searchParams.get("back") || ""), req, url.searchParams.get("gh") === "cancel" ? "GitHub sign-in didn't finish. Try again, or use Google or email." : ""); return; }
           const pr = byHandle((url.searchParams.get("h") || "").toLowerCase()); if (!pr || modOf(pr.handle, pr.id)) { signinPage(res, 404, "Sign in", `<h1>No such page</h1><p><a href="/people">Find people</a></p>`); return; }
           signinHome(res, pr); return;
         }

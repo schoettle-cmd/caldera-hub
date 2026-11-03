@@ -748,7 +748,7 @@ ${sug.length ? `<p style="margin:.8em 0 .3em">People you might know:</p>${sug.ma
       res.appendHeader("set-cookie", `cal_ghtry=; Path=/; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`);
       ctx.track?.(req, "back", url.searchParams.get("error") ? "denied: " + String(url.searchParams.get("error")).slice(0, 40) : "");
       if (url.searchParams.get("error")) {   // they pressed Cancel on GitHub's screen: no retry loop, just back to the start
-        ctx.track?.(req, "fail", "cancelled at GitHub"); setCookie(res, "cal_oauth", "", 0); redirect(res, "/#install"); return true; }
+        ctx.track?.(req, "fail", "cancelled at GitHub"); setCookie(res, "cal_oauth", "", 0); redirect(res, "/signin?gh=cancel"); return true; }   // a message, not the homepage (MasterBuilder 2026-11-03)
       // browsers sometimes send the callback twice (a retried navigation): GitHub's code works once, so the second
       // request replays the first one's outcome (same cookies, same redirect) instead of failing with "code expired"
       const code = url.searchParams.get("code") || "", st = url.searchParams.get("state") || "";

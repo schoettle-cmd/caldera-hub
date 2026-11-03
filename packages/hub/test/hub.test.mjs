@@ -405,7 +405,7 @@ test("sign up with GitHub: hosted profile + city, edit, claim into a vault, dele
     const t = h.admin["funnel-report"](1).pop().counts; assert.equal(t.click, 2); assert.equal(t["click-ext"], 2); }
   // pressing Cancel on GitHub goes back to the start, never into a retry loop
   { const c = await fetch(base + "/auth/github/callback?error=access_denied&state=x", { redirect: "manual", headers: { "user-agent": "Mozilla/5.0 (cancel)" } });
-    assert.equal(c.headers.get("location"), "/#install"); }
+    assert.equal(c.headers.get("location"), "/signin?gh=cancel"); }   // to sign-in with a note (2026-11-03)
   const pageHtml = await (await fetch(base + "/@octo-cat/", { headers: { "user-agent": "Mozilla/5.0" } })).text();
   assert.ok(pageHtml.includes("Octo Cat") && pageHtml.includes("synced from GitHub"), "profile rendered by the plugin's renderer");
   // auto-filled from public GitHub: an About paragraph, facts and topics, with nothing typed in

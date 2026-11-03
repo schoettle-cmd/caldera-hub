@@ -11,7 +11,7 @@
 import type http from "node:http";
 import crypto from "node:crypto";
 
-export const STEPS = ["google-signin", "door-google", "jd-a", "jd-b", "door-email", "door-code", "door-obsidian", "door-designer", "door-business", "form-submit", "confirm-open", "view", "preview", "gate", "click", "back", "created", "signin", "fail", "landed", "email-start", "email-sent", "email-created", "gh-return", "click-ext", "career", "career-shared", "home-a", "home-b", "h2-a", "h2-b", "h2-c", "h2-d", "h2-e", "h2-f", "h2-g", "h2-h", "h2-i", "h2-j", "save-a", "save-b", "ghe-open", "ghe-sent", "cg-a", "cg-b", "cg-email", "pb-a", "pb-b", "pb-a-h", "pb-b-h", "cg-a-h", "cg-b-h", "auth_start", "auth_code_sent", "auth_ok", "auth_fail", "typed-form", "typed-sent", "typed-bot"] as const;
+export const STEPS = ["google-signin", "door-google", "jd-a", "jd-b", "door-email", "door-code", "door-obsidian", "door-designer", "door-business", "form-submit", "confirm-open", "view", "preview", "view_filtered", "preview_filtered", "gate", "click", "back", "created", "signin", "fail", "landed", "email-start", "email-sent", "email-created", "gh-return", "click-ext", "career", "career-shared", "home-a", "home-b", "h2-a", "h2-b", "h2-c", "h2-d", "h2-e", "h2-f", "h2-g", "h2-h", "h2-i", "h2-j", "save-a", "save-b", "ghe-open", "ghe-sent", "cg-a", "cg-b", "cg-email", "pb-a", "pb-b", "pb-a-h", "pb-b-h", "cg-a-h", "cg-b-h", "auth_start", "auth_code_sent", "auth_ok", "auth_fail", "typed-form", "typed-sent", "typed-bot"] as const;
 /** Crawlers, link previewers and scripts: never counted in the funnel or page views. Real browsers never match.
  *  Many crawlers ignore robots.txt and follow sign-up links (Meta's AI agents, GoogleOther, BigBug): named here. */
 export const BOT_UA = /^\\x22|^"|iPhone OS 13_2_3 like|bot|crawl|spider|slurp|preview|fetch|curl|wget|python|node|headless|monitor|lighthouse|facebookexternalhit|facebookcatalog|embedly|discord|slack|telegram|whatsapp|externalagent|webindexer|googleother|google-inspectiontool|google-extended|bigbug|wrendex|scrapy|httpx|axios|okhttp|go-http|java\/|libwww|ia_archiver|barkrowler|dataprovider|petalsearch|yisou|sogou|seznam|ahrefs|semrush|mj12|bytespider|claude-user|claude-searchbot|anthropic-ai|perplexity|ccbot|cohere|diffbot|timpi|imagesift|omgili|youbot|qwant|yandex|baidu|meta-/i;
@@ -69,6 +69,9 @@ export function funnel(c: { q: (sql: string) => any; ipOf: (req: http.IncomingMe
   function track(req: http.IncomingMessage, step: Step, detail = "") {
     try {
       const ua = String(req.headers["user-agent"] || ""); if (!ua || c.botUa.test(ua) || looksAutomated(req)) return;
+      // page visits count people only (MasterBuilder 2026-11-03: bots read as traffic): a view without a browser's Sec-Fetch
+      // navigation headers is kept as <step>_filtered, so the Growth tab can show people vs filtered
+      if ((step === "view" || step === "preview") && !(req.headers["sec-fetch-mode"] === "navigate" && (!req.headers["sec-fetch-dest"] || req.headers["sec-fetch-dest"] === "document"))) step = (step + "_filtered") as Step;
       const day = funnelDay(); maybePrune();
       q("INSERT OR IGNORE INTO funnel_events VALUES (?,?,?,?,?)").run(day, vidOf(req, day), step, String(detail).slice(0, 80), new Date().toISOString());
     } catch { /* counting never breaks a request */ }
