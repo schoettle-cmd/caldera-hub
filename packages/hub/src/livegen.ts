@@ -13,10 +13,17 @@ import { execFile } from "node:child_process";
 import type { DatabaseSync } from "node:sqlite";
 
 const MODEL = "fal-ai/kling-video/v2.1/pro/image-to-video";
-const PROMPT = "A living portrait. The person stays in the same pose and framing, gently breathing, a slow natural blink, " +
-  "a very slight turn of the head and back, subtle shifts of light and shadow across the face and clothing. " +
-  "Calm, hypnotic, cinematic, photorealistic. Camera locked off, no zoom, no cuts, no new objects, no talking.";
-const NEG = "blur, distort, morphing face, extra limbs, text, talking, camera movement, zoom";
+// The motion has to read at avatar size. Prompt v1 ("same pose", "a very slight turn") gave loops that peak at ~3/255
+// brightness change (Mike's own: 2.7), which look like a still photo: Mike 2026-11-03 "I have not seen living profiles on
+// Caldera". v2 is Human Architecture's prompt (HA hit the same problem on 10-28; its loops peak at ~14/255). Raising
+// PROMPT_V remakes every older loop once (see check), still inside the daily cap and the 24h age rule.
+const PROMPT_V = 2;
+const PROMPT = "A living portrait that clearly comes alive. The person slowly turns their head to one side and looks off for a moment, " +
+  "then turns back to face the camera, breathing visibly, blinking naturally, with hair and clothing moving gently in a soft breeze " +
+  "and warm light shifting across them. Natural, smooth, photorealistic. Same person, same outfit, same background. " +
+  "Camera locked off, same framing, no zoom, no cuts, no talking, no new objects.";
+const NEG = "blur, distort, morphing face, extra limbs, text, talking, camera movement, zoom, cuts";
+const FIRST = () => (process.env.LIVE_FIRST || "mike").split(",").map(x => x.trim()).filter(Boolean);   // remade first
 const CONCURRENCY = 3, MAX_TRIES = 3, RETRY_MS = 24 * 3600_000;
 // Spend limits (security fix 2026-11-03: any avatar change from any self-made keypair started a paid Kling job):
 // one video per profile per 14 days, profiles older than 24h only, and LIVE_DAILY_CAP fal submissions a day overall.
@@ -33,6 +40,7 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
   const log = o.log || ((s: string) => console.log(s));
   const dir = path.join(o.dataDir, "live"); fs.mkdirSync(dir, { recursive: true });
   o.db.exec(`CREATE TABLE IF NOT EXISTS live_portraits (handle TEXT PRIMARY KEY, src_hash TEXT, status TEXT, tries INTEGER NOT NULL DEFAULT 0, updated INTEGER, err TEXT, avatar TEXT)`);
+  try { o.db.exec("ALTER TABLE live_portraits ADD COLUMN prompt_v INTEGER"); } catch { /* already there */ }   // NULL = v1
   const q = (sql: string) => o.db.prepare(sql);
   // every paid fal submission, kept apart from live_portraits (whose rows are deleted when a photo changes)
   o.db.exec(`CREATE TABLE IF NOT EXISTS live_gen_log (handle TEXT NOT NULL, at INTEGER NOT NULL)`);
@@ -40,14 +48,16 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
   const recentFor = (h: string) => !!q("SELECT 1 FROM live_gen_log WHERE handle=? AND at>? LIMIT 1").get(h, Date.now() - PER_PROFILE_MS);
   const usedToday = () => Number((q("SELECT COUNT(*) AS n FROM live_gen_log WHERE at>?").get(Date.now() - 24 * 3600_000) as any)?.n || 0);
   /** Why a paid job may not start now (null = it may). */
-  const spendBlock = (h: string, createdIso?: string | null) => {
+  // upgrade = a prompt-version remake we started (not a member changing photos): exempt from the 14-day rule only
+  const spendBlock = (h: string, createdIso?: string | null, upgrade = false) => {
     const born = createdIso ? Date.parse(createdIso) : NaN;
     if (!Number.isFinite(born) || Date.now() - born < MIN_AGE_MS) return "profile under 24h old";
-    if (recentFor(h)) return "one video per profile per 14 days";
+    if (!upgrade && recentFor(h)) return "one video per profile per 14 days";
     if (usedToday() >= dailyCap()) return "daily cap reached";
     return null;
   };
-  const queue: { handle: string; file: string; avatar: string; hash: string; created?: string | null }[] = [], running = new Set<string>();
+  const upgradeFailed = new Set<string>();   // remakes that failed this process: not retried until a restart
+  const queue: { handle: string; file: string; avatar: string; hash: string; created?: string | null; upgrade?: boolean }[] = [], running = new Set<string>();
   let mapCache: { t: number; m: Record<string, LiveEntry> } | null = null;
 
   const files = (h: string) => ({ mp4: path.join(dir, h + ".mp4"), webp: path.join(dir, h + ".webp") });
@@ -78,15 +88,17 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
     return r.json() as Promise<any>;
   }
 
-  async function make(j: { handle: string; file: string; avatar: string; hash: string; created?: string | null }) {
+  async function make(j: { handle: string; file: string; avatar: string; hash: string; created?: string | null; upgrade?: boolean }) {
     const set = (status: string, err: string | null = null) => {
-      q(`INSERT INTO live_portraits (handle, src_hash, status, tries, updated, err, avatar) VALUES (?,?,?,?,?,?,?)
-        ON CONFLICT(handle) DO UPDATE SET src_hash=excluded.src_hash, status=excluded.status, tries=CASE WHEN excluded.status='failed' THEN live_portraits.tries+1 ELSE 0 END, updated=excluded.updated, err=excluded.err, avatar=excluded.avatar`)
-        .run(j.handle, j.hash, status, status === "failed" ? 1 : 0, Date.now(), err, j.avatar); mapCache = null; };
+      // a failed upgrade keeps the ready loop it was replacing (and its prompt_v), so the old clip stays on the page
+      if (j.upgrade && status !== "ready") { log(`[live] @${j.handle} remake ${status}${err ? ": " + err : ""}; keeping the current loop`); upgradeFailed.add(j.handle); return; }
+      q(`INSERT INTO live_portraits (handle, src_hash, status, tries, updated, err, avatar, prompt_v) VALUES (?,?,?,?,?,?,?,?)
+        ON CONFLICT(handle) DO UPDATE SET src_hash=excluded.src_hash, status=excluded.status, tries=CASE WHEN excluded.status='failed' THEN live_portraits.tries+1 ELSE 0 END, updated=excluded.updated, err=excluded.err, avatar=excluded.avatar, prompt_v=excluded.prompt_v`)
+        .run(j.handle, j.hash, status, status === "failed" ? 1 : 0, Date.now(), err, j.avatar, status === "ready" ? PROMPT_V : null); mapCache = null; };
     if (!(await isPhoto(j.file))) { set("skip", "not a photo"); return; }
     const img = await asDataUri(j.file), t0 = Date.now();
     // re-checked right before spending (the queue can hold more than the cap)
-    const why = spendBlock(j.handle, j.created); if (why) { log(`[live] @${j.handle} not made: ${why}`); return; }
+    const why = spendBlock(j.handle, j.created, !!j.upgrade); if (why) { log(`[live] @${j.handle} not made: ${why}`); return; }
     q("INSERT INTO live_gen_log (handle, at) VALUES (?, ?)").run(j.handle, Date.now());
     const sub = await fal("https://queue.fal.run/" + MODEL, { prompt: PROMPT, negative_prompt: NEG, image_url: img, tail_image_url: img, duration: "5" });
     for (;;) {
@@ -114,6 +126,7 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
       const j = queue.shift()!; running.add(j.handle);
       make(j).catch(e => {
         log(`[live] @${j.handle} failed: ${e?.message}`);
+        if (j.upgrade) { upgradeFailed.add(j.handle); log(`[live] @${j.handle} remake failed; keeping the current loop`); return; }   // never lose a working loop to a failed remake
         q(`INSERT INTO live_portraits (handle, src_hash, status, tries, updated, err, avatar) VALUES (?,?, 'failed', 1, ?, ?, ?)
           ON CONFLICT(handle) DO UPDATE SET src_hash=excluded.src_hash, status='failed', tries=live_portraits.tries+1, updated=excluded.updated, err=excluded.err`)
           .run(j.handle, j.hash, Date.now(), String(e?.message || e).slice(0, 300), j.avatar);
@@ -128,7 +141,17 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
     const hash = hashOf(photoFile); if (!hash) return;
     const row = q("SELECT * FROM live_portraits WHERE handle=?").get(handle) as Row | undefined;
     if (row && row.src_hash === hash) {
-      if (row.status === "ready" || row.status === "skip") { if ((row as any).avatar !== avatarRel) { q("UPDATE live_portraits SET avatar=? WHERE handle=?").run(avatarRel, handle); mapCache = null; } return; }
+      if (row.status === "ready" || row.status === "skip") {
+        if ((row as any).avatar !== avatarRel) { q("UPDATE live_portraits SET avatar=? WHERE handle=?").run(avatarRel, handle); mapCache = null; }
+        // a loop from an older prompt: remake it once (the old one keeps playing until the new one is ready)
+        if (row.status === "ready" && (Number((row as any).prompt_v) || 1) < PROMPT_V && !upgradeFailed.has(handle) && process.env.FAL_KEY
+          && !running.has(handle) && !queue.some(x => x.handle === handle) && !spendBlock(handle, created, true)) {
+          const job = { handle, file: photoFile, avatar: avatarRel, hash, created, upgrade: true };
+          if (FIRST().includes(handle)) queue.unshift(job); else queue.push(job);
+          pump();
+        }
+        return;
+      }
       if (row.status === "failed" && (row.tries >= MAX_TRIES || Date.now() - row.updated < RETRY_MS)) return;
     }
     if (row && row.src_hash !== hash && row.status === "ready") { const f = files(handle); for (const p of [f.mp4, f.webp]) fs.rmSync(p, { force: true }); q("DELETE FROM live_portraits WHERE handle=?").run(handle); mapCache = null; }
@@ -141,8 +164,8 @@ export function liveGen(o: { db: DatabaseSync; dataDir: string; log?: (s: string
   function map(): Record<string, LiveEntry> {
     if (mapCache && Date.now() - mapCache.t < 60_000) return mapCache.m;
     const m: Record<string, LiveEntry> = {};
-    for (const r of q("SELECT handle, src_hash, avatar FROM live_portraits WHERE status='ready'").all() as any[])
-      if (r.avatar && !o.isModerated(r.handle) && fs.existsSync(files(r.handle).mp4)) m[r.handle] = { a: String(r.avatar).replace(/^\.?\//, ""), v: r.src_hash };
+    for (const r of q("SELECT handle, src_hash, avatar, prompt_v FROM live_portraits WHERE status='ready'").all() as any[])   // v carries the prompt version: the files are cached for a year per ?v=
+      if (r.avatar && !o.isModerated(r.handle) && fs.existsSync(files(r.handle).mp4)) m[r.handle] = { a: String(r.avatar).replace(/^\.?\//, ""), v: r.src_hash + (Number(r.prompt_v) > 1 ? "-p" + r.prompt_v : "") };
     mapCache = { t: Date.now(), m }; return m;
   }
 

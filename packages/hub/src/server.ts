@@ -391,7 +391,11 @@ export function createHub(opts: HubOptions) {
     const rel = String(body(pr).photos?.avatar || "").replace(/^\.?\//, ""), dir = path.join(opts.dataDir, "profiles", pr.handle), f = rel ? path.join(dir, path.normalize(rel)) : "";
     try { LIVE.check(pr.handle, rel || null, f && f.startsWith(dir + path.sep) ? f : null, pr.created); } catch (e: any) { console.error("[live] check", pr.handle, e?.message); }
   };
-  const liveSweep = () => { for (const pr of q("SELECT * FROM profiles").all() as any[]) livePhoto(pr); };
+  const liveSweep = () => {   // LIVE_FIRST profiles (default @mike) first, so a daily cap never crowds them out
+    const first = (process.env.LIVE_FIRST || "mike").split(",").map(x => x.trim()).filter(Boolean);
+    const all = q("SELECT * FROM profiles").all() as any[];
+    for (const pr of [...all.filter(p => first.includes(p.handle)), ...all.filter(p => !first.includes(p.handle))]) livePhoto(pr);
+  };
   if (process.env.FAL_KEY) { setTimeout(liveSweep, 20_000).unref?.(); setInterval(liveSweep, 15 * 60_000).unref?.(); }   // GitHub/email-built pages included
   const withLive = (html: string) => { const sc = liveClient(LIVE.map()); return sc && !html.includes("window.__calLive") ? (/<\/body>/i.test(html) ? html.replace(/<\/body>(?![\s\S]*<\/body>)/i, sc + "</body>") : html + sc) : html; };
   const areFriends = (a: string, b: string) => !!q("SELECT 1 FROM friends WHERE a=? AND b=?").get(a, b);
