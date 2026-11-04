@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHub } from "../dist/server.js";
+process.env.MAILGUARD = "off";   // this file tests Resend pacing; the guard has its own test (mailguard.test.mjs)
 
 // Resend allows 10 requests a second: a burst is spaced out, and a 429 waits and retries instead of dropping the email
 test("email sends are throttled and retried on 429", async () => {

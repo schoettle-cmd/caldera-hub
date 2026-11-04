@@ -11,7 +11,7 @@ import crypto from "node:crypto";
 
 /** `src` = which email this is (e.g. "email-digest"): every link back to our own site gets ?src=<it> so visits from email are attributable */
 import type { NewsItem } from "./news";
-export interface Mail { to: string; subject: string; html: string; text: string; headers?: Record<string, string>; src?: string }
+export interface Mail { to: string; subject: string; html: string; text: string; headers?: Record<string, string>; src?: string; kind?: string }
 export interface DigestData {
   handle: string; name: string; hosted: boolean;
   views24: number; visitors24: number; views7: number; visitors7: number;
@@ -193,6 +193,7 @@ export function emailer(ctx: EmailCtx) {
     const m: Mail = m0.src ? { ...m0, html: tagLinks(m0.html, hub, m0.src, true), text: tagLinks(m0.text, hub, m0.src, false) } : m0;
     if (ctx.send) return ctx.send(m);
     if (!ctx.resendKey) throw new Error("email is not set up on this hub");
+    if (!(await guardOk(m))) return;   // the shared mail guard said no: not sent (logged)
     // Resend allows 10 requests a second: sends go out one at a time at most ~8 a second, and a 429 waits and retries
     const turn = sendChain.then(async () => {
       const wait = lastSend + 125 - Date.now(); if (wait > 0) await sleep(wait);
@@ -211,6 +212,25 @@ export function emailer(ctx: EmailCtx) {
     return turn;
   }
   let sendChain: Promise<void> = Promise.resolve(), lastSend = 0;
+  // Shared mail guard (Growth Engine 2026-11-04): every Caldera email is checked on this box first. ok:false or regenerate
+  // = not sent; no answer in 2 s = sign-in mail and the daily summary still go, the rest is held. MAILGUARD=off skips it.
+  const KIND: Record<string, string> = { "signup-email": "auth", "signin-code": "auth", "email-message": "transactional", "email-message-request": "transactional",
+    "email-invite": "transactional", "email-reconnect": "marketing", "email-update-nudge": "marketing", "stuck-claim": "marketing" };
+  async function guardOk(m: Mail): Promise<boolean> {
+    if (process.env.MAILGUARD === "off") return true;
+    const kind = m.kind || KIND[m.src || ""] || "transactional", template = m.src || m.kind || "note";
+    const hdr = m.headers || {}, unsub = Object.keys(hdr).some(k => /^list-unsubscribe$/i.test(k));
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 2000);
+    try {
+      const r = await fetch(process.env.MAILGUARD_URL || "http://127.0.0.1:4835/mailguard/check", { method: "POST", headers: { "content-type": "application/json" }, signal: ctl.signal,
+        body: JSON.stringify({ product: "caldera", template, kind, to: m.to, subject: m.subject, text: m.text || "", html: m.html || "", generated: false, has_list_unsubscribe: unsub, test_mode: process.env.NODE_ENV === "test" }) });
+      const g: any = await r.json();
+      if (g && g.ok && !g.regenerate) return true;
+      console.log("[mailguard] blocked", template, kind, String(m.to || "").replace(/(.{2}).*@/, "$1…@"), ((g && g.reasons) || []).join("; ").slice(0, 200));
+      return false;
+    } catch (e) { const ok = kind === "auth" || kind === "daily"; if (!ok) console.log("[mailguard] held (no answer)", template, kind); return ok; }
+    finally { clearTimeout(t); }
+  }
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
   const shell = (title: string, inner: string, unsub?: string) => `<!doctype html><html><body style="margin:0;background:#F4F3F8;padding:24px 12px;font:15px/1.55 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#24222B">
@@ -238,7 +258,7 @@ ${unsub ? `<p style="max-width:560px;margin:14px auto 0;color:#8A8794;font-size:
        ON CONFLICT(owner) DO UPDATE SET email=excluded.email, hash=excluded.hash, confirmed=0, token=excluded.token, confirm_sent=excluded.confirm_sent`)
       .run(owner, ctx.seal(e), h, 0, token, new Date().toISOString(), null, null, null, Date.now());
     const link = `${hub}/v1/email/confirm?t=${token}`;
-    await send({ to: e, subject: "Confirm your daily Caldera summary",
+    await send({ to: e, kind: "auth", subject: "Confirm your daily Caldera summary",
       html: shell("Confirm your email", `<p>Someone (hopefully you) asked for a daily Caldera summary at this address: who visited your page, kudos and new followers, people to meet, and a nudge when your page needs attention.</p><p style="margin:22px 0"><a href="${esc(link)}" style="display:inline-block;padding:11px 20px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">Yes, send me summaries</a></p><p style="color:#8A8794;font-size:13px">If this wasn't you, ignore this email and nothing will be sent.</p>`),
       text: `Confirm your daily Caldera summary:\n${link}\n\nIf this wasn't you, ignore this email and nothing will be sent.` });
     return `Check ${e} for a confirmation link. Summaries start once you click it.`;
@@ -429,7 +449,7 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
       if (!active && !(quietOk && (d.suggestions.length || d.setup || d.nudge || weekly))) { skipped++; q("UPDATE email_subs SET last_links=? WHERE owner=?").run(totalLinks, r.owner); continue; }
       const m = compose(d, unsubUrl(r.token), !active); if (!m) { skipped++; continue; }
       try {
-        await send({ ...m, to });
+        await send({ ...m, to, kind: "daily" });
         q("UPDATE email_subs SET last_sent=?, last_links=?, last_quiet=COALESCE(?, last_quiet) WHERE owner=?").run(new Date().toISOString(), totalLinks, active ? null : new Date().toISOString(), r.owner);
         sent++;
       } catch (e: any) { errors++; console.error("digest", r.owner, e?.message); }
@@ -449,7 +469,7 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
   /** One-time owner sign-in link, to the owner's confirmed address only. */
   async function sendSignin(owner: string, handle: string, link: string) {
     const r = row(owner); if (!r || !r.confirmed) return; const to = addr(r); if (!to) return;
-    await send({ to, subject: ascii(`Sign in to your Caldera page (@${handle})`),
+    await send({ to, kind: "auth", subject: ascii(`Sign in to your Caldera page (@${handle})`),
       html: shell("Sign in on this device", `<p>Someone (hopefully you) asked to sign in as the owner of <b>@${esc(handle)}</b> on caldera.social. The link works once, for 15 minutes.</p><p style="margin:22px 0"><a href="${esc(link)}" style="display:inline-block;padding:11px 20px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">Sign in</a></p><p style="color:#8A8794;font-size:13px">Open it on the phone or computer you want to sign in. If this wasn't you, ignore this email: nothing changes until the link is used.</p>`),
       text: `Sign in as the owner of @${handle} on caldera.social (works once, for 15 minutes):\n${link}\n\nIf this wasn't you, ignore this email.` });
   }
