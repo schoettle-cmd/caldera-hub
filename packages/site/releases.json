@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "0.28.26",
+      "date": "2026-11-04",
+      "title": "Bigger chart buttons on phones",
+      "items": [
+        "The 7, 30 and 90 day buttons on the Lines of code chart are easier to tap on phones."
+      ]
+    },
+    {
       "version": "0.28.25",
       "date": "2026-11-04",
       "title": "Lines of code fix",
