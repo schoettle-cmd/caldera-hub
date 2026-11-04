@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.28.22",
+      "date": "2026-11-04",
+      "title": "Inbox Hero connector",
+      "items": [
+        "Connect one folder of your vault to your Inbox Hero account, so it can use your notes when it answers and drafts. Start in Inbox Hero: Settings > Knowledge > Connect your notes.",
+        "Private and one way: only the folder you pick is read, nothing in your vault is ever changed, and nothing goes to Caldera or your public page. Notes that look like they hold passwords, keys, card numbers or seed phrases are left out, and you see which ones.",
+        "You don't need a Caldera page to use it. Disconnect any time from Settings: Inbox Hero deletes the notes it got from your vault."
+      ]
+    },
+    {
       "version": "0.28.21",
       "date": "2026-11-04",
       "title": "Storefront signs you can click",
