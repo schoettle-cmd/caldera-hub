@@ -13,7 +13,8 @@ await p.addInitScript(() => { const o = window.open; window.__opened = []; windo
 await p.goto(url + '#test&sky=day', { waitUntil: 'load', timeout: 60000 });
 await p.evaluate(() => document.querySelector('#stage').scrollIntoView({ block: 'center' }));
 await p.waitForTimeout(4500);
-const signs = await p.evaluate(() => window.calderaTest.signs());
+const signs = await p.evaluate(() => window.calderaTest && window.calderaTest.signs ? window.calderaTest.signs() : null);
+if (!signs) { console.log('SIGNS FAIL\n - this page runs a renderer older than the floating signs (published by an old plugin the hub cannot upgrade)'); await b.close(); process.exit(1); }
 const SR = await p.evaluate(() => document.querySelector('#stage').getBoundingClientRect().toJSON());
 const inStage = s => s.x > SR.left + 1 && s.x < SR.right - 1 && s.y > SR.top + 1 && s.y < SR.bottom - 1;   // a sign whose building is panned out of view isn't on screen
 if (!signs.length) fails.push('no signs found');
