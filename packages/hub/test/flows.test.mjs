@@ -92,7 +92,7 @@ test("the sign-in page's cards say where they are: signin, or gate when a page s
   assert.match(si, /auth\/google\?from=signin/);
   const g = await (await fetch(base + "/signin?back=%2Fmessages%2F%40someone", { headers: H("10.0.1.1") })).text();
   if (/Sign up with Google/.test(g)) assert.match(g, /from=gate/);
-  await fetch(base + "/auth/google?from=gate", { redirect: "manual", headers: H("10.0.1.2", { "sec-fetch-user": "?1" }) });
+  await fetch(base + "/auth/google?from=gate", { redirect: "manual", headers: H("10.0.1.2", { "sec-fetch-user": "?1", "sec-fetch-mode": "navigate", "sec-fetch-site": "same-origin" }) });
   assert.equal(flows()["gate:google"].start, 1);
 });
 
@@ -106,7 +106,11 @@ test("an OAuth start counts at once only for a person's click; others count only
   assert.equal((flows()["join-business:google"] || {}).start, undefined);
   await fetch(base + "/auth/google/callback?error=access_denied", { redirect: "manual", headers: H("10.0.2.2") });
   f = flows()["join-business:google"]; assert.equal(f.start, 1); assert.equal(f.auth_fail, 1);
-  // a real click (Sec-Fetch-User: ?1) counts at once
+  // a bare hit claiming a click but sent from no page of ours (Sec-Fetch-Site none: proxy scanners, 11-04): held, not a start
+  const was = flows()["signin:google"] || {};
+  await fetch(base + "/auth/google?from=signin", { redirect: "manual", headers: H("10.0.2.5", { "sec-fetch-user": "?1", "sec-fetch-mode": "navigate", "sec-fetch-site": "none" }) });
+  f = flows()["signin:google"] || {}; assert.equal(f.start, was.start); assert.equal(f.start_unv, (was.start_unv || 0) + 1);
+  // a real click on our page (Sec-Fetch-User: ?1, same-origin) counts at once
   await fetch(base + "/auth/google", { redirect: "manual", headers: H("10.0.2.3", { referer: ORIGIN + "/people", "sec-fetch-user": "?1", "sec-fetch-mode": "navigate", "sec-fetch-site": "same-origin" }) });
   assert.equal(flows()["gate:google"].start, 2);   // the earlier gate test's click plus this one
   // crawlers (robots.txt disallows /auth/) never start OAuth

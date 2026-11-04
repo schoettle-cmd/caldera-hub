@@ -43,6 +43,9 @@ export function doorOf(req: http.IncomingMessage, url?: URL, ownHost = ""): stri
 
 /** a navigation the person activated (a click or a key), as modern browsers report it */
 export const humanClick = (req: http.IncomingMessage) => req.headers["sec-fetch-user"] === "?1";
+/** a person's click on one of our own pages: an OAuth start that counts at once (2026-11-04: scanners rotating proxies sent
+ *  bare /auth/google hits with ?1 but no page before them, Sec-Fetch-Site none; ops-desk log read, 33 such starts 11-02..04) */
+export const pageClick = (req: http.IncomingMessage) => humanClick(req) && req.headers["sec-fetch-site"] === "same-origin";
 
 export function flows(c: { q: (sql: string) => any; vid: (req: http.IncomingMessage) => string | null; emailOf: (owner: string) => string | null }) {
   const { q } = c;
@@ -72,7 +75,7 @@ export function flows(c: { q: (sql: string) => any; vid: (req: http.IncomingMess
     start(req: http.IncomingMessage, method: Method, door: string) {
       safe(() => { const vid = c.vid(req); if (!vid) return; const day = funnelDay();
         q("INSERT OR IGNORE INTO flow_doors VALUES (?,?,?,?)").run(day, vid, method, door);
-        if ((method === "google" || method === "github") && !humanClick(req)) { const d = (q("SELECT door FROM flow_doors WHERE day=? AND vid=? AND method=?").get(day, vid, method) as any)?.door || door; put(day, vid, `${d}:${method}`, "start_unv"); return; }
+        if ((method === "google" || method === "github") && !pageClick(req)) { const d = (q("SELECT door FROM flow_doors WHERE day=? AND vid=? AND method=?").get(day, vid, method) as any)?.door || door; put(day, vid, `${d}:${method}`, "start_unv"); return; }
         put(day, vid, flowFor(day, vid, method), "start"); });
     },
     fail(req: http.IncomingMessage, method: Method) {
