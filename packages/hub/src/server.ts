@@ -380,6 +380,13 @@ export function createHub(opts: HubOptions) {
   const profile = (id: string) => q("SELECT * FROM profiles WHERE id=?").get(id) as any;
   const byHandle = (h: string) => q("SELECT * FROM profiles WHERE handle=?").get(h) as any;
   const VISITS = new Map<string, { at: number; v: any }>();   // /v1/visits cache
+  // who is looking at a profile right now (visitor helicopters): in memory only, the same daily-salted visitor hash as
+  // page_views, seen on a page view or the city's 20 s heartbeat, counted for 90 s. Owner and bots are never recorded.
+  const VIEWING = new Map<string, Map<string, number>>(), VIEW_MS = 90_000;
+  const seeViewer = (h: string, v: string) => { let m = VIEWING.get(h); if (!m) { if (VIEWING.size > 5000) VIEWING.clear(); m = new Map(); VIEWING.set(h, m); }
+    if (m.size >= 300 && !m.has(v)) return; m.set(v, Date.now()); };
+  const viewersOf = (h: string) => { const m = VIEWING.get(h), out: string[] = []; if (!m) return out; const t = Date.now() - VIEW_MS;
+    for (const [v, at] of m) { if (at < t) m.delete(v); else out.push(v); } if (!m.size) VIEWING.delete(h); return out; };
   // operator moderation (Terms s.3): hidden = taken down, owner cannot republish; blocked = handle can never be claimed
   const modOf = (handle: string | null, id?: string) => q("SELECT * FROM moderation WHERE handle=? OR (id IS NOT NULL AND id=?)").get(handle || "", id || "") as any;
   const body = (pr: any) => { try { return JSON.parse(pr.manifest).body || {}; } catch { return {}; } };
@@ -2448,6 +2455,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
             const day = new Date().toISOString().slice(0, 10);
             const visitor = crypto.createHash("sha256").update(VIEW_SALT + day + ipOf(req) + ua).digest("hex").slice(0, 16);
             try { q("INSERT INTO page_views VALUES (?,?,?,?)").run(m[1], rel, now(), visitor); } catch { /* counting never breaks a page */ }
+            seeViewer(m[1], visitor);
           }
           // signed-in members (not the owner) get inline kudos + Add friend, with an action token for this page's owner only
           const prS = byHandle(m[1]), viewer = !own && prS ? viewerFor(memberOf(req), prS) : null;
@@ -2946,6 +2954,23 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           out = { m: mm }; VISITS.set("*", { at: Date.now(), v: out });
         }
         res.writeHead(200, { "content-type": "application/json", "cache-control": "public, max-age=300", "access-control-allow-origin": "*" }); return res.end(JSON.stringify(out));
+      }
+      // visitor helicopters, live: POST /v1/viewing/<handle> = this browser is on the profile (heartbeat) -> the OTHER
+      // people viewing it now, as opaque per-handle ids; GET /v1/viewing = per listed member, how many are viewing now
+      m = p.match(/^\/v1\/viewing(?:\/([a-z0-9-]+))?$/);
+      if (m && (req.method === "GET" || (req.method === "POST" && m[1]))) {
+        res.setHeader("cache-control", "no-store");
+        if (!m[1]) { const mm: Record<string, number> = {};
+          for (const h of [...VIEWING.keys()]) { const n = viewersOf(h).length; if (!n) continue; const pr = byHandle(h); if (pr && listed(pr)) mm["@" + h] = n; if (Object.keys(mm).length >= 400) break; }
+          return json(res, 200, { m: mm }); }
+        const pr = byHandle(m[1]); if (!pr || !listed(pr)) return json(res, 404, { error: "not found" });
+        let me = "";
+        const ua = String(req.headers["user-agent"] || "");
+        if (req.method === "POST" && ua && !BOT_UA.test(ua) && !ownerBar(req, pr.handle, "city.html")) {
+          me = crypto.createHash("sha256").update(VIEW_SALT + new Date().toISOString().slice(0, 10) + ipOf(req) + ua).digest("hex").slice(0, 16);
+          seeViewer(pr.handle, me); }
+        const ids = viewersOf(pr.handle).filter(v => v !== me).map(v => crypto.createHash("sha256").update(v + ":" + pr.handle).digest("hex").slice(0, 10)).sort();
+        return json(res, 200, { n: ids.length, ids: ids.slice(0, 12) });
       }
       m = p.match(/^\/v1\/live\/([a-z0-9-]+)$/);
       if (req.method === "GET" && m) {
