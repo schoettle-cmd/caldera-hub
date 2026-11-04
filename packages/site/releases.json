@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.28.21",
+      "date": "2026-11-04",
+      "title": "Storefront signs you can click",
+      "items": [
+        "Storefront signs now sit in front of everything on your city: construction cranes, helicopters and labels never cover one.",
+        "Click or tap a sign to open that app's store page or website in a new tab. A sign with no link opens the Stores list. The whole sign is the target, so it's easy to hit on a phone.",
+        "The count of people viewing now moved to the bottom left, so it no longer covers the top sign."
+      ]
+    },
+    {
       "version": "0.28.19",
       "date": "2026-11-04",
       "title": "Helicopters you can see",
