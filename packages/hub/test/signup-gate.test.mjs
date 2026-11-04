@@ -96,9 +96,23 @@ test("email sign-up link: bad addresses and floods are refused, cross-site posts
   sent.length = 0;
   assert.equal((await form("/signin/signup-email", { email: "nope" })).status, 400);
   assert.equal((await form("/signin/signup-email", { email: "a@b.dev" }, { origin: "https://evil.example" })).status, 403);
-  for (let i = 0; i < 3; i++) await form("/signin/signup-email", { email: "flood@x.dev" }, { "user-agent": CHROME + " f" + i });
+  // Nov 4: one link per address per 15 minutes; repeats get the same page and no email (the first link still works)
+  for (let i = 0; i < 4; i++) { const r = await form("/signin/signup-email", { email: "flood@x.dev" }, { "user-agent": CHROME + " f" + i }); assert.equal(r.status, 200); if (i) assert.match(await r.text(), /earlier email still works/); }
+  assert.equal(sent.filter(m => m.to === "flood@x.dev").length, 1);
+  // the hourly and daily caps live in the database, so a restart doesn't reset them: 5 earlier today means no more
+  const k = hub.db.prepare("SELECT k FROM signup_throttle WHERE k LIKE 'a:%' ORDER BY ts DESC LIMIT 1").get().k;
+  hub.db.prepare("UPDATE signup_throttle SET ts = ts - 2 * 3600000 WHERE k = ?").run(k);
+  for (let i = 0; i < 4; i++) hub.db.prepare("INSERT INTO signup_throttle VALUES (?, ?)").run(k, Date.now() - (3 + i) * 3600000);
   assert.equal((await form("/signin/signup-email", { email: "flood@x.dev" }, { "user-agent": CHROME + " f9" })).status, 429);
-  assert.equal(sent.filter(m => m.to === "flood@x.dev").length, 3);
+  assert.equal(sent.filter(m => m.to === "flood@x.dev").length, 1);
+});
+
+test("email sign-up link: junk user agents (quoted, 2005-era browsers, scanners) get the page but no email", async () => {
+  sent.length = 0;
+  for (const ua of ['"' + CHROME + '"', "Mozilla/5.0 (Macintosh; U; Intel Mac OS X; en; rv:1.8.1.2pre) Gecko/20070108 Camino/1.1a2", "Mozilla/5.0 (compatible; SQLSpider/1.5)"]) {
+    const r = await form("/signin/signup-email", { email: "junk@x.dev" }, { "user-agent": ua }); assert.equal(r.status, 200); assert.match(await r.text(), /Check your email/);
+  }
+  assert.equal(sent.length, 0);
 });
 
 test("a script claiming to be modern Chrome but sending no Sec-Fetch-Mode isn't counted", async () => {

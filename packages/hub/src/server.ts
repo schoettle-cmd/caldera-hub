@@ -1792,6 +1792,16 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   const tries = new Map<string, { n: number; reset: number }>();
   const tooMany = (key: string, max: number, windowMs = 3600_000) => { const t = Date.now(); let b = tries.get(key);
     if (!b || b.reset < t) { b = { n: 0, reset: t + windowMs }; tries.set(key, b); } if (tries.size > 20_000) tries.clear(); return ++b.n > max; };
+  // Sign-up email throttle that survives restarts (Nov 4: "Your Caldera sign-up link" went 2+ times to 44 addresses in
+  // 14 days, up to 15 a day to one; the in-memory caps above reset on every deploy, and the senders rotate IPs inside
+  // a /24). Keys: "a:<email hash>" per address, "n:<subnet>" per /24 (IPv6 /48).
+  q("CREATE TABLE IF NOT EXISTS signup_throttle (k TEXT, ts INTEGER)").run();
+  q("CREATE INDEX IF NOT EXISTS signup_throttle_k ON signup_throttle(k, ts)").run();
+  const thrCount = (k: string, ms: number) => (q("SELECT COUNT(*) n FROM signup_throttle WHERE k=? AND ts>?").get(k, Date.now() - ms) as any).n as number;
+  const thrAdd = (k: string) => { q("INSERT INTO signup_throttle VALUES (?,?)").run(k, Date.now()); if (Math.random() < 0.02) q("DELETE FROM signup_throttle WHERE ts < ?").run(Date.now() - 2 * 86400_000); };
+  const subnetOf = (ip: string) => ip.includes(":") ? ip.split(":").slice(0, 3).join(":") : ip.split(".").slice(0, 3).join(".");
+  /** junk user agents seen hammering the sign-up form (quoted UA strings, 2005-era browsers, scanners) */
+  const junkUA = (ua: string) => !ua || /"|SQLSpider|Camino|BonEcho|Arora|PPC Mac|Windows NT 5\.|curl\/|python-|Go-http/i.test(ua);
   const PAIR_ABC = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   const pairCode = () => Array.from(crypto.randomBytes(6), x => PAIR_ABC[x % PAIR_ABC.length]).join("");
   const normCode = (c: unknown) => String(c || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -2733,7 +2743,15 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
             signinPage(res, 200, "Check your email", `<h1>Check your email</h1><p class="lede">If that address is right, a link is on its way. Open it on any device where you use GitHub.</p><p class="mut">Nothing there in a minute? Check spam, or <a href="/#install">try again</a>.</p>`);
             return;
           }
-          if (tooMany("signup-mail-ip:" + ip, 6) || tooMany("signup-mail:" + mail.hashOf(email), 3)) { signinPage(res, 429, "Sign up", `<h1>Too many tries</h1><p class="lede">Wait an hour, then try again. Or <a href="/auth/github" rel="nofollow">sign up with GitHub</a> on this device.</p>`); return; }
+          const aK = "a:" + mail.hashOf(email), nK = "n:" + subnetOf(ip);
+          // one link per 15 minutes is enough (it doesn't expire): a repeat gets the same "check your email" page, no email
+          const quiet = junkUA(String(req.headers["user-agent"] || "")) || (!city && thrCount(aK, 15 * 60_000) >= 1);
+          if (quiet) {
+            console.log("signup-email skipped", thrCount(aK, 15 * 60_000) ? "recent" : "ua");
+            signinPage(res, 200, "Check your email", `<h1>Check your email</h1><p class="lede">We sent a link to <b>${e(email)}</b>. Open it on any device where you use GitHub, or start without GitHub from the same email.</p><p class="mut">Nothing there? Check spam. The link in the earlier email still works.</p>`);
+            return;
+          }
+          if (thrCount(aK, 3600_000) >= 3 || thrCount(aK, 86400_000) >= 5 || thrCount(nK, 3600_000) >= 6 || tooMany("signup-mail-ip:" + ip, 6) || tooMany("signup-mail:" + mail.hashOf(email), 3)) { signinPage(res, 429, "Sign up", `<h1>Too many tries</h1><p class="lede">Wait an hour, then try again. Or <a href="/auth/github" rel="nofollow">sign up with GitHub</a> on this device.</p>`); return; }
           const fromCareer = !!city && f.get("from") === "career";   // cg1 "b": the email unlocks the career read
           if (fromCareer) FUNNEL.track(req, "cg-email", CAREER_TEST);
           AS.remember(req, email); if (!city) FLOWS.start(req, "email", doorOf(req)); FUNNEL.track(req, "email-start", city ? "city" : okB ? "from " + okB.split("/").slice(0, 2).join("/") : "");
@@ -2757,6 +2775,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
               html: `<p>Open this on any device where you use GitHub. Your page and your city build themselves in about 10 seconds.</p>${btn(ghLink, "Continue with GitHub")}<p style="color:#777;font-size:13px">Read-only: your public GitHub profile and email. No access to your code or private repos.</p><p>No GitHub? <a href="${e(startLink)}">Make your page with ChatGPT or Claude</a>, or <a href="${e(pubB)}/#obsidian">use the Obsidian plugin</a>.</p><p style="color:#777;font-size:13px">If you didn't ask for this, ignore this email.</p>`,
               text: `Finish joining Caldera. Open this on any device where you use GitHub:\n${ghLink}\n\nRead-only: your public GitHub profile and email. No access to your code or private repos.\n\nNo GitHub? Make your page with ChatGPT or Claude: ${startLink}\n\nIf you didn't ask for this, ignore this email.` };
           }
+          thrAdd(aK); thrAdd(nK);
           try { if (await mail.note({ to: email, ...m, src: "signup-email" })) FUNNEL.track(req, "email-sent", live ? "existing" : city ? "city" : "new"); }
           catch (err: any) { console.error("signup mail", err?.message); }
           if (fromCareer) { res.writeHead(303, { location: `/gh/${city}/career?full=1`, "cache-control": "no-store" }); return res.end(); }
