@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "0.28.17",
+      "date": "2026-11-04",
+      "title": "Storefronts become billboards",
+      "items": [
+        "The apps and websites you list no longer stand in your city as separate little boxes. Their signs now hang on your buildings: a billboard on the roof, a tall sign down the side of a tower, a framed billboard on a wall, or a shop front with an awning at street level. A city gets a mix of all four.",
+        "Each sign shows the app's or site's own icon and its short name, in a lit frame. At night it glows in the listing's colour, lit by spotlights and lamps; by day it stays soft.",
+        "A listing tied to a repo (\"| repo-name\") hangs on that repo's building, on the roof when there is room. Tall towers carry the vertical signs. Signs are never hidden behind other buildings, and tapping one still opens the Stores list with that one on top.",
+        "A website's live visitors now walk into the building its sign hangs on.",
+        "Your city in Obsidian also gets the LEGO build intro and the visitor helicopters that your web page already shows."
+      ]
+    },
+    {
       "version": "0.28.16",
       "date": "2026-10-26",
       "title": "City labels no longer overlap",
