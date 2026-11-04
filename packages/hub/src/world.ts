@@ -7,7 +7,7 @@
  * appear. Live activity is the same coarse public projection a member's own public city gets, folded per member.
  */
 import { mapPanel } from "./mapprompt";
-import { CITY_CSS, CITY_JS, cleanSites, type CityData, type CityRepo } from "../../../../caldera/packages/plugin/src/city";
+import { CITY_CSS, CITY_JS, cleanSites, scrubSignHosts, type CityData, type CityRepo } from "../../../../caldera/packages/plugin/src/city";
 
 export interface WorldMemberIn {
   handle: string; name: string; headline: string; created: string; groups: string[]; friends: number;
@@ -34,7 +34,7 @@ export function cleanRepo(r: CityRepo, project: string): CityRepo {
     const m = r.meta || {}, icon = typeof m.icon === "string" && /^https?:\/\/[^\s"<>]+\/v1\/listings\/img\/[A-Za-z0-9._%-]+$/.test(m.icon) ? m.icon : undefined;
     const sites = (Array.isArray(r.sites) ? r.sites : []).map(x => String(x).toLowerCase()).filter(x => /^[a-z0-9.-]+\.[a-z]{2,}(\/[a-z0-9._~%\/-]{1,120})?$/.test(x)).slice(0, 2);
     return { name: str(r.name, 60), project, public: true, language: r.kind === "app" ? "App" : "Web", commits: 0, weeks: [], week: 0, today: 0, url, kind: r.kind, ...(sites.length ? { sites } : {}),
-      meta: { store: m.store === "play" ? "play" : m.store === "apple" ? "apple" : undefined, icon, host: m.host ? str(m.host, 120) : undefined, genre: m.genre ? str(m.genre, 40) : undefined } };
+      meta: { store: m.store === "play" ? "play" : m.store === "apple" ? "apple" : undefined, icon, host: m.host ? str(m.host, 120) : undefined, genre: m.genre ? str(m.genre, 40) : undefined, on: m.on ? str(m.on, 100) : undefined } };   // on: kept only if that building stands here by name (scrubSignHosts below)
   }
   const url = typeof r.url === "string" && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/.test(r.url) ? r.url : undefined;
   if (r.priv && !r.locked && r.name) {   // "named" private repo: name, language and activity, never a link or description
@@ -128,7 +128,7 @@ export function buildWorld(members: WorldMemberIn[], friendships: ([string, stri
     at: new Date(now).toISOString(),
     members: order.map(m => ({ handle: m.handle, name: str(m.name, 80), headline: str(m.headline, 160), isNew: isNew(m), groups: m.groups.slice(0, 8), friends: m.friends, ...(m.tag ? { tag: str(m.tag, 32) } : {}),
       city: m.city ? `${base}/@${m.handle}/city.html` : `${base}/@${m.handle}/`, page: `${base}/@${m.handle}/` })),
-    city: { generated: new Date(now).toISOString(), districts, private: false, totals: { commits: all.reduce((s, r) => s + r.commits, 0), active: all.filter(r => r.week > 0).length } },
+    city: { generated: new Date(now).toISOString(), districts: scrubSignHosts(districts as any) as typeof districts, private: false, totals: { commits: all.reduce((s, r) => s + r.commits, 0), active: all.filter(r => r.week > 0).length } },
     links: links.slice(0, MAX_LINKS),
     topics: (() => { const n = new Map<string, number>(); for (const m of members) if (m.tag) n.set(m.tag, (n.get(m.tag) || 0) + 1);
       return [...n.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, TOPIC_HUES.length).map(([t, k], i) => ({ t: str(t, 32), c: TOPIC_HUES[i]!, n: k })); })(),
