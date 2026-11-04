@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "0.28.23",
+      "date": "2026-11-04",
+      "title": "Settings fix",
+      "items": [
+        "Opening Caldera's settings in a vault without a Caldera page could freeze Obsidian. Fixed."
+      ]
+    },
+    {
       "version": "0.28.22",
       "date": "2026-11-04",
       "title": "Inbox Hero connector",
