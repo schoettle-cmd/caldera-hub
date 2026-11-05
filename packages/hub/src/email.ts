@@ -196,7 +196,7 @@ export function emailer(ctx: EmailCtx) {
     const m: Mail = m0.src ? { ...m0, html: tagLinks(m0.html, hub, m0.src, true), text: tagLinks(m0.text, hub, m0.src, false) } : m0;
     if (ctx.send) return ctx.send(m);
     if (!ctx.resendKey) throw new Error("email is not set up on this hub");
-    if (!(await guardOk(m))) return;   // the shared mail guard said no: not sent (logged)
+    if (!(await guardOk(m))) return false;   // the shared mail guard said no: not sent (logged); callers that keep state (the digest) must not count it
     // Resend allows 10 requests a second: sends go out one at a time at most ~8 a second, and a 429 waits and retries
     const turn = sendChain.then(async () => {
       const wait = lastSend + 125 - Date.now(); if (wait > 0) await sleep(wait);
@@ -452,7 +452,8 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
       if (!active && !(quietOk && (d.suggestions.length || d.setup || d.nudge || weekly))) { skipped++; q("UPDATE email_subs SET last_links=? WHERE owner=?").run(totalLinks, r.owner); continue; }
       const m = compose(d, unsubUrl(r.token), !active); if (!m) { skipped++; continue; }
       try {
-        await send({ ...m, to, kind: "daily" });
+        // blocked by the mail guard: not sent, so last_sent stays put and the next run covers this window (11-05: 33 blocked digests were counted as sent)
+        if ((await send({ ...m, to, kind: "daily" })) === false) { skipped++; continue; }
         q("UPDATE email_subs SET last_sent=?, last_links=?, last_quiet=COALESCE(?, last_quiet) WHERE owner=?").run(new Date().toISOString(), totalLinks, active ? null : new Date().toISOString(), r.owner);
         sent++;
       } catch (e: any) { errors++; console.error("digest", r.owner, e?.message); }

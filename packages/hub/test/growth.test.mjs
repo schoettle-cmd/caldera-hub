@@ -10,7 +10,7 @@ const __tmpDirs = [];
 const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
 __afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
-let hub, base, dir; const sent = [];
+let hub, base, dir; const sent = []; let guardBlocks = false;   // stands in for the shared mail guard saying no
 const post = (p, body, token) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: "Bearer " + token } : {}) }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.json() }));
 const get = (p) => fetch(base + p, { headers: { "user-agent": "Mozilla/5.0" } });
 const today = new Date().toISOString().slice(0, 10);
@@ -24,7 +24,7 @@ const CITY = `<a class="city-peek" href="city.html"><svg viewBox="-10 -20 300 20
 
 before(async () => {
   dir = __mkdtemp(path.join(os.tmpdir(), "caldera-growth-"));
-  hub = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: dir, publicUrl: "http://hub.test", limits: { newProfilesPerDay: 100, writesPerMinute: 1000, perMinute: 5000 }, email: { send: async m => { sent.push(m); } } });
+  hub = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: dir, publicUrl: "http://hub.test", limits: { newProfilesPerDay: 100, writesPerMinute: 1000, perMinute: 5000 }, email: { send: async m => { if (guardBlocks) return false; sent.push(m); } } });
   base = "http://127.0.0.1:" + await hub.listen(0);
   const files = { "index.html": Buffer.from(`<html><head><title>Mike</title></head><body>${CITY}</body></html>`).toString("base64") };
   await post(`/v1/profiles/${ids.mike.id}/bundle`, { manifest: man("mike", { headline: "Building AI agents and Obsidian plugins", topics: [["ai", 5], ["typescript", 3]], groups: ["producthunt"] }), files });
@@ -93,8 +93,14 @@ test("daily email: double opt-in, sealed at rest, digest only when something hap
   // something happened: a view + a friend request from bo
   await get("/@mike/");
   await post("/v1/envelopes", C.sign(ids.bo, "friend.request", { to: ids.mike.id, note: "hello" }));
-  let r = await hub.mail.runDigest(true); assert.equal(r.sent, 1);
+  // the mail guard blocks it: not counted as sent and last_sent stays, so the next run still covers this window (11-05)
+  guardBlocks = true; const before = sent.length;
+  let r = await hub.mail.runDigest(true); assert.equal(r.sent, 0); assert.equal(sent.length, before);
+  assert.equal(hub.db.prepare("SELECT last_sent FROM email_subs WHERE owner=?").get(ids.mike.id).last_sent, null, "blocked digest leaves last_sent");
+  guardBlocks = false;
+  r = await hub.mail.runDigest(true); assert.equal(r.sent, 1);
   const d = sent.at(-1);
+  assert.match(d.text, /450 S Melrose Dr, Vista, CA 92081/, "postal address in text"); assert.match(d.html, /450 S Melrose Dr, Vista, CA 92081/, "postal address in html");
   assert.match(d.subject, /^Caldera: /); assert.ok(/^[\x20-\x7e]+$/.test(d.subject), "ascii subject");
   assert.ok(d.html.includes("hello") && d.text.includes("Unsubscribe"));
   assert.match(d.headers["List-Unsubscribe"], /^<http:\/\/hub\.test\/v1\/email\/unsub\?t=/); assert.equal(d.headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click");
