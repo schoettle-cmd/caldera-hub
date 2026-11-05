@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "0.28.31",
+      "date": "2026-11-05",
+      "title": "Inbox Hero sync tells you what it's doing",
+      "items": [
+        "The first Inbox Hero sync says it has started, and you're told if notes are left out over Inbox Hero's limit.",
+        "If a sync stops (no connection, or Inbox Hero asks it to slow down), you see why, it keeps what it already sent, and it carries on by itself."
+      ]
+    },
+    {
       "version": "0.28.30",
       "date": "2026-11-05",
       "title": "Choose many folders for Inbox Hero",
