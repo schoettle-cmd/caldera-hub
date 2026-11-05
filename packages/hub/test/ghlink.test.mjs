@@ -49,6 +49,7 @@ test("GitHub sign-in finds the Obsidian profile that lists the login: owner cook
   // a page merely LISTING a GitHub account proves nothing: no link, no owner cookie, no email taken
   const bare = await signIn("octo");
   assert.equal(bare.cb.status, 403); assert.match(bare.body, /One step to link your GitHub/); assert.equal(bare.own, undefined);
+  assert.match(bare.body, /Pair this device/); assert.match(bare.body, /\/signin\?back=%2F%40[a-z0-9-]+%2F#pair/);   // the dead end now leads to pairing from Obsidian (works on a phone)
   assert.equal(count(h, "SELECT COUNT(*) n FROM gh_links"), 0);
   // proof: the GitHub profile links back to the page (website or bio)
   USERS.octo.blog = "https://caldera.social/@mike";
