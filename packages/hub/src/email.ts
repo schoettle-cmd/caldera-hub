@@ -9,6 +9,9 @@
  */
 import crypto from "node:crypto";
 
+/** Postal address every Caldera email carries (CAN-SPAM; the shared mail guard blocks daily/marketing mail without it) */
+export const POSTAL = "mjonesone, LLC, 450 S Melrose Dr, Vista, CA 92081";
+
 /** `src` = which email this is (e.g. "email-digest"): every link back to our own site gets ?src=<it> so visits from email are attributable */
 import type { NewsItem } from "./news";
 export interface Mail { to: string; subject: string; html: string; text: string; headers?: Record<string, string>; src?: string; kind?: string }
@@ -237,7 +240,7 @@ export function emailer(ctx: EmailCtx) {
 <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border:1px solid #E4E1EE;border-radius:12px;overflow:hidden">
 <div style="padding:16px 22px;background:#111113;color:#F2F2F5;font:600 16px Georgia,serif">Caldera</div>
 <div style="padding:22px">${title ? `<h1 style="margin:0 0 12px;font:600 21px/1.3 Georgia,serif;color:#111113">${title}</h1>` : ""}${inner}</div></div>
-${unsub ? `<p style="max-width:560px;margin:14px auto 0;color:#8A8794;font-size:12px;text-align:center">You get this because you asked for a daily Caldera summary. <a href="${esc(unsub)}" style="color:#6E4FE0">Unsubscribe</a> in one click.</p>` : ""}<p style="max-width:560px;margin:8px auto 0;color:#8A8794;font-size:11.5px;text-align:center">Caldera is run by mjonesone, LLC &middot; <a href="${hub}/privacy" style="color:#8A8794">Privacy</a> &middot; <a href="${hub}/terms" style="color:#8A8794">Terms</a></p></body></html>`;
+${unsub ? `<p style="max-width:560px;margin:14px auto 0;color:#8A8794;font-size:12px;text-align:center">You get this because you asked for a daily Caldera summary. <a href="${esc(unsub)}" style="color:#6E4FE0">Unsubscribe</a> in one click.</p>` : ""}<p style="max-width:560px;margin:8px auto 0;color:#8A8794;font-size:11.5px;text-align:center">Caldera is run by ${POSTAL} &middot; <a href="${hub}/privacy" style="color:#8A8794">Privacy</a> &middot; <a href="${hub}/terms" style="color:#8A8794">Terms</a></p></body></html>`;
 
   /** Start (or restart) a subscription: stores the address sealed and mails a confirmation link. Returns a message for the owner. */
   async function subscribe(owner: string, email: string): Promise<string> {
@@ -419,9 +422,9 @@ ${unsub ? `<p style="max-width:560px;margin:14px auto 0;color:#8A8794;font-size:
 ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td></tr>
 <tr><td style="padding:12px 20px;border-top:1px solid ${LINE};background:${BG};border-radius:0 0 6px 6px;font-size:12px;color:${MUT}">Bring a friend: <a href="${esc(invite)}" style="color:${LINK}">${esc(invite.replace(/^https?:\/\//, ""))}</a><span style="float:right"><a href="${esc(unsub)}" style="color:${MUT}">Unsubscribe</a></span></td></tr>
 </table>
-<p style="max-width:640px;margin:12px auto 0;color:${MUT};font-size:11.5px;text-align:center">You get this because you signed up for the Caldera Daily. <a href="${esc(unsub)}" style="color:${MUT}">Unsubscribe</a> in one click. Caldera is run by mjonesone, LLC &middot; <a href="${hub}/privacy" style="color:${MUT}">Privacy</a> &middot; <a href="${hub}/terms" style="color:${MUT}">Terms</a></p>
+<p style="max-width:640px;margin:12px auto 0;color:${MUT};font-size:11.5px;text-align:center">You get this because you signed up for the Caldera Daily. <a href="${esc(unsub)}" style="color:${MUT}">Unsubscribe</a> in one click. Caldera is run by ${POSTAL} &middot; <a href="${hub}/privacy" style="color:${MUT}">Privacy</a> &middot; <a href="${hub}/terms" style="color:${MUT}">Terms</a></p>
 </td></tr></table></body></html>`;
-    return { to: "", subject, html, text: ascii(`${T.join("\n\n")}\n\n--\nUnsubscribe in one click: ${unsub}\nCaldera is run by mjonesone, LLC. Privacy: ${hub}/privacy`), src: quiet ? "email-weekly" : "email-digest",
+    return { to: "", subject, html, text: ascii(`${T.join("\n\n")}\n\n--\nUnsubscribe in one click: ${unsub}\nCaldera is run by ${POSTAL}. Privacy: ${hub}/privacy`), src: quiet ? "email-weekly" : "email-digest",
       headers: { "List-Unsubscribe": `<${unsub}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } };
   }
   /** One pass over every confirmed subscriber. `force` ignores the once-a-day guard (tests, manual runs). */
@@ -493,7 +496,7 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
     const why = o.why ? ` (${o.why})` : "";
     await send({ to: o.to, src: "email-invite", subject: ascii(`${who} invited you to Caldera`),
       html: shell(`${esc(who)} invited you to Caldera`, `<p style="margin:0 0 12px">Hi @${esc(o.login)},</p><p style="margin:0 0 12px">${esc(who)} (@${esc(o.inviterHandle)}) is on Caldera and thought you'd like it${esc(why)}.</p><p style="margin:0 0 12px">Caldera is a free, open-source social network for GitHub and Obsidian: your public repos become a living city, and you meet people by what they build. Signing up with GitHub takes about 30 seconds, and you'll start out connected with ${esc(who)}.</p><p style="margin:22px 0"><a href="${esc(o.link)}" style="display:inline-block;padding:11px 20px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">See ${esc(who)}'s page and join</a></p><p style="color:#8A8794;font-size:13px;margin:0">We found this address on your public GitHub profile. This is the only invite we'll send you this month, and you won't get another from us unless someone you know asks. <a href="${esc(un)}" style="color:#6E4FE0">Don't email me about Caldera</a> (one click).</p>`),
-      text: ascii(`Hi @${o.login},\n\n${who} (@${o.inviterHandle}) is on Caldera and thought you'd like it${why}.\n\nCaldera is a free, open-source social network for GitHub and Obsidian: your public repos become a living city, and you meet people by what they build. Signing up with GitHub takes about 30 seconds.\n\nSee ${who}'s page and join: ${o.link}\n\nWe found this address on your public GitHub profile.\n\n--\nDon't want Caldera emails? One click: ${un}\nCaldera is run by mjonesone, LLC. Privacy: ${hub}/privacy`),
+      text: ascii(`Hi @${o.login},\n\n${who} (@${o.inviterHandle}) is on Caldera and thought you'd like it${why}.\n\nCaldera is a free, open-source social network for GitHub and Obsidian: your public repos become a living city, and you meet people by what they build. Signing up with GitHub takes about 30 seconds.\n\nSee ${who}'s page and join: ${o.link}\n\nWe found this address on your public GitHub profile.\n\n--\nDon't want Caldera emails? One click: ${un}\nCaldera is run by ${POSTAL}. Privacy: ${hub}/privacy`),
       headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } });
     return `Invite sent to @${o.login}.`;
   }
@@ -513,7 +516,7 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
     const what = a.request ? `${who} wants to message you` : a.count > 1 ? `${who} sent you ${a.count} messages` : `${who} sent you a message`;
     await send({ to, src: a.request ? "email-message-request" : "email-message", subject: ascii(`${what} on Caldera`),
       html: shell(esc(what), `<p style="margin:0 0 14px;padding:12px 14px;border-left:3px solid #6E4FE0;background:#F7F5FC;color:#24222B">${esc(a.preview)}</p>${a.request ? `<p style="margin:0 0 12px;color:#55525E">Accept to reply, or ignore it. They won't be told which.</p>` : ""}<p style="margin:18px 0"><a href="${esc(a.url)}" style="display:inline-block;padding:11px 20px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">${a.request ? "See the request" : "Reply on Caldera"}</a></p><p style="color:#8A8794;font-size:12.5px;margin:0">Replying to this email doesn't reach @${esc(a.handle)}. <a href="${esc(a.off)}" style="color:#8A8794">Stop emails about messages</a> (one click).</p>`),
-      text: ascii(`${what} on Caldera:\n\n"${a.preview}"\n\n${a.request ? "See the request" : "Reply"}: ${a.url}\n\nReplying to this email doesn't reach @${a.handle}.\n--\nStop emails about messages: ${a.off}\nCaldera is run by mjonesone, LLC. Privacy: ${hub}/privacy`),
+      text: ascii(`${what} on Caldera:\n\n"${a.preview}"\n\n${a.request ? "See the request" : "Reply"}: ${a.url}\n\nReplying to this email doesn't reach @${a.handle}.\n--\nStop emails about messages: ${a.off}\nCaldera is run by ${POSTAL}. Privacy: ${hub}/privacy`),
       headers: { "List-Unsubscribe": `<${a.off}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } });
     return true;
   }
@@ -525,8 +528,8 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
   const reconnectTo = (owner: string) => { const r = row(owner); let to = r && r.confirmed ? addr(r) : ""; if (!to) { const s = suggestion(owner); if (s?.verified) to = s.email; } return to && !suppressed(to) ? to : ""; };
   function reconnectCompose(handle: string, link: string, unsub: string) {
     const subject = "Your Caldera city stopped updating: reconnect GitHub";
-    const html = shell("Your city stopped updating", `<p style="margin:0 0 12px">GitHub's sign-in for Caldera expired on your account, so your city at <a href="${esc(hub)}/@${esc(handle)}/" style="color:#6E4FE0">caldera.social/@${esc(handle)}</a> stopped picking up new repos and commits. Your page and city are still there.</p><p style="margin:0 0 12px">One click reconnects it:</p><p style="margin:18px 0"><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">Reconnect GitHub</a></p><p style="margin:0 0 12px;color:#55525E;font-size:13px">Read-only, same as before: your public GitHub profile and email. Caldera can't see your code or private repos.</p><p style="margin:16px 0 0;color:#8A8794;font-size:12px">This is a one-time email. <a href="${esc(unsub)}" style="color:#8A8794">Don't email me again</a>. Caldera is run by mjonesone, LLC.</p>`);
-    const text = ascii(`GitHub's sign-in for Caldera expired on your account, so your city at ${hub}/@${handle}/ stopped picking up new repos and commits. Your page and city are still there.\n\nReconnect GitHub (one click): ${link}\n\nRead-only, same as before: your public GitHub profile and email. Caldera can't see your code or private repos.\n\n--\nThis is a one-time email. Don't email me again: ${unsub}\nCaldera is run by mjonesone, LLC. Privacy: ${hub}/privacy`);
+    const html = shell("Your city stopped updating", `<p style="margin:0 0 12px">GitHub's sign-in for Caldera expired on your account, so your city at <a href="${esc(hub)}/@${esc(handle)}/" style="color:#6E4FE0">caldera.social/@${esc(handle)}</a> stopped picking up new repos and commits. Your page and city are still there.</p><p style="margin:0 0 12px">One click reconnects it:</p><p style="margin:18px 0"><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">Reconnect GitHub</a></p><p style="margin:0 0 12px;color:#55525E;font-size:13px">Read-only, same as before: your public GitHub profile and email. Caldera can't see your code or private repos.</p><p style="margin:16px 0 0;color:#8A8794;font-size:12px">This is a one-time email. <a href="${esc(unsub)}" style="color:#8A8794">Don't email me again</a>. Caldera is run by ${POSTAL}.</p>`);
+    const text = ascii(`GitHub's sign-in for Caldera expired on your account, so your city at ${hub}/@${handle}/ stopped picking up new repos and commits. Your page and city are still there.\n\nReconnect GitHub (one click): ${link}\n\nRead-only, same as before: your public GitHub profile and email. Caldera can't see your code or private repos.\n\n--\nThis is a one-time email. Don't email me again: ${unsub}\nCaldera is run by ${POSTAL}. Privacy: ${hub}/privacy`);
     return { subject, html, text };
   }
   async function sendReconnect(owner: string, handle: string): Promise<boolean> {
@@ -541,7 +544,7 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
   /** a plain one-off email in the Caldera shell (sign-up links, weekly update nudges) */
   async function note(m: { to: string; subject: string; title: string; html: string; text: string; headers?: Record<string, string>; src?: string }) {
     if (!m.to || suppressed(m.to)) return false;
-    await send({ to: m.to, subject: ascii(m.subject), html: shell(esc(m.title), m.html), text: ascii(m.text), headers: m.headers, src: m.src }); return true;
+    await send({ to: m.to, subject: ascii(m.subject), html: shell(esc(m.title), m.html), text: ascii(/450 S Melrose/.test(m.text) ? m.text : `${m.text}\n\n--\nCaldera is run by ${POSTAL}. Privacy: ${hub}/privacy`), headers: m.headers, src: m.src }); return true;
   }
   return { reconnectCompose, reconnectTo: (owner: string) => !!reconnectTo(owner), sendReconnect, note, subscribe, confirm, messageAlert, unsubToken, unsubscribe, status, runDigest, schedule, page, compose, isActive: (d: DigestData) => rank.active(d), hashOf, suggest, suggestion, promptFor, dismissPrompt, matches, hasConfirmed, sendSignin, sendInvite, inviteBlock, inviteUnsub, invitesToday: (inviter: string) => (q("SELECT COUNT(*) n FROM invites_sent WHERE inviter=? AND ts > ?").get(inviter, new Date(Date.now() - DAY).toISOString()) as any).n as number, inviteCap: INVITES_PER_DAY };
 }
