@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "0.28.29",
+      "date": "2026-11-05",
+      "title": "Clearer graph labels",
+      "items": [
+        "Names in your page's graph no longer sit on top of each other."
+      ]
+    },
+    {
       "version": "0.28.28",
       "date": "2026-11-05",
       "title": "Tidier page menu",
