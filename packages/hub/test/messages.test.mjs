@@ -57,7 +57,7 @@ test("friends message directly; strangers send one request that waits for Accept
     const feed = await (await S.get("bo", "/feed")).text();
     assert.match(feed, /<a class="ch-icon ch-msgs" href="[^"]*\/messages" aria-label="Messages, 1 unread"[^>]*>[\s\S]*?<span class="ch-badge">1<\/span><\/a><details class="ch-bell"/);
     { const out = await (await fetch(S.base + "/feed")).text(); assert.ok(!out.includes('class="ch-icon ch-msgs"') && !out.includes('class="ch-bn-msgs"'), "signed out: no Messages link, top or bottom"); }
-    assert.match(feed, /<a class="ch-bn-msgs" href="[^"]*\/messages"><span class="ch-bi">[\s\S]*?<span class="ch-badge">1<\/span><\/span>Messages<\/a>/, "the phone tab bar carries the badge too");
+    assert.match(feed, /<a class="ch-bn-msgs" href="[^"]*\/messages"><span class="ch-bi">[\s\S]*?<span class="ch-badge">1<\/span><\/span><span class="ch-bl">Messages<\/span><\/a>/, "the phone tab bar carries the badge too");
     const tb = await S.thread("bo", "ana"); assert.equal(tb.state, "open"); assert.equal(tb.messages.length, 1); assert.equal(tb.messages[0].mine, false);
     assert.equal(await S.unread("bo"), 0, "reading marks it read");
     // a stranger: the first message is a request; no second message until accepted
@@ -244,7 +244,7 @@ test("Feed in the nav counts what's new since the member last opened the feed (n
     const n0 = await feedN("bo"); assert.ok(n0 >= 1, "never opened: the last few days count (dee just joined)");
     const page = await (await get("bo", "/@cy/")).text();
     assert.match(page, /<a class="ch-feed" href="[^"]*\/feed">[\s\S]*?<span class="ch-badge ch-new">\d+<\/span><\/a>/, "top nav Feed carries the count");
-    assert.match(page, /class="ch-bn-feed"[^>]*><span class="ch-bi">[\s\S]*?<span class="ch-badge ch-new">\d+<\/span><\/span>Feed/, "phone tab too");
+    assert.match(page, /class="ch-bn-feed"[^>]*><span class="ch-bi">[\s\S]*?<span class="ch-badge ch-new">\d+<\/span><\/span><span class="ch-bl">Feed/, "phone tab too");
     const feed = await (await get("bo", "/feed")).text();
     assert.doesNotMatch(feed, /<span class="ch-badge ch-new">/, "not on the feed itself");
     assert.equal(await feedN("bo"), 0, "opening the feed clears it");

@@ -76,7 +76,8 @@ export const HEADER_CSS = `<style id="ch-css">
 .ch{--ch-bg:#141416;--ch-line:#2A2A2E;--ch-raised:#1C1C1F;--ch-pop:#18171D;--ch-pop-line:#2E2A40;--ch-text:#DADADF;--ch-strong:#F2F2F5;--ch-muted:#8A8A93;--ch-dim:#B8B8C2;
 --ch-accent:#8B6CF6;--ch-accent-btn:#6D4AE8;--ch-accent-soft:#2A2440;--ch-accent-text:#B9A6FF;--ch-ok:#3FB97F;--ch-off:#5A5A66;--ch-danger:#E5484D;--ch-h:56px;
 position:relative;z-index:60;box-sizing:border-box;height:var(--ch-h);display:flex;align-items:center;gap:20px;padding:0 24px;background:var(--ch-bg);border-bottom:1px solid var(--ch-line);
-font:500 15px/1.2 'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;color:var(--ch-text);-webkit-font-smoothing:antialiased;text-align:left}
+font:500 15px/1.2 'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;color:var(--ch-text);-webkit-font-smoothing:antialiased;text-align:left;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.ch-bn,.ch-strip{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .ch *{box-sizing:border-box}.ch a{color:inherit;text-decoration:none}.ch .ch-i{display:block;flex:none}
 .ch-brand{display:inline-flex;align-items:center;gap:9px;flex:none;color:var(--ch-strong)!important;font:600 19px/1 'Source Serif 4',Georgia,serif;letter-spacing:-.01em}
 .ch-nav{display:flex;align-items:center;gap:2px;flex:1;min-width:0}
@@ -132,7 +133,36 @@ font:500 15px/1.2 'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;color:var(--
 .ch-bn{display:grid}body{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
 .fd-tip,.ms-tip,.pc-tip{bottom:calc(76px + env(safe-area-inset-bottom,0px))!important}
 body:has(.ms.is-thread) .ch-bn{display:none}body:has(.ms.is-thread){padding-bottom:0}.ch-pop{position:fixed;left:12px;right:12px;top:58px;min-width:0}.ch-al{width:auto}}
+/* iPhone Duo, folded and unfolded (Mike 2026-11-05): the nav rail sits on the RIGHT edge as a glass capsule
+   (product-standards/docs/duo-glass-rail.md), 44px icon-only, the phone tab bar's links. A left rail or sidebar is for
+   desktop browsers only. Folded (466x678): the rail sits in the right status strip (84px) below the clock, y 200, and
+   the page stops at the strip. Open (669x951 / 951x669): a column at the right edge, clear of the sideways insets.
+   html.ch-duo / html.ch-duof come from DUO_JS (screen size + touch); ?duo=1 / ?duof=1 preview on a computer. */
+html:is(.ch-duo,.ch-duof){--dr-top:calc(var(--ch-h,56px) + 16px);--dr-r:12px;--dr-pad:76px;--dr-padl:0px}
+html.ch-duof{--dr-top:200px;--dr-r:calc((max(84px,env(safe-area-inset-right,0px)) - 54px) / 2);--dr-pad:max(84px,env(safe-area-inset-right,0px))}
+html.ch-duol{--dr-r:max(34px,calc(env(safe-area-inset-right,0px) + 2px));--dr-pad:calc(var(--dr-r) + 64px);--dr-padl:max(32px,env(safe-area-inset-left,0px))}
+html:is(.ch-duo,.ch-duof) body{padding-right:var(--dr-pad)!important;padding-left:var(--dr-padl)!important;padding-bottom:0!important;box-sizing:border-box}
+html:is(.ch-duo,.ch-duof) .ch-nav,html:is(.ch-duo,.ch-duof) .ch-menu{display:none!important}
+html:is(.ch-duo,.ch-duof) .ch-right{margin-left:auto}
+html:is(.ch-duo,.ch-duof) .ch-bn{display:flex!important;flex-direction:column;align-items:center;gap:2px;left:auto;bottom:auto;top:var(--dr-top);right:var(--dr-r);width:auto;height:auto;padding:4px;border-radius:999px;
+background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.03) 55%,rgba(0,0,0,.10)),rgba(20,20,22,.74);border:1px solid rgba(255,255,255,.22);box-shadow:0 8px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.18);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%)}
+html:is(.ch-duo,.ch-duof) .ch-bn::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;padding:1px;background:linear-gradient(135deg,rgba(255,255,255,.35) 0%,rgba(255,255,255,0) 22%,rgba(255,255,255,0) 70%,rgba(255,255,255,.12) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+html:is(.ch-duo,.ch-duof) .ch-bn a{width:44px;height:44px;gap:0;border-radius:999px;color:#A8A8B3}
+html:is(.ch-duo,.ch-duof) .ch-bn a .ch-bi{width:44px;height:44px;border-radius:999px}
+html:is(.ch-duo,.ch-duof) .ch-bn a[aria-current="page"] .ch-bi{background:rgba(0,0,0,.42);box-shadow:inset 0 0 0 1px rgba(255,255,255,.10);color:#B9A6FF}
+html:is(.ch-duo,.ch-duof) .ch-bn a[aria-current="page"] .ch-i{stroke-width:2.2}
+html:is(.ch-duo,.ch-duof) .ch-bn .ch-bl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+html:is(.ch-duo,.ch-duof) .ch-bn .ch-badge{top:2px;right:2px}
+.ch-bn .ch-fbk{display:none!important}html:is(.ch-duo,.ch-duof) .ch-bn .ch-fbk{display:flex!important;margin-top:2px;border-top:0}   /* Duo: Feedback lives in the rail, not as an edge tab under it */
+@media (prefers-reduced-transparency:reduce){html:is(.ch-duo,.ch-duof) .ch-bn{-webkit-backdrop-filter:none;backdrop-filter:none;background:#1C1C1F}}
 </style>`;
+
+/** Sets html.ch-duo (iPhone Duo open, 669x951 either way; ch-duol when sideways) or html.ch-duof (folded, 466x678) from
+ *  the SCREEN size and a touch pointer (Safari's bars shrink the window, not the screen). Phones and desktops match neither. */
+const DUO_JS = `<script data-duo>(function(){var r=document.documentElement;if(r.dataset.chDuo)return;r.dataset.chDuo='1';function f(){var c=false;try{c=matchMedia('(pointer:coarse)').matches}catch(e){}
+var q=location.search,sw=Math.min(screen.width,screen.height),sh=Math.max(screen.width,screen.height);
+var open=/[?&]duo=1/.test(q)||(c&&sw>=600&&sw<744&&sh>=880&&sh<1100),fold=!open&&(/[?&]duof=1/.test(q)||(c&&sw>=450&&sw<=500&&sh>=640&&sh<=720));
+r.classList.toggle('ch-duo',open);r.classList.toggle('ch-duof',fold);r.classList.toggle('ch-duol',open&&innerWidth>innerHeight)}f();addEventListener('resize',f)})()</script>`;
 
 /** Live unread counts for the signed-in header: badges, the messages strip, "(3)" in the tab title and a dot on the
  *  favicon, refreshed every 30s while the tab is visible and right away when it comes back. On the hub's own pages the
@@ -158,7 +188,7 @@ if(same||(hub&&bt)){setInterval(tick,30000);document.addEventListener('visibilit
 /** Feedback button for signed-in members (2026-10-26, Mike: one product-feedback queue across HA, Caldera and Inbox
  *  Hero, reviewed at mjonesone.com/control/feedback). Not on sandboxed pages (origin "null"), where the post would be
  *  refused. Raised to clear the phone bottom nav. Viewers carry no email here, so the form asks for one (optional). */
-const FEEDBACK_JS = `<script>(function(){if(self.origin==='null'||document.querySelector('script[src*="/fb/widget.js"]'))return;var s=document.createElement('script');s.src='https://mjonesone.com/fb/widget.js';s.defer=true;s.setAttribute('data-position','right');s.setAttribute('data-offset',innerWidth<760?'84':'20');document.body.appendChild(s)})()</script>`;
+const FEEDBACK_JS = `<script>(function(){if(self.origin==='null'||document.querySelector('script[src*="/fb/widget.js"]'))return;var s=document.createElement('script');s.src='https://mjonesone.com/fb/widget.js';s.defer=true;var du=document.documentElement.matches('.ch-duo,.ch-duof');s.setAttribute('data-position',du?'none':'right');s.setAttribute('data-trigger','#chFbk');s.setAttribute('data-offset',innerWidth<760?'84':'20');document.body.appendChild(s)})()</script>`;
 
 /** The header for one request's viewer. Same markup and CSS everywhere: the regression test compares these. */
 export function appHeader(o: HeaderOpts): string {
@@ -171,8 +201,8 @@ export function appHeader(o: HeaderOpts): string {
     + [["feed", "Feed", "/feed"], ["people", "People", "/people"], ["world", "World", "/world"], ["downloads", "Downloads", "/downloads"], ["guide", "Guide", "/guide"]].map(([k, l, h]) => `<a class="ch-mi" href="${e(hub + h)}"${cur === k ? ' aria-current="page"' : ""}>${icon(k)}${l}</a>`).join("")
     + `</div></details>`;
   // phones: a bottom tab bar instead of the hamburger (thumb-reachable, big targets); hidden above 760px
-  const tab = (key: string, label: string, href: string, inner: string, on: boolean, cls = "") => `<a${cls ? ` class="${cls}"` : ""} href="${e(href)}"${on ? ' aria-current="page"' : ""}><span class="ch-bi">${inner}</span>${label}</a>`;
-  const tabs = (list: string[]) => `<nav class="ch-bn" aria-label="Main" style="grid-template-columns:repeat(${list.length},1fr)">${list.join("")}</nav>`;
+  const tab = (key: string, label: string, href: string, inner: string, on: boolean, cls = "") => `<a${cls ? ` class="${cls}"` : ""} href="${e(href)}"${on ? ' aria-current="page"' : ""}><span class="ch-bi">${inner}</span><span class="ch-bl">${label}</span></a>`;
+  const tabs = (list: string[]) => `${DUO_JS}<nav class="ch-bn" id="drRail" data-strip-rail aria-label="Main" style="grid-template-columns:repeat(${list.length},1fr)">${list.join("")}<a class="ch-fbk" id="chFbk" href="#feedback"><span class="ch-bi">${icon("message", 22)}</span><span class="ch-bl">Feedback</span></a></nav>`;
   const base3 = [tab("feed", "Feed", `${hub}/feed`, icon("feed", 22) + fbadge, cur === "feed", "ch-bn-feed"), tab("people", "People", `${hub}/people`, icon("people", 22), cur === "people"), tab("world", "World", `${hub}/world`, icon("world", 22), cur === "world")];
   if (!v) {
     const signin = o.signinHref || `${hub}/signin`, join = o.joinHref || `${hub}/join?tp=header`;

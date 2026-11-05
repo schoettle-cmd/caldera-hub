@@ -113,9 +113,9 @@ document.querySelectorAll(".prompt-expand").forEach(function (b) {
 // sandboxed pages (origin null), where the post would be refused. Raised only when the phone bottom nav is showing.
 (function () {
   if (self.origin === 'null' || document.querySelector('script[src*="/fb/widget.js"]')) return;
-  var bn = document.querySelector('.ch-bn'), up = bn && getComputedStyle(bn).display !== 'none';
+  var bn = document.querySelector('.ch-bn'), up = bn && getComputedStyle(bn).display !== 'none' && !document.documentElement.matches('.ch-duo,.ch-duof');   // on the Duo it is the right rail, not a bottom bar
   var s = document.createElement('script'); s.src = 'https://mjonesone.com/fb/widget.js'; s.defer = true;
-  s.setAttribute('data-position', 'right'); s.setAttribute('data-offset', up ? '84' : '20');
+  var du = document.documentElement.matches('.ch-duo,.ch-duof'); s.setAttribute('data-position', du ? 'none' : 'right'); s.setAttribute('data-trigger', '#chFbk');   // Duo: the rail's Feedback button opens it s.setAttribute('data-offset', up ? '84' : '20');
   document.body.appendChild(s);
 })();
 
@@ -130,7 +130,7 @@ document.querySelectorAll(".prompt-expand").forEach(function (b) {
     ['back', 'invite'].forEach(function (k) { if (src.get(k)) q.set(k, src.get(k)); });
     var clear = function () { document.cookie = 'cal_ghtry=; Path=/; Max-Age=0; SameSite=Lax'; };
     var bar = document.createElement('div'); bar.className = 'gh-return'; bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'Sign up with email');
-    var bn = document.querySelector('.ch-bn'), up = bn && getComputedStyle(bn).display !== 'none';
+    var bn = document.querySelector('.ch-bn'), up = bn && getComputedStyle(bn).display !== 'none' && !document.documentElement.matches('.ch-duo,.ch-duof');   // on the Duo it is the right rail, not a bottom bar
     // above the phone bottom nav and the Feedback button (widget offset 84 with the nav, 20 without; ~40px tall)
     bar.style.cssText = 'position:fixed;left:12px;right:12px;bottom:' + ((up ? 84 : 20) + 48) + 'px;z-index:2147483000;max-width:560px;margin:0 auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:var(--bg-raised,#fff);color:var(--text,#1a1a1a);border:1px solid var(--line-strong,rgba(0,0,0,.15));box-shadow:0 8px 28px rgba(0,0,0,.18);font-size:15px;line-height:1.35';
     var t = document.createElement('span'); t.style.cssText = 'flex:1 1 220px'; t.textContent = "Didn't finish with GitHub? Sign up with email instead. No GitHub account needed.";
