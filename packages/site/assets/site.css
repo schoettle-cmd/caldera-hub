@@ -206,7 +206,7 @@ section h2 { line-height: 1.12; }
 .people-foot { margin-top: 32px; max-width: 720px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .nav nav a[aria-current="page"] { color: var(--text-strong); }
-@media (max-width: 560px) { .people-sort { width: 100%; } .people-sort button { flex: 1; } }
+@media (max-width: 560px) { .people-sort { width: 100%; } .people-sort button { flex: 1 1 auto; white-space: nowrap; padding: 8px 12px; } }   /* "Most active this week" stays on one line (folded Duo, 2026-11-05) */
 
 /* --- Guide + changelog --------------------------------------------------- */
 .guide .lead-in, .changelog .lead-in { color: var(--text-muted); margin-bottom: 26px; }
