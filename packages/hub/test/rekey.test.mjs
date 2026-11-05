@@ -3,9 +3,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs"; import os from "node:os"; import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 test("privacy: profile-view and sign-up-step visitor ids older than 14 days are re-keyed (counts kept, not traceable)", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-rekey-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-rekey-"));
   let h = createHub({ dataDir: d }); await h.listen(0); h.server.close();
   const db = new DatabaseSync(path.join(d, "hub.sqlite")), day = n => new Date(Date.now() - n * 86400000).toISOString();
   // an old day: one visitor seen twice, another once; a recent day keeps its ids

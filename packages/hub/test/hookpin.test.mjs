@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import crypto from "node:crypto";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // setup prompts pin the agent hook by hash: the pin must match the file we serve
 test("agent hook pin matches the served file", () => {
@@ -16,7 +20,7 @@ test("agent hook pin matches the served file", () => {
 test("the frozen tracker matches its integrity pin", async () => {
   const os = await import("node:os"), path = await import("node:path");
   const { createHub } = await import("../dist/server.js");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-pin-"));
+  const dir = __mkdtemp(path.join(os.tmpdir(), "caldera-pin-"));
   const hub = createHub({ dataDir: dir, publicUrl: "https://hub.test" });
   try {
     const base = "http://127.0.0.1:" + await hub.listen(0);

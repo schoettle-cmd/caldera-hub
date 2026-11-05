@@ -5,12 +5,16 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // Free tools: GitHub-verified members list free software (links only), first listing reviewed by the founder,
 // shown on the profile, in the city (Workshop data), on the World map (Market data), in /tools and the feed.
 const UA = { "user-agent": "Mozilla/5.0" };
 test("free tools: verified-only listing, founder review, profile + city + world + feed, counted downloads with gravity", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-tools-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-tools-"));
   const hub = createHub({ dataDir: d, publicUrl: "http://hub.test", founder: "ana", limits: { newProfilesPerDay: 100 } });
   const base = "http://127.0.0.1:" + await hub.listen(0);
   const post = (p, body, h = {}) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...h }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.json().catch(() => ({})) }));
@@ -80,7 +84,7 @@ test("free tools: verified-only listing, founder review, profile + city + world 
 });
 
 test("window glow: recent visitors light a district, and it fades over 30 minutes after they leave", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-glow-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-glow-"));
   const hub = createHub({ dataDir: d, publicUrl: "http://hub.test" });
   const base = "http://127.0.0.1:" + await hub.listen(0);
   try {

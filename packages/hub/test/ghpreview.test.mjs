@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // caldera.social/gh/<login>: anyone's public GitHub as a city, README badges, member redirects, limits
 const J = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
@@ -24,7 +28,7 @@ const fake = async (u) => { u = String(u); calls++;
   return J({ message: "Not Found" }, 404); };
 
 async function setup() {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-ghp-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-ghp-"));
   const sent = [];
   const hub = createHub({ dataDir: d, publicUrl: "http://hub.test", githubFetch: fake, limits: { newProfilesPerDay: 100 }, email: { send: async m => { sent.push(m); } } });
   const base = "http://127.0.0.1:" + await hub.listen(0);
@@ -77,7 +81,7 @@ test("/gh/<login> of a member goes to their real city; member badges; fresh buil
 });
 
 test("'Email me my city' for everyone (save1 ended 4d09685); the email carries the city link, claim button and badge", async () => {
-  const sent = [], d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-save-"));
+  const sent = [], d = __mkdtemp(path.join(os.tmpdir(), "caldera-save-"));
   let hub;
   try {
     hub = createHub({ dataDir: d, publicUrl: "http://hub.test", githubFetch: fake, limits: { newProfilesPerDay: 100 }, email: { send: async m => { sent.push(m); } } });

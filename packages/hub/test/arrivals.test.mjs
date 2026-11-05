@@ -5,9 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 test("arrivals: owner feed flags a visitor's first view in 30 min; public gets coarse counts since its last poll, private merged", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-arr-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-arr-"));
   const h = createHub({ dataDir: d });
   const base = "http://127.0.0.1:" + await h.listen(0);
   const post = (p, b, tk) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...(tk ? { authorization: "Bearer " + tk } : {}) }, body: JSON.stringify(b) }).then(async r => ({ status: r.status, body: await r.json() }));

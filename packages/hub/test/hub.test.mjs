@@ -6,6 +6,10 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub, publicExt } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 let hub, base, dir;
 const mike = C.newIdentity(), ana = C.newIdentity(), eve = C.newIdentity();
@@ -20,7 +24,7 @@ async function login(id) {
 }
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-hub-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-hub-"));
   hub = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: dir, publicUrl: "" });
   base = "http://127.0.0.1:" + await hub.listen(0);
 });
@@ -99,7 +103,7 @@ test("security: reserved handles, sandboxed profile pages, rate limits", async (
 });
 
 test("security: new-profile cap per address", async () => {
-  const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-hub2-"));
+  const dir2 = __mkdtemp(path.join(os.tmpdir(), "caldera-hub2-"));
   const h2 = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: dir2, limits: { newProfilesPerDay: 2 } }); const b2 = "http://127.0.0.1:" + await h2.listen(0);
   const codes = [];
   for (let i = 0; i < 3; i++) { const id = C.newIdentity(); codes.push((await fetch(b2 + "/v1/envelopes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(C.sign(id, "profile.manifest", { name: "n" + i, handle: "user" + i, boxKey: id.boxPublic })) })).status); }
@@ -153,7 +157,7 @@ test("directory: lists listed profiles, honours listed:false, hides moderated, a
 
 test("onEvent: signup fires once per new profile, not on updates; delete fires", async () => {
   const fs2 = await import("node:fs"), os2 = await import("node:os"), path2 = await import("node:path");
-  const dir2 = fs2.mkdtempSync(path2.join(os2.tmpdir(), "caldera-ev-")), events = [];
+  const dir2 = __mkdtemp(path2.join(os2.tmpdir(), "caldera-ev-")), events = [];
   const h2 = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: dir2, onEvent: e => events.push(e) });
   const b2 = "http://127.0.0.1:" + await h2.listen(0);
   const p2 = (body) => fetch(b2 + "/v1/envelopes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(r => r.status);
@@ -174,7 +178,7 @@ test("every hosted profile page gets the Caldera bar linking home with the owner
 });
 
 test("gardens: signed garden index, cross-garden backlinks injected into note pages, recent feed", async () => {
-  const gdir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-garden-"));
+  const gdir = __mkdtemp(path.join(os.tmpdir(), "caldera-garden-"));
   const gh = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: gdir, publicUrl: "", garden: true }); const gbase = "http://127.0.0.1:" + await gh.listen(0);
   const post = (p, body) => fetch(gbase + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.json() }));
   const get = (p) => fetch(gbase + p).then(async r => ({ status: r.status, body: r.headers.get("content-type")?.includes("json") ? await r.json() : await r.text() }));
@@ -200,7 +204,7 @@ test("gardens: signed garden index, cross-garden backlinks injected into note pa
 });
 
 test("owner activity: counts real visits (not bots, not the owner's own view), owner-only, erased with the profile", async () => {
-  const d3 = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-hub-")); const h3 = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: d3, garden: true }); const base = "http://127.0.0.1:" + await h3.listen(0);
+  const d3 = __mkdtemp(path.join(os.tmpdir(), "caldera-hub-")); const h3 = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: d3, garden: true }); const base = "http://127.0.0.1:" + await h3.listen(0);
   const post = (p, b, tk) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...(tk ? { authorization: "Bearer " + tk } : {}) }, body: JSON.stringify(b) }).then(async r => ({ status: r.status, body: await r.json() }));
   const get = (p, tk) => fetch(base + p, { headers: tk ? { authorization: "Bearer " + tk } : {} }).then(async r => ({ status: r.status, body: r.headers.get("content-type")?.includes("json") ? await r.json() : await r.text() }));
   const login = async (id) => { const { body } = await post("/v1/auth/challenge", { id: id.id }); return (await post("/v1/auth/verify", C.sign(id, "message", { nonce: body.nonce }))).body.token; };
@@ -223,7 +227,7 @@ test("owner activity: counts real visits (not bots, not the owner's own view), o
 });
 
 test("private owner address: tailnet login gates it, layer encrypted at rest, public hub never serves it", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-hub-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-hub-"));
   const h = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: d, privateUrl: "https://box.tailnet.ts.net:8443", tailnetOwners: { "me@example.com": "pia" } });
   const base = "http://127.0.0.1:" + await h.listen(0), pbase = "http://127.0.0.1:" + await h.listenPrivate(0);
   const post = (p, b, tk) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...(tk ? { authorization: "Bearer " + tk } : {}) }, body: JSON.stringify(b) }).then(async r => ({ status: r.status, body: await r.json() }));
@@ -256,7 +260,7 @@ test("private owner address: tailnet login gates it, layer encrypted at rest, pu
 });
 
 test("live traffic: owner registers sites, pixel + secret-signed events count, public sees levels only, private sees numbers", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-hub-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-hub-"));
   const h = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: d, privateUrl: "https://box.tailnet.ts.net:8443", tailnetOwners: { "me@example.com": "rae" } });
   const base = "http://127.0.0.1:" + await h.listen(0), pbase = "http://127.0.0.1:" + await h.listenPrivate(0);
   const post = (p, b, tk) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...(tk ? { authorization: "Bearer " + tk } : {}) }, body: JSON.stringify(b) }).then(async r => ({ status: r.status, body: await r.json() }));
@@ -324,7 +328,7 @@ test("live traffic: owner registers sites, pixel + secret-signed events count, p
 });
 
 test("agents: owner key from site sync, secret-signed reports, public sees district + state only", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-hub-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-hub-"));
   const h = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: d });
   const base = "http://127.0.0.1:" + await h.listen(0);
   const post = (p, b, tk) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...(tk ? { authorization: "Bearer " + tk } : {}) }, body: JSON.stringify(b) }).then(async r => ({ status: r.status, body: await r.json() }));
@@ -353,7 +357,7 @@ test("agents: owner key from site sync, secret-signed reports, public sees distr
 });
 
 test("sign up with GitHub: hosted profile + city, edit, claim into a vault, delete", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-hub-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-hub-"));
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   fs.writeFileSync(path.join(d, "github-app.json"), JSON.stringify({ id: 1, slug: "caldera-test", client_id: "cid", client_secret: "csec", pem: privateKey.export({ type: "pkcs1", format: "pem" }) }));
   const now = new Date().toISOString(), weeks = Array.from({ length: 52 }, (_, i) => ({ total: i % 3, days: [0, 0, 0, 0, 0, 0, 0] }));
@@ -454,7 +458,7 @@ test("sign up with GitHub: hosted profile + city, edit, claim into a vault, dele
 });
 
 test("an older Caldera can't overwrite what a newer one published (bundle and private layer)", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-hub-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-hub-"));
   const h = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: d, privateUrl: "https://box.ts.net:8443", tailnetOwners: { "me@x.com": "vee" } });
   const base = "http://127.0.0.1:" + await h.listen(0);
   const post = (p, b, tk) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...(tk ? { authorization: "Bearer " + tk } : {}) }, body: JSON.stringify(b) }).then(async r => ({ status: r.status, body: await r.json() }));
@@ -487,7 +491,7 @@ test("friend requests: the hub lists open requests both ways until accepted", as
 });
 
 test("a new GitHub repo is on the map by the next page load (hosted members)", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-hub-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-hub-"));
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   fs.writeFileSync(path.join(d, "github-app.json"), JSON.stringify({ id: 1, slug: "caldera-test", client_id: "cid", client_secret: "csec", pem: privateKey.export({ type: "pkcs1", format: "pem" }) }));
   const now = new Date().toISOString();
@@ -534,7 +538,7 @@ test("a new GitHub repo is on the map by the next page load (hosted members)", a
 });
 
 test("private repos from an organization's install show as padlocks (no redirect back from GitHub needed)", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-hub-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-hub-"));
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   fs.writeFileSync(path.join(d, "github-app.json"), JSON.stringify({ id: 1, slug: "caldera-test", client_id: "cid", client_secret: "csec", pem: privateKey.export({ type: "pkcs1", format: "pem" }) }));
   const now = new Date().toISOString();

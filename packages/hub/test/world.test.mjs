@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 let hub, base, dir;
 const ids = { mike: C.newIdentity(), ana: C.newIdentity(), hid: C.newIdentity() };
@@ -20,7 +24,7 @@ const city = (pub, secret) => `<html><body><script type="application/json" id="c
   ] }] })}</script></body></html>`;
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-world-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-world-"));
   hub = createHub({ privateModeSince: "2999-01-01T00:00:00Z", dataDir: dir, publicUrl: "https://hub.test", founder: "mike", limits: { newProfilesPerDay: 100 } });
   base = "http://127.0.0.1:" + await hub.listen(0);
   const pages = { mike: city("open-thing", "secret-mike"), ana: city("ana-lib", "secret-ana"), hid: city("hid-lib", "secret-hid") };

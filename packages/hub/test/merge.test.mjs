@@ -8,6 +8,10 @@ import path from "node:path";
 import crypto from "node:crypto";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 const ORIGIN = "http://hub.test";
 const J = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
@@ -15,7 +19,7 @@ const USERS = { kyle: { id: 218021945, login: "kyle-gh", emails: [{ email: "kyle
   dana: { id: 99, login: "dana-gh", emails: [{ email: "dana@realmail.org", primary: true, verified: true }] } };
 
 function hubWith() {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-merge-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-merge-"));
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   fs.writeFileSync(path.join(d, "github-app.json"), JSON.stringify({ id: 1, slug: "t", client_id: "cid", client_secret: "csec", pem: privateKey.export({ type: "pkcs1", format: "pem" }) }));
   const byTok = new Map();

@@ -6,6 +6,10 @@ import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
 import { cityData, publicCity, renderCity, citySnapshot } from "../../../../caldera/packages/plugin/test/city.build.mjs";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 const repo = (name, project, pub, commits, week) => ({ name, project, public: pub, language: pub ? "TypeScript" : "Rust", commits, weeks: [1, week], week, today: 0, ...(pub ? { url: `https://github.com/rae/${name}` } : {}) });
 const full = cityData([repo("app", "Shop", true, 300, 4), repo("shop-secret", "Shop", false, 900, 7), repo("lab-1", "Secret Lab", false, 120, 3), repo("lab-2", "Secret Lab", false, 40, 0)], () => ({ n: 0, paths: [] }), "2026-10-18T00:00:00Z");
@@ -16,7 +20,7 @@ const cityData_ = html => JSON.parse(html.match(/id="city-data">([\s\S]*?)<\/scr
 const lockedIn = c => c.districts.flatMap(d => d.repos).filter(r => r.locked);
 
 async function hubWithRae() {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-pm-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-pm-"));
   const h = createHub({ privateNamedSince: "9999-12-31T00:00:00Z", privateModeSince: "2999-01-01T00:00:00Z", dataDir: d });   // Rae joined before the setting existed
   const base = "http://127.0.0.1:" + await h.listen(0);
   const rae = C.newIdentity();
@@ -74,7 +78,7 @@ test("members from before the setting keep padlocks until they choose, and are a
 });
 
 test("new members start Anonymous (names only by choice); existing members get a one-tap offer that Obsidian also picks up", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-pm-named-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-pm-named-"));
   const hub = createHub({ dataDir: d, publicUrl: "http://hub.test" });
   const base = "http://127.0.0.1:" + await hub.listen(0);
   const post = (p, body, h = {}) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...h }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.json().catch(() => ({})) }));

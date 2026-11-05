@@ -7,6 +7,10 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 const HEADS = { a: "The social network for GitHub and Obsidian.", b: "Show your work as a living city.", c: "Your GitHub, as a city.", d: "Find developers, designers and partners by their real work.", e: "Watch your AI agents build, live.", f: "Meet developers by what they actually build.", g: "Find your next co-founder by what they've built.", h: "What does your code look like as a city?", i: "Find designers and developers who show the work.", j: "Connect with the people making what you care about." };
 
 const site = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../site");
@@ -14,7 +18,7 @@ let hub, base, dir;
 const NAV = { "sec-fetch-mode": "navigate", "sec-fetch-site": "none", accept: "text/html" };
 const CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-home-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-home-"));
   hub = createHub({ dataDir: dir, siteDir: site, publicUrl: "http://hub.test", limits: { newProfilesPerDay: 100 } });
   base = "http://127.0.0.1:" + await hub.listen(0);
 });
@@ -49,7 +53,7 @@ test("home2: crawlers always get control and are not counted", async () => {
 
 test("pb1: b drops the hero button, keeps sign-up and consent, both arms counted, bots get control", async () => {
   const realSite = fileURLToPath(new URL("../../site/", import.meta.url));
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-pb1-"));
+  const dataDir = __mkdtemp(path.join(os.tmpdir(), "caldera-pb1-"));
   const h = createHub({ dataDir, siteDir: realSite, publicUrl: "http://hub.test", limits: { newProfilesPerDay: 100 } });
   try {
     const base2 = "http://127.0.0.1:" + await h.listen(0);

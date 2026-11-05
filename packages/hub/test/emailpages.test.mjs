@@ -4,12 +4,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 let hub, base, dir; const mails = [];
 const ORIGIN = "http://hub.test";
 const form = (p, body, cookie = "") => fetch(base + p, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, ...(cookie ? { cookie } : {}) }, body: new URLSearchParams(body).toString() });
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-emailpages-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-emailpages-"));
   hub = createHub({ dataDir: dir, publicUrl: ORIGIN, limits: { newProfilesPerDay: 100 }, email: { send: async m => { mails.push(m); } } });
   base = "http://127.0.0.1:" + await hub.listen(0);
 });

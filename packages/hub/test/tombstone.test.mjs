@@ -5,9 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 test("garden tombstones: a linked note taken private shows a 'made private' page, linkers mark it, republish clears it, unlinked notes just 404", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-tomb-"));
+  const dir = __mkdtemp(path.join(os.tmpdir(), "caldera-tomb-"));
   const h = createHub({ dataDir: dir, publicUrl: "https://hub.test", garden: true }); const base = "http://127.0.0.1:" + await h.listen(0);
   const post = (p, body) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(r => r.status);
   const get = (p) => fetch(base + p).then(async r => ({ status: r.status, body: await r.text() }));

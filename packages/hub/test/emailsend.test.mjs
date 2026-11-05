@@ -4,11 +4,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 process.env.MAILGUARD = "off";   // this file tests Resend pacing; the guard has its own test (mailguard.test.mjs)
 
 // Resend allows 10 requests a second: a burst is spaced out, and a 429 waits and retries instead of dropping the email
 test("email sends are throttled and retried on 429", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-send-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-send-"));
   const real = globalThis.fetch, hits = []; let n = 0;
   globalThis.fetch = async (url, init) => {
     if (String(url).startsWith("https://api.resend.com/")) { hits.push(Date.now()); n++;

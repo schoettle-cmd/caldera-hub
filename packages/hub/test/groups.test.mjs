@@ -5,11 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // Groups under Messages: founder-made topics, posts with threaded replies, unread badges, no email
 const UA = { "user-agent": "Mozilla/5.0" };
 async function setup() {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-groups-")), mails = [];
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-groups-")), mails = [];
   const hub = createHub({ dataDir: d, publicUrl: "http://hub.test", founder: "ana", limits: { newProfilesPerDay: 100 }, email: { send: async m => { mails.push(m); } } });
   const base = "http://127.0.0.1:" + await hub.listen(0);
   const post = (p, body, h = {}) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...h }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.json().catch(() => ({})) }));

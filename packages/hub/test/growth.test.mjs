@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 let hub, base, dir; const sent = [];
 const post = (p, body, token) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: "Bearer " + token } : {}) }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.json() }));
@@ -19,7 +23,7 @@ async function login(id) {
 const CITY = `<a class="city-peek" href="city.html"><svg viewBox="-10 -20 300 200" preserveAspectRatio="xMidYMid meet"><polygon class="cp-pad" points="0,0 10,0 10,10"/><polygon fill="rgb(49,120,198)" points="1,1 2,2 3,3"/><polygon fill="rgb(40,100,160)" points="1,1 2,2 3,3"/><polygon fill="rgb(60,130,210)" points="1,1 2,2 3,3"/><polygon class="cp-w cp-on2" points="4,4 5,5 6,6"/><script>alert(1)</script><polygon fill="url(javascript:x)" points="1,1 2,2 3,3"/></svg></a>`;
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-growth-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-growth-"));
   hub = createHub({ privateNamedSince: "9999-12-31T00:00:00Z",  privateModeSince: "2999-01-01T00:00:00Z", dataDir: dir, publicUrl: "http://hub.test", limits: { newProfilesPerDay: 100, writesPerMinute: 1000, perMinute: 5000 }, email: { send: async m => { sent.push(m); } } });
   base = "http://127.0.0.1:" + await hub.listen(0);
   const files = { "index.html": Buffer.from(`<html><head><title>Mike</title></head><body>${CITY}</body></html>`).toString("base64") };
@@ -132,7 +136,7 @@ test("daily email: a vault page not updated in 3+ days gets the refresh line ins
 });
 
 test("GitHub sign-up from an invite + group: referral, friend request to the inviter, /me friends, accept, email", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-gh-growth-")), mails = [];
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-gh-growth-")), mails = [];
   const crypto = await import("node:crypto");
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   fs.writeFileSync(path.join(d, "github-app.json"), JSON.stringify({ id: 1, slug: "t", client_id: "cid", client_secret: "csec", pem: privateKey.export({ type: "pkcs1", format: "pem" }) }));

@@ -5,11 +5,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 const J = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
 const jwt = o => "x." + Buffer.from(JSON.stringify(o)).toString("base64url") + ".x";
 async function boot(configured = true) {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-google-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-google-"));
   if (configured) fs.writeFileSync(path.join(d, "google-oauth.json"), JSON.stringify({ client_id: "cid.apps", client_secret: "shh" }));
   const st = { claims: {}, calls: [] };
   const fake = async (u, init = {}) => { u = String(u); if (u.includes("oauth2.googleapis.com/token")) { st.calls.push(String(init.body)); return J({ id_token: jwt(st.claims) }); }

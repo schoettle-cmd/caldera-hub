@@ -5,10 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // Privacy Policy, "How long we keep data": deleting an account erases everything tied to it, not just the page.
 test("profile.delete erases intros, tags, tag edits, active days, read marks, preferences and GitHub sign-in rows", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-erase-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-erase-"));
   const hub = createHub({ dataDir: d });
   const base = "http://127.0.0.1:" + await hub.listen(0);
   const post = (p, body) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.json().catch(() => ({})) }));
@@ -57,7 +61,7 @@ test("profile.delete erases intros, tags, tag edits, active days, read marks, pr
 });
 
 test("retention: sign-up steps older than 90 days and active days older than 12 months are deleted at start", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-retain-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-retain-"));
   try {
     let hub = createHub({ dataDir: d }); await hub.listen(0);
     const db = hub.db, day = (n) => new Date(Date.now() - n * 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
@@ -72,7 +76,7 @@ test("retention: sign-up steps older than 90 days and active days older than 12 
 });
 
 test("gh preview removal: a listed login gets 410 noindex, no badge and GitHub is never asked", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-ghrm-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-ghrm-"));
   let asked = 0;
   const fake = async (u) => { asked++; return new Response(JSON.stringify({}), { status: 404 }); };
   const hub = createHub({ dataDir: d, githubFetch: fake });

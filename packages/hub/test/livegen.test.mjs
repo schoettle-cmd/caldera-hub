@@ -9,8 +9,12 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { build } from "esbuild";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cal-livegen-"));
+const tmp = __mkdtemp(path.join(os.tmpdir(), "cal-livegen-"));
 const out = path.join(tmp, "livegen.mjs");
 await build({ entryPoints: [new URL("../src/livegen.ts", import.meta.url).pathname], bundle: true, platform: "node", format: "esm", packages: "external", outfile: out, logLevel: "error" });
 const { liveGen, looksLikePhoto, isGreyThumb } = await import(out);
@@ -39,7 +43,7 @@ test("loops from an older prompt are remade once (owner first), a failed remake 
   const posts = []; const realFetch = globalThis.fetch;
   globalThis.fetch = async (_u, o) => { posts.push(JSON.parse(o?.body || "{}")); return { ok: false, status: 503, text: async () => "mock down" }; };
   try {
-    const db = new DatabaseSync(":memory:"), dir = fs.mkdtempSync(path.join(tmp, "data-")), logs = [];
+    const db = new DatabaseSync(":memory:"), dir = __mkdtemp(path.join(tmp, "data-")), logs = [];
     const mk = () => liveGen({ db, dataDir: dir, log: (s) => logs.push(s), isModerated: () => false });
     const L = mk(), old = new Date(Date.now() - 30 * 864e5).toISOString();
     for (const h of ["alice", "mike"]) { const f = L.files(h); fs.mkdirSync(path.dirname(f.mp4), { recursive: true }); fs.writeFileSync(f.mp4, "x"); fs.writeFileSync(f.webp, "x"); }

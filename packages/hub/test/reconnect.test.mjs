@@ -7,10 +7,14 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 const J = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
 function hubWith(reconnect) {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-reconnect-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-reconnect-"));
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   fs.writeFileSync(path.join(d, "github-app.json"), JSON.stringify({ id: 1, slug: "t", client_id: "cid", client_secret: "csec", pem: privateKey.export({ type: "pkcs1", format: "pem" }) }));
   const state = { dead: false, short: false, refreshes: 0 }, sent = [];

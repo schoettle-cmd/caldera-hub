@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // Every way to sign up, followed to a live, signed-in account: GitHub (fake GitHub), email + an AI (/start), and the
 // emailed sign-up link. Email sign-up was off the sign-up pages Oct 20-27, 2026 and sign-ups fell ~75%; this keeps it on.
@@ -17,7 +21,7 @@ const form = (p, body, cookie = "") => fetch(base + p, { method: "POST", redirec
 const linkIn = m => m.text.match(/https?:\/\/\S+/g).map(u => u.replace(ORIGIN, base));
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-signup-paths-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-signup-paths-"));
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   fs.writeFileSync(path.join(dir, "github-app.json"), JSON.stringify({ id: 1, slug: "t", client_id: "cid", client_secret: "csec", pem: privateKey.export({ type: "pkcs1", format: "pem" }) }));
   let who = "newgh";

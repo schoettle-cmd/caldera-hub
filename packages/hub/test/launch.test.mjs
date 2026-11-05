@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub, makeAlertBatcher } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 const DAY = 86_400_000;
 test("signup alerts: first 10 a day one by one, then one hourly digest", () => {
@@ -21,7 +25,7 @@ test("signup alerts: first 10 a day one by one, then one hourly digest", () => {
 });
 
 test("new profiles from one address: a room can sign up together; a burst over 20/min waits", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-launch-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-launch-"));
   const h = createHub({ dataDir: d, publicUrl: "http://hub.test" });
   const base = "http://127.0.0.1:" + await h.listen(0);
   const post = async (i) => { const id = C.newIdentity(); const env = C.sign(id, "profile.manifest", { handle: "room" + i, name: "R" + i, boxKey: id.boxPublic });
@@ -34,7 +38,7 @@ test("new profiles from one address: a room can sign up together; a burst over 2
 });
 
 test("sign-out and sign-in forms work from pages that send Origin: null (no-referrer), but not from other sites", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-signout-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-signout-"));
   const h = createHub({ dataDir: d, publicUrl: "http://hub.test" });
   const base = "http://127.0.0.1:" + await h.listen(0);
   const post = (headers) => fetch(base + "/signout", { method: "POST", headers, redirect: "manual" }).then(r => r.status);
@@ -46,7 +50,7 @@ test("sign-out and sign-in forms work from pages that send Origin: null (no-refe
 });
 
 test("several sign-ins from the same vault at once all succeed (each uses its own challenge)", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-auth-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-auth-"));
   const h = createHub({ dataDir: d, publicUrl: "http://hub.test" });
   const base = "http://127.0.0.1:" + await h.listen(0), id = C.newIdentity();
   const one = async () => { const { nonce } = await (await fetch(base + "/v1/auth/challenge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: id.id }) })).json(); return nonce; };
@@ -59,7 +63,7 @@ test("several sign-ins from the same vault at once all succeed (each uses its ow
 });
 
 test("deleting a profile removes its email subscription and referral rows", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-erase-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-erase-"));
   const h = createHub({ dataDir: d, publicUrl: "http://hub.test" });
   const base = "http://127.0.0.1:" + await h.listen(0), id = C.newIdentity();
   await fetch(base + "/v1/envelopes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(C.sign(id, "profile.manifest", { handle: "goner", name: "G", boxKey: id.boxPublic })) });

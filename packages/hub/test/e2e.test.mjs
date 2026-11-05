@@ -7,6 +7,10 @@ import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
 import { renderProfile } from "../../../../caldera/packages/plugin/test/render.build.mjs";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 const day = (i) => new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
 const sample = () => ({
@@ -22,7 +26,7 @@ const sample = () => ({
 });
 
 test("end to end: plugin-style publish to a real hub, page is served", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-e2e-"));
+  const dir = __mkdtemp(path.join(os.tmpdir(), "caldera-e2e-"));
   const hub = createHub({ dataDir: dir }); const base = "http://127.0.0.1:" + await hub.listen(0);
   const me = C.newIdentity(); const p = sample();
   const files = {}; for (const [k, v] of Object.entries(renderProfile(p))) files[k] = Buffer.from(v).toString("base64");

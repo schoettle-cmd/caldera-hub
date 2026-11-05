@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 let hub, base, dir;
 const id = C.newIdentity();
@@ -13,7 +17,7 @@ async function login() { const { body } = await post("/v1/auth/challenge", { id:
 const activity = async () => (await (await fetch(`${base}/v1/owner/${id.id}/activity?since=2000-01-01`, { headers: { authorization: "Bearer " + await login() } })).json());
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-unlock-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-unlock-"));
   hub = createHub({ dataDir: dir, publicUrl: "https://hub.test", limits: { newProfilesPerDay: 100 } });
   base = "http://127.0.0.1:" + await hub.listen(0);
   const m = C.sign(id, "profile.manifest", { name: "Una", handle: "una", boxKey: id.boxPublic });

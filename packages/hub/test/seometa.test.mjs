@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub, profileMeta } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // search titles and descriptions on member pages: short, unique (the handle), cut at a word, only what the page shows
 test("profile titles stay within 60 characters and keep the handle; descriptions within 160, cut at a word", () => {
@@ -36,7 +40,7 @@ test("profile titles stay within 60 characters and keep the handle; descriptions
 
 test("indexable profile pages get the short title and description; HSTS only on an https hub", async () => {
   for (const publicUrl of ["https://hub.test", "http://hub.test"]) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-seometa-"));
+    const dir = __mkdtemp(path.join(os.tmpdir(), "caldera-seometa-"));
     const hub = createHub({ dataDir: dir, publicUrl, limits: { newProfilesPerDay: 100 } }), base = "http://127.0.0.1:" + await hub.listen(0);
     try {
       const id = C.newIdentity();

@@ -6,11 +6,15 @@ import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
 import { cleanText, renderText } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // direct messages: friends write directly, strangers send a request first; block, ignore, report, delete, erase, unread
 const UA = { "user-agent": "Mozilla/5.0" };
 async function setup() {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-msg-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-msg-"));
   const hub = createHub({ dataDir: d, publicUrl: "http://hub.test", limits: { newProfilesPerDay: 100 } });
   const base = "http://127.0.0.1:" + await hub.listen(0);
   const post = (p, body, h = {}) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...h }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.json().catch(() => ({})) }));
@@ -157,7 +161,7 @@ test("Message on a feed post opens the author's thread with the post quoted; onl
 });
 
 test("a new message emails the recipient once (summary or GitHub-verified address), not again within 30 minutes, and one click turns it off", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-msgmail-")); const sent = [];
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-msgmail-")); const sent = [];
   const hub = createHub({ dataDir: d, publicUrl: "http://hub.test", limits: { newProfilesPerDay: 100 }, email: { send: async m => { sent.push(m); } } });
   const base = "http://127.0.0.1:" + await hub.listen(0);
   try {
@@ -254,7 +258,7 @@ test("Feed in the nav counts what's new since the member last opened the feed (n
 });
 
 test("a message email that fails (Resend 429) is retried on a later sweep instead of being lost", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-msgretry-")); const sent = []; let fail = 1;
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-msgretry-")); const sent = []; let fail = 1;
   const hub = createHub({ dataDir: d, publicUrl: "http://hub.test", limits: { newProfilesPerDay: 100 }, email: { send: async m => { if (fail-- > 0) throw new Error("email send failed (429): Too many requests"); sent.push(m); } } });
   const base = "http://127.0.0.1:" + await hub.listen(0); const realNow = Date.now;
   try {

@@ -4,10 +4,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs"; import os from "node:os"; import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 const J = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
 const jwt = o => "x." + Buffer.from(JSON.stringify(o)).toString("base64url") + ".x";
 async function boot({ flag = { obsidian: true } } = {}) {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-claim-")); fs.writeFileSync(path.join(d, "google-oauth.json"), JSON.stringify({ client_id: "cid", client_secret: "s" }));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-claim-")); fs.writeFileSync(path.join(d, "google-oauth.json"), JSON.stringify({ client_id: "cid", client_secret: "s" }));
   if (flag) fs.writeFileSync(path.join(d, "google-first.json"), JSON.stringify(flag));
   const st = { claims: {} }; const fake = async u => String(u).includes("oauth2.googleapis.com/token") ? J({ id_token: jwt(st.claims) }) : J({}, 404);
   const pub = "http://hub.test", h = createHub({ dataDir: d, publicUrl: pub, githubFetch: fake, limits: { newProfilesPerDay: 100 }, email: { send: async () => {} } });

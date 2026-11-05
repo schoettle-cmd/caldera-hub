@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { createHub } from "../dist/server.js";
 import { blockedIp, safeGet, parseSiteHtml, parsePlayHtml, imageType, plain } from "../dist/listings.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // Apps and websites members list: the hub looks up their public details (SSRF-guarded), caches them a day and serves
 // the images itself.
@@ -46,7 +50,7 @@ test("parsers: site details, Play listing, image bytes, plain text", () => {
 });
 
 test("resolve endpoint + image route: lookups by id/link only, cached, images served by the hub", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-listings-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-listings-"));
   const png = Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.alloc(40, 1)]);
   const calls = [];
   const get = async (url) => { calls.push(url);
@@ -77,7 +81,7 @@ test("resolve endpoint + image route: lookups by id/link only, cached, images se
 
 test("GitHub sign-ups: caldera.social/settings adds apps and websites, toggles storefronts, ties repos; the page and city follow", async () => {
   const crypto = await import("node:crypto"), C = await import("@caldera/core");
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-lsgh-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-lsgh-"));
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   fs.writeFileSync(path.join(d, "github-app.json"), JSON.stringify({ id: 1, slug: "t", client_id: "cid", client_secret: "csec", pem: privateKey.export({ type: "pkcs1", format: "pem" }) }));
   const J = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });

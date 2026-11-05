@@ -3,6 +3,10 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs"; import os from "node:os"; import path from "node:path"; import crypto from "node:crypto"; import http from "node:http";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 const ORIGIN = "http://hub.test", SECRET = "s3cret-test";
 const J = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
 let hub, base, dir, as, asUrl; const mails = [], posts = [];
@@ -15,7 +19,7 @@ before(async () => {
   await new Promise(r => as.listen(0, r)); asUrl = `http://127.0.0.1:${as.address().port}/api/fp/conversion`;
   process.env.AGENCYSUPER_URL = asUrl; process.env.AGENCYSUPER_SECRET = SECRET;
   const { createHub } = await import("../dist/server.js");
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-as-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-as-"));
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   fs.writeFileSync(path.join(dir, "github-app.json"), JSON.stringify({ id: 1, slug: "t", client_id: "cid", client_secret: "csec", pem: privateKey.export({ type: "pkcs1", format: "pem" }) }));
   const fake = async (u) => { u = String(u);
@@ -33,7 +37,7 @@ after(() => { hub.server.closeAllConnections?.(); hub.server.close(); as.close()
 
 test("arrival: ?asc= sets a 30-day first-party cookie; a bad id is ignored; the header carries the localStorage backup", async () => {
   const { createHub } = await import("../dist/server.js");
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-as2-")), site = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-as2-site-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-as2-")), site = __mkdtemp(path.join(os.tmpdir(), "caldera-as2-site-"));
   fs.writeFileSync(path.join(site, "index.html"), `<!doctype html><html><head><title>x</title></head><body><header class="nav"><a class="brand" href="./">Caldera</a><nav><a href="/signin">Sign in</a></nav></header><main>x</main></body></html>`);
   const h = createHub({ dataDir: d, siteDir: site, publicUrl: ORIGIN, limits: { newProfilesPerDay: 100 } });
   const b2 = "http://127.0.0.1:" + await h.listen(0);

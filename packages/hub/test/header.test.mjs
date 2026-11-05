@@ -6,11 +6,15 @@ import path from "node:path";
 import crypto from "node:crypto";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // THE header: every page shows the same bar for the same viewer, whatever built the page (static site, hub page,
 // hosted profile or city of any plugin version). Only the current-page highlight differs between pages.
 test("one header: same markup for the same viewer on site pages, hub pages, profiles and cities", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-header-")), site = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-header-site-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-header-")), site = __mkdtemp(path.join(os.tmpdir(), "caldera-header-site-"));
   const oldNav = `<header class="nav"><a class="brand" href="./">Caldera</a><nav><a href="/people">People</a><a href="/signin">Sign in</a></nav><a class="btn small" href="./#install">Get started</a></header>`;
   for (const f of ["people.html", "guide.html", "index.html"]) fs.writeFileSync(path.join(site, f), `<!doctype html><html><head><title>${f}</title></head><body>${oldNav}<main>${f}</main></body></html>`);
   const h = createHub({ dataDir: d, siteDir: site, publicUrl: "http://hub.test", limits: { newProfilesPerDay: 100 } });
@@ -55,7 +59,7 @@ test("one header: same markup for the same viewer on site pages, hub pages, prof
 test("Home Screen app: every page with the header links one site-wide manifest, so saved links stay full screen", async () => {
   const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
   const { createHub } = await import("../dist/server.js");
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-app-")), hub = createHub({ dataDir: d, publicUrl: "http://hub.test" });
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-app-")), hub = createHub({ dataDir: d, publicUrl: "http://hub.test" });
   try {
     const base = "http://127.0.0.1:" + await hub.listen(0);
     const m = await fetch(base + "/manifest.webmanifest");
@@ -73,7 +77,7 @@ test("Home Screen app: every page with the header links one site-wide manifest, 
 test("Power up your map: the World page and every city page carry one copyable prompt for your AI (no keys in it)", async () => {
   const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
   const { createHub } = await import("../dist/server.js");
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-mp-")), hub = createHub({ dataDir: d, publicUrl: "http://hub.test" });
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-mp-")), hub = createHub({ dataDir: d, publicUrl: "http://hub.test" });
   try {
     const base = "http://127.0.0.1:" + await hub.listen(0);
     const post = (p, body) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });

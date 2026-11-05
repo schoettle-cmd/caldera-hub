@@ -5,6 +5,10 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs"; import os from "node:os"; import path from "node:path"; import crypto from "node:crypto";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 const ORIGIN = "http://hub.test";
 const J = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
 let hub, base, dir; const mails = [];
@@ -12,7 +16,7 @@ const form = (p, body, cookie = "") => fetch(base + p, { method: "POST", redirec
 const linkIn = m => m.text.match(/https?:\/\/\S+/g).map(u => u.replace(ORIGIN, base));
 const db = () => new (process.getBuiltinModule("node:sqlite").DatabaseSync)(path.join(dir, "hub.sqlite"));
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-ghconnect-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-ghconnect-"));
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   fs.writeFileSync(path.join(dir, "github-app.json"), JSON.stringify({ id: 1, slug: "t", client_id: "cid", client_secret: "csec", pem: privateKey.export({ type: "pkcs1", format: "pem" }) }));
   const fake = async (u) => { u = String(u);

@@ -7,6 +7,10 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 process.env.TYPED_MIN_MS = "0";   // the bot check's minimum fill time; its own test sets it
 let hub, base, dir; const mails = [], events = [];
@@ -19,7 +23,7 @@ const cookieOf = r => (r.headers.getSetCookie?.() || [r.headers.get("set-cookie"
 const rows = (tp, ev) => hub.db.prepare("SELECT COUNT(*) n FROM gate_events WHERE tp=? AND ev=?").get(tp, ev).n;
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-join-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-join-"));
   hub = createHub({ dataDir: dir, publicUrl: ORIGIN, limits: { newProfilesPerDay: 100 }, email: { send: async m => { mails.push(m); } }, onEvent: e => events.push(e) });
   base = "http://127.0.0.1:" + await hub.listen(0);
 });

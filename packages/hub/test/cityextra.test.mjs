@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // a fake GeoIP + Open-Meteo: counts lookups so caching can be checked, never touches the network
 function fakeWeather(code = 61, cloud = 90) {
@@ -19,7 +23,7 @@ function fakeWeather(code = 61, cloud = 90) {
 }
 
 test("weather: the viewer's own conditions, mapped to the sky the city draws; lookups cached; no IP kept anywhere", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-wx-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-wx-"));
   const { f, calls } = fakeWeather(61, 90);
   const h = createHub({ privateModeSince: "2999-01-01T00:00:00Z", dataDir: d, trustProxy: true, weatherFetch: f, publicUrl: "https://caldera.test" });
   const base = "http://127.0.0.1:" + await h.listen(0);
@@ -45,7 +49,7 @@ test("weather: WMO codes map to the city's skies", async () => {
 });
 
 test("day stats: today's shape and departures; public gets coarse counts only, never visitor ids", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-day-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-day-"));
   const h = createHub({ privateModeSince: "2999-01-01T00:00:00Z", dataDir: d, weatherFetch: fakeWeather().f });
   const base = "http://127.0.0.1:" + await h.listen(0);
   const post = (p, b, tk) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...(tk ? { authorization: "Bearer " + tk } : {}) }, body: JSON.stringify(b) }).then(async r => ({ status: r.status, body: await r.json() }));
@@ -72,7 +76,7 @@ test("day stats: today's shape and departures; public gets coarse counts only, n
 });
 
 test("owner setup: the 'turn on live visitors' row and its keys reach the owner only", async () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-setup-"));
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-setup-"));
   const h = createHub({ privateModeSince: "2999-01-01T00:00:00Z", dataDir: d, weatherFetch: fakeWeather().f, publicUrl: "https://caldera.test" });
   const base = "http://127.0.0.1:" + await h.listen(0);
   const post = (p, b, tk) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json", ...(tk ? { authorization: "Bearer " + tk } : {}) }, body: JSON.stringify(b) }).then(async r => ({ status: r.status, body: await r.json() }));

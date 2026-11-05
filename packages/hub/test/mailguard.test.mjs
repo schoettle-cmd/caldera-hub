@@ -7,6 +7,10 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 test("the guard decides: blocked mail is not sent; on no answer only auth and daily go", async () => {
   let mode = "ok"; const checks = [];
@@ -15,7 +19,7 @@ test("the guard decides: blocked mail is not sent; on no answer only auth and da
   await new Promise(r => g.listen(0, "127.0.0.1", r)); process.env.MAILGUARD_URL = `http://127.0.0.1:${g.address().port}/mailguard/check`; delete process.env.MAILGUARD;
   const sent = [], real = globalThis.fetch;
   globalThis.fetch = async (u, o) => { if (String(u).includes("resend")) { sent.push(JSON.parse(o.body)); return { ok: true, status: 200, json: async () => ({ id: "x" }), text: async () => "" }; } return real(u, o); };
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cal-mg-"));
+  const dir = __mkdtemp(path.join(os.tmpdir(), "cal-mg-"));
   const hub = createHub({ dataDir: dir, publicUrl: "https://hub.test", email: { resendKey: "re_test" } });
   try {
     const mail = hub.mail || hub.email;

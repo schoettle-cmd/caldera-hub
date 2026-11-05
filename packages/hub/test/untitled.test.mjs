@@ -5,13 +5,17 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 let hub, base, dir;
 const id = C.newIdentity();
 const post = (p, body) => fetch(base + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(r => r.status);
 const publish = (name) => post(`/v1/profiles/${id.id}/bundle`, { manifest: C.sign(id, "profile.manifest", { name, handle: "cody", boxKey: id.boxPublic, headline: "builder" }),
   files: { "index.html": Buffer.from(`<html><head><title>${name}</title></head><body><div class="tab">${name}.md</div><h1 class="title">${name}</h1><p class="lede">builder</p></body></html>`).toString("base64") } });
-before(async () => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-untitled-")); hub = createHub({ dataDir: dir, publicUrl: "https://hub.test", limits: { newProfilesPerDay: 100 } }); base = "http://127.0.0.1:" + await hub.listen(0); });
+before(async () => { dir = __mkdtemp(path.join(os.tmpdir(), "caldera-untitled-")); hub = createHub({ dataDir: dir, publicUrl: "https://hub.test", limits: { newProfilesPerDay: 100 } }); base = "http://127.0.0.1:" + await hub.listen(0); });
 after(() => { hub.server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
 
 test("nobody is called Untitled: the real name is kept, the page shows it, a nameless first page shows the handle", async () => {

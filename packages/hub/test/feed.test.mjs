@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 let hub, base, dir;
 const ORIGIN = { origin: "https://hub.test" };
@@ -33,7 +37,7 @@ const as = async (w, p, body, extra = {}) => post(p, body, { cookie: await owner
 const ASK = { type: "someone", role: "a co-founder", commitment: "equity", topic: "AI agents", detail: "Building a social layer for Obsidian with TypeScript" };
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-feed-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-feed-"));
   hub = createHub({ dataDir: dir, publicUrl: "https://hub.test", limits: { newProfilesPerDay: 100 } });
   base = "http://127.0.0.1:" + await hub.listen(0);
   for (const w of who) {

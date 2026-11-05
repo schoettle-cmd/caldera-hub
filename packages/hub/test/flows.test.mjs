@@ -5,6 +5,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs"; import os from "node:os"; import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 const ORIGIN = "http://hub.test";
 const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.7 Mobile/15E148 Safari/604.1";
@@ -17,7 +21,7 @@ const fake = async (u) => { u = String(u);
   if (/\/users\/octo\/repos/i.test(u)) return J([{ name: "tool", full_name: "Octo/tool", fork: false, private: false, language: "Go", pushed_at: new Date().toISOString(), created_at: "2020-01-01T00:00:00Z", size: 10, html_url: "https://github.com/Octo/tool", stargazers_count: 1 }]);
   return J({}, 404); };
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-flows-"));
+  dir = __mkdtemp(path.join(os.tmpdir(), "caldera-flows-"));
   fs.writeFileSync(path.join(dir, "google-oauth.json"), JSON.stringify({ client_id: "cid", client_secret: "s" }));
   hub = createHub({ dataDir: dir, publicUrl: ORIGIN, githubFetch: fake, trustProxy: true, limits: { newProfilesPerDay: 100 }, email: { send: async m => { mails.push(m); } } });
   base = "http://127.0.0.1:" + await hub.listen(0);

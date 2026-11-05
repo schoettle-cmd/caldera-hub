@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import * as C from "@caldera/core";
 import { createHub } from "../dist/server.js";
+import { after as __afterAll } from "node:test";
+const __tmpDirs = [];
+const __mkdtemp = (p) => { const d = fs.mkdtempSync(p); __tmpDirs.push(d); return d; };
+__afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });   // temp hubs are removed after the file's tests, even when one fails
 
 // a page published while the garden was on: garden pages on disk, a Garden section, nav link, side-menu group, stylesheet
 const OLD = `<!doctype html><html><head><link rel="stylesheet" href="assets/profile.css"><link rel="stylesheet" href="assets/garden.css"></head><body>
@@ -17,7 +21,7 @@ const OLD = `<!doctype html><html><head><link rel="stylesheet" href="assets/prof
 <h2 id="help-exchange">Help exchange</h2><p>h</p></main></body></html>`;
 
 test("garden paused: garden pages 404 (files kept), old pages lose every garden trace, the stream and API are gone, manifests don't touch the index", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-goff-"));
+  const dir = __mkdtemp(path.join(os.tmpdir(), "caldera-goff-"));
   const h = createHub({ dataDir: dir, publicUrl: "https://hub.test" }); const base = "http://127.0.0.1:" + await h.listen(0);
   assert.equal(C.gardenEnabled(), false);
   const id = C.newIdentity(), b64 = (s) => Buffer.from(s).toString("base64");
@@ -38,7 +42,7 @@ test("garden paused: garden pages 404 (files kept), old pages lose every garden 
 });
 
 test("garden on (CALDERA_GARDEN=1): the old behaviour is back", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-gon-"));
+  const dir = __mkdtemp(path.join(os.tmpdir(), "caldera-gon-"));
   const h = createHub({ dataDir: dir, publicUrl: "https://hub.test", garden: true }); const base = "http://127.0.0.1:" + await h.listen(0);
   const id = C.newIdentity(), b64 = (s) => Buffer.from(s).toString("base64");
   await fetch(base + `/v1/profiles/${id.id}/bundle`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
