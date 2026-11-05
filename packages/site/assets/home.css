@@ -1,6 +1,6 @@
 /* Homepage: GitHub + Obsidian layout (hero with a live city, two doors, GitHub start). Tokens from theme.css. */
 .gh-ic { flex: none; margin-right: 8px; }
-.btn.gh { background: var(--text-strong); color: var(--bg); }
+.btn.gh { background: var(--accent-btn, var(--accent)); color: #fff; }   /* brand violet, as the header CTA: no light slab in the dark theme (preflight 2026-11-05) */
 .btn.gh:hover { filter: none; opacity: .9; }
 
 .home-hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; align-items: center; padding: 80px 0 64px; }

@@ -109,12 +109,12 @@
     var av = el("div", "pcard-av");
     if (p.avatar) { var img = new Image(); img.alt = ""; img.loading = "lazy"; img.src = p.avatar.replace(/^\//, ""); img.onerror = function () { img.remove(); av.textContent = (p.name || p.handle).charAt(0).toUpperCase(); }; av.appendChild(img); }
     else av.textContent = (p.name || p.handle).charAt(0).toUpperCase();
-    var who = el("div", "pcard-who"); var nm = el("a", "pcard-name", p.name || p.handle); nm.href = href; who.appendChild(nm); who.appendChild(el("span", null, "@" + p.handle));
+    var who = el("div", "pcard-who"); var nm = el("a", "pcard-name", p.name || p.handle); nm.href = href; nm.title = p.name || p.handle; nm.setAttribute("data-user-content", ""); who.appendChild(nm); who.appendChild(el("span", null, "@" + p.handle));
     top.appendChild(av); top.appendChild(who);
     if (p.invited > 0) a.title = "Brought " + p.invited + (p.invited === 1 ? " person" : " people") + " to Caldera";
     if (p.week > 0) { var s = el("div", "pcard-score"); s.appendChild(el("b", null, String(p.week))); s.appendChild(el("span", null, "this week")); top.appendChild(s); }
     a.appendChild(top);
-    if (p.headline) a.appendChild(el("p", "pcard-line", p.headline));
+    if (p.headline) { var hl = el("p", "pcard-line", p.headline); hl.setAttribute("data-user-content", ""); hl.title = p.headline; a.appendChild(hl); }   // members write their own headlines: not our copy
     var tags = (p.tags || []).slice(0, 3);
     if (tags.length) {
       var t = el("div", "pcard-topics pcard-tags");

@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "version": "0.28.28",
+      "date": "2026-11-05",
+      "title": "Tidier page menu",
+      "items": [
+        "Your page's menu lists your profile once, at the top under Pages.",
+        "Links that open another site show a small arrow icon.",
+        "On phones the On this page row fades at its edge, so you can see it scrolls."
+      ]
+    },
+    {
+      "version": "0.28.27",
+      "date": "2026-11-05",
+      "title": "City comes back after a blank screen",
+      "items": [
+        "If your city goes black after your phone or tablet wakes up, it redraws itself."
+      ]
+    },
+    {
       "version": "0.28.26",
       "date": "2026-11-04",
       "title": "Bigger chart buttons on phones",
