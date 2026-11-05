@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.28.30",
+      "date": "2026-11-05",
+      "title": "Choose many folders for Inbox Hero",
+      "items": [
+        "The Inbox Hero connector now lets you tick as many folders as you like, with a search box, or sync your whole vault except the folders you leave out.",
+        "Folders that look private, financial, legal or medical, plus Slack, meetings and raw dumps, start left out. Notes marked private: true or #private never sync.",
+        "A live count shows how many notes will sync. It's still one way: nothing in your vault is changed."
+      ]
+    },
+    {
       "version": "0.28.29",
       "date": "2026-11-05",
       "title": "Clearer graph labels",
