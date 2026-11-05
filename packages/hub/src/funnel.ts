@@ -10,6 +10,7 @@
  */
 import type http from "node:http";
 import crypto from "node:crypto";
+import { rekeyOld, ID_KEEP_DAYS } from "./rekey";
 
 export const STEPS = ["google-signin", "door-google", "jd-a", "jd-b", "door-email", "door-code", "door-obsidian", "door-designer", "door-business", "form-submit", "confirm-open", "view", "preview", "view_filtered", "preview_filtered", "gate", "click", "back", "created", "signin", "fail", "landed", "email-start", "email-sent", "email-created", "gh-return", "click-ext", "career", "career-shared", "home-a", "home-b", "h2-a", "h2-b", "h2-c", "h2-d", "h2-e", "h2-f", "h2-g", "h2-h", "h2-i", "h2-j", "save-a", "save-b", "ghe-open", "ghe-sent", "cg-a", "cg-b", "cg-email", "pb-a", "pb-b", "pb-a-h", "pb-b-h", "cg-a-h", "cg-b-h", "auth_start", "auth_code_sent", "auth_ok", "auth_fail", "typed-form", "typed-sent", "typed-bot"] as const;
 /** Crawlers, link previewers and scripts: never counted in the funnel or page views. Real browsers never match.
@@ -54,12 +55,14 @@ export function funnel(c: { q: (sql: string) => any; ipOf: (req: http.IncomingMe
   // which members we saw on which day (signed in on the site, on their own page, or their Obsidian plugin talking to us):
   // "did yesterday's sign-ups come back today?"
   q(`CREATE TABLE IF NOT EXISTS member_days (owner TEXT, day TEXT, via TEXT, PRIMARY KEY (owner, day))`).run();
-  // retention (Privacy Policy): sign-up steps 90 days, active days 12 months; checked at start and about daily after
+  // retention (Privacy Policy): sign-up steps 90 days (visitor ids re-keyed after 14), active days 12 months; checked at start and about daily after
   const FUNNEL_KEEP_DAYS = 90, ACTIVE_KEEP_DAYS = 365;
   let pruned = 0;
   function prune(t = Date.now()) {
     pruned = t;
     try { q("DELETE FROM funnel_events WHERE day < ?").run(funnelDay(t - FUNNEL_KEEP_DAYS * DAY)); q("DELETE FROM member_days WHERE day < ?").run(funnelDay(t - ACTIVE_KEEP_DAYS * DAY)); } catch { /* best effort */ }
+    // the visitor id in each step is re-keyed after 14 days (rekey.ts): still countable per day, no longer traceable
+    try { rekeyOld(q, "funnel_events", "vid", "day < ?", funnelDay(t - ID_KEEP_DAYS * DAY)); } catch (e: any) { console.error("funnel rekey", e?.message); }
   }
   prune();
   const maybePrune = () => { if (Date.now() - pruned > DAY) prune(); };

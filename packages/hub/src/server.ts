@@ -10,6 +10,7 @@ import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { rekeyOld, ID_KEEP_DAYS } from "./rekey";
 import * as C from "@caldera/core";
 import { github } from "./github";
 import { connDots, type Conn } from "./settings";
@@ -1249,7 +1250,11 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
   // back than 7 days. Pruned at start and every hour.
   const TRAFFIC_KEEP_MS = 14 * DAY;
   const pruneTraffic = () => { try { q("DELETE FROM traffic WHERE ts < ?").run(new Date(Date.now() - TRAFFIC_KEEP_MS).toISOString()); } catch (e: any) { console.error("traffic prune", e?.message); } };
-  pruneTraffic(); { const t = setInterval(pruneTraffic, 3600_000); (t as any).unref?.(); }
+  // profile page views: the visitor id (a daily-salted hash) is kept 14 days, then re-keyed so it can't be traced back
+  // (rekey.ts); the rows stay for the page's all-time view count and go when the page is deleted. Whole UTC days, since
+  // the id is salted per UTC day.
+  const rekeyViews = () => { try { rekeyOld(q, "page_views", "visitor", "ts < ?", new Date(Date.now() - ID_KEEP_DAYS * DAY).toISOString().slice(0, 10)); } catch (e: any) { console.error("page_views rekey", e?.message); } };
+  pruneTraffic(); rekeyViews(); { const t = setInterval(() => { pruneTraffic(); rekeyViews(); }, 3600_000); (t as any).unref?.(); }
   /** Per-district live numbers. full=false is the public projection: coarse activity levels only, unlisted projects merged. */
   /** Agents working for the owner right now (reported in the last 15 minutes). Public: district + state only. */
   const AGENT_TTL = 15 * 60_000;
