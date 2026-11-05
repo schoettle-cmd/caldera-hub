@@ -1242,9 +1242,14 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     if (!b || b.reset < t) { b = { n: 0, reset: t + 60_000 }; keyBuckets.set(key, b); }
     if (++b.n > 1200) return false;   // a flood on one site can't fill the database
     q("INSERT INTO traffic (key, ts, kind, visitor, host) VALUES (?,?,?,?,?)").run(key, ts, kind, visitor, host || null);
-    if (Math.random() < 0.002) q("DELETE FROM traffic WHERE ts < ?").run(new Date(Date.now() - 35 * DAY).toISOString());
     return true;
   }
+  // Live-traffic rows (site key, time, kind, host, and a visitor hash salted with a per-process random salt plus the day)
+  // are kept 14 days, then deleted: the product privacy policies promise nothing kept past 14 days. Nothing reads further
+  // back than 7 days. Pruned at start and every hour.
+  const TRAFFIC_KEEP_MS = 14 * DAY;
+  const pruneTraffic = () => { try { q("DELETE FROM traffic WHERE ts < ?").run(new Date(Date.now() - TRAFFIC_KEEP_MS).toISOString()); } catch (e: any) { console.error("traffic prune", e?.message); } };
+  pruneTraffic(); { const t = setInterval(pruneTraffic, 3600_000); (t as any).unref?.(); }
   /** Per-district live numbers. full=false is the public projection: coarse activity levels only, unlisted projects merged. */
   /** Agents working for the owner right now (reported in the last 15 minutes). Public: district + state only. */
   const AGENT_TTL = 15 * 60_000;
