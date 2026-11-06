@@ -62,7 +62,10 @@ export interface HubOptions { dataDir: string; port?: number; publicUrl?: string
   privatePort?: number; privateUrl?: string;
   /** Handle of the founder: every new profile starts out as their friend (MySpace's Tom). */ founder?: string; tailnetOwners?: Record<string, string>; githubFetch?: typeof fetch; /** tests: stand-ins for DNS and fetching listed apps and websites */ listingsLookup?: Lookup; listingsGet?: typeof safeGet; /** run the shared-repo friendship job every 6 hours (the server binary turns it on; tests call it directly) */ repoJob?: boolean; /** read members' public GitHub signals into "what they're building" tags every 12 hours */ tagJob?: boolean; /** OpenRouter key for the tag normalising pass (rules only without it) */ llmKey?: string; onEvent?: (e: { type: "signup" | "delete"; handle?: string; name?: string; kind?: string; total: number }) => void; limits?: { perMinute?: number; writesPerMinute?: number; newProfilesPerDay?: number; newProfilesPerMinute?: number };
   /** daily summary emails: Resend key (production) or a send hook (tests); schedule starts the daily job */
-  email?: { resendKey?: string; send?: (m: Mail) => Promise<void>; schedule?: boolean; reconnect?: boolean }; }
+  email?: { resendKey?: string; send?: (m: Mail) => Promise<void>; schedule?: boolean; reconnect?: boolean;
+    /** Growth Engine's learning API (arms, clicks, goals). Default: LEARN_URL or 127.0.0.1:4835 when mail really goes out (Resend);
+     *  off with a test send hook unless set here; LEARN=off turns it off. */
+    learnUrl?: string }; }
 
 const MAX_BODY = 12 * 1024 * 1024;
 const RESERVED = new Set(["admin", "api", "www", "caldera", "help", "support", "root", "hub", "v1", "about", "login", "settings", "official", "team", "security", "obsidian", "me", "auth", "setup"]);
@@ -1572,7 +1575,8 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
       .filter(Boolean).slice(0, 3) as { by: string; text: string; tags: string[]; comments: number; url: string }[];
     return { boards, posts };
   }
-  const mail = emailer({ q, seal, unseal, hub: opts.publicUrl || "https://caldera.social", pepper: PRIV_KEY, send: opts.email?.send, resendKey: opts.email?.resendKey, digest: digestFor, network: networkFor, news: opts.email?.schedule ? () => newsToday(q) : undefined, rank: { active: d => ext.digestActive(d), subject: d => ext.digestSubject(d) } });
+  const learnUrl = opts.email?.learnUrl ?? (opts.email?.resendKey && !opts.email?.send ? process.env.LEARN_URL || "http://127.0.0.1:4835" : undefined);
+  const mail = emailer({ q, seal, unseal, hub: opts.publicUrl || "https://caldera.social", pepper: PRIV_KEY, send: opts.email?.send, resendKey: opts.email?.resendKey, learnUrl, digest: digestFor, network: networkFor, news: opts.email?.schedule ? () => newsToday(q) : undefined, rank: { active: d => ext.digestActive(d), subject: d => ext.digestSubject(d) } });
   const CODES = signinCodes(q, e => mail.hashOf(e));   // "Email me a code" (sign-in standard, 2026-10-29)
   if (opts.email?.schedule) mail.schedule();
 
@@ -1900,6 +1904,7 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
       const inv = !!q("SELECT 1 FROM referrals WHERE (invitee=? AND inviter=?) OR (invitee=? AND inviter=?)").get(me, to.id, to.id, me);
       befriend(me, to.id, inv ? "invite" : "request", now());
       q("DELETE FROM friend_intents WHERE (owner=? AND target=?) OR (owner=? AND target=?)").run(me, to.id, to.id, me);
+      mail.learnGoal(me, "follow", to.handle);   // the new-member email's goal (fire-and-forget)
       return { status: 200, body: { ok: true, state: "friends" } };
     }
     // a new follow: signed now for GitHub sign-ups (the hub holds their key); Obsidian members' follow counts at once and
@@ -1911,6 +1916,7 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
       if (r.status !== 200) return r;
     } else q("INSERT OR REPLACE INTO friend_intents VALUES (?,?,?,?,?)").run(me, to.id, "add", null, now());
     notifyFollow(me, to.id);
+    mail.learnGoal(me, "follow", to.handle);   // the new-member email's goal (fire-and-forget)
     return { status: 200, body: { ok: true, state: friendState(me, to.id).state } };
   }
   /** Stop following: my request (signed or queued) goes; a friendship ends, and if they followed me first they still do. */
@@ -2281,6 +2287,18 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       // brings people back (caldera-agg reads email_clicks). Counting never breaks a request.
       if (req.method === "GET" && /^email-[a-z-]{1,30}$/.test(url.searchParams.get("src") || "")) {
         try { const who = memberOf(req); if (who) q("INSERT OR IGNORE INTO email_clicks VALUES (?,?,?)").run(who, funnelDay(), url.searchParams.get("src")); } catch { /* best effort */ }
+      }
+      // the shared learning loop (Growth Engine, 11-06): a click from a learning email, tied to the member by the link's opaque
+      // token (never an address in the URL) or their sign-in; and the daily's goal, a signed-in return visit within 48 h of it.
+      // Fire-and-forget: never blocks the page, never throws.
+      if (req.method === "GET") {
+        try {
+          const camp = url.searchParams.get("utm_campaign") || "";
+          if (/^caldera_[a-z_]{1,30}$/.test(camp)) mail.learnClick({ program: camp, token: url.searchParams.get("lt"), member: () => memberOf(req), ip: ipOf(req), ua: String(req.headers["user-agent"] || "") });
+          if (mail.learnPending() && /(^|;\s*)(cal_own|cal_s)=/.test(String(req.headers.cookie || "")) && !/^\/(v1|assets|t)\//.test(p) && !/\.(js|css|png|svg|jpe?g|webp|ico|json|txt|xml|woff2?)$/i.test(p)) {
+            const me = memberOf(req); if (me) mail.learnGoal(me, "visit");
+          }
+        } catch { /* best effort */ }
       }
       if (req.method === "GET" && p === "/manifest.webmanifest") { res.writeHead(200, { "content-type": "application/manifest+json", "cache-control": "public, max-age=3600", "access-control-allow-origin": "*" }); return res.end(MANIFEST); }   // * : sandboxed profile pages fetch it from an opaque origin
       if (req.method === "GET" && p === "/v1/me/badges") {   // the signed-in header polls this: unread messages + alerts, nothing else

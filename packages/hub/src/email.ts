@@ -14,7 +14,14 @@ export const POSTAL = "mjonesone, LLC, 450 S Melrose Dr, Vista, CA 92081";
 
 /** `src` = which email this is (e.g. "email-digest"): every link back to our own site gets ?src=<it> so visits from email are attributable */
 import type { NewsItem } from "./news";
-export interface Mail { to: string; subject: string; html: string; text: string; headers?: Record<string, string>; src?: string; kind?: string }
+export interface Mail { to: string; subject: string; html: string; text: string; headers?: Record<string, string>; src?: string; kind?: string;
+  /** Growth Engine's shared learning loop: which program and arm this send is (goes to the mail guard, which counts the send) */
+  learn?: { program: string; arm: string };
+  /** extra query params for every link back to our own site, next to src= (utm_campaign, utm_content, and our opaque lt token) */
+  utm?: Record<string, string> }
+/** The learning programs this hub sends (registered with Growth Engine, 127.0.0.1:4835/learn/*). Arm "a" is always our own copy. */
+export const LEARN_PROGRAMS = { daily: "caldera_daily", newMember: "caldera_new_member" } as const;
+export const LEARN_GOALS: Record<string, string> = { caldera_daily: "return_visit", caldera_new_member: "follow" };
 export interface DigestData {
   handle: string; name: string; hosted: boolean;
   views24: number; visitors24: number; views7: number; visitors7: number;
@@ -75,6 +82,8 @@ export interface EmailCtx {
   /** the hub's private key, for hashing addresses on the suppression list */
   pepper: Buffer;
   send?: (m: Mail) => Promise<void>; resendKey?: string; from?: string; replyTo?: string;
+  /** Growth Engine's learning API base (e.g. http://127.0.0.1:4835). Unset = no arms, our own copy, nothing reported. */
+  learnUrl?: string;
   digest: (owner: string, since: string) => DigestData | null;
   /** the network half of the daily email, and the day's AI news (left out when absent, e.g. in tests) */
   network?: (owner: string, since: string) => Network; news?: () => Promise<NewsItem[]>;
@@ -137,14 +146,15 @@ export function youTiles(d: DigestData): { n: string; label: string; accent?: bo
 /** Attribution: add src=<kind> to every link back to the hub in an email (HTML hrefs and plain-text URLs). One-time and
  *  account links (unsubscribe, confirm, sign-in, /v1 API) and legal pages are left alone; other sites are never touched. */
 const NO_TAG = /^\/(v1\/|start\/confirm|signin|auth\/|privacy|terms)/;
-export function tagLinks(body: string, hub: string, src: string, html: boolean): string {
+export function tagLinks(body: string, hub: string, src: string, html: boolean, extra?: Record<string, string>): string {
   if (!src) return body;
+  const more = Object.entries(extra || {}).filter(([k, v]) => /^[a-z_]{1,20}$/.test(k) && v).map(([k, v]) => (html ? "&amp;" : "&") + k + "=" + encodeURIComponent(v)).join("");
   const base = hub.replace(/\/$/, ""), re = new RegExp(base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(/[^\\s\"'<>()\\]]*|(?![\\w.-]))", "g");
   return body.replace(re, (whole: string, path = "") => {
     const trail = /[.,;:!?]+$/.exec(path)?.[0] || "", p0 = path.slice(0, path.length - trail.length) || "/";
     if (NO_TAG.test(p0) || /[?&](amp;)?src=/.test(p0)) return whole;
     const hashAt = p0.indexOf("#"), pathq = hashAt < 0 ? p0 : p0.slice(0, hashAt), hash = hashAt < 0 ? "" : p0.slice(hashAt);
-    return base + pathq + (pathq.includes("?") ? (html ? "&amp;" : "&") : "?") + "src=" + encodeURIComponent(src) + hash + trail;
+    return base + pathq + (pathq.includes("?") ? (html ? "&amp;" : "&") : "?") + "src=" + encodeURIComponent(src) + more + hash + trail;
   });
 }
 // addresses we never mail: reserved/test domains, throwaway inboxes, and common typos of real providers
@@ -193,10 +203,11 @@ export function emailer(ctx: EmailCtx) {
   const dismissPrompt = (owner: string) => q("INSERT OR REPLACE INTO email_prompt VALUES (?,?)").run(owner, new Date().toISOString());
 
   async function send(m0: Mail) {
-    const m: Mail = m0.src ? { ...m0, html: tagLinks(m0.html, hub, m0.src, true), text: tagLinks(m0.text, hub, m0.src, false) } : m0;
+    const m: Mail = m0.src ? { ...m0, html: tagLinks(m0.html, hub, m0.src, true, m0.utm), text: tagLinks(m0.text, hub, m0.src, false, m0.utm) } : m0;
     if (ctx.send) return ctx.send(m);
     if (!ctx.resendKey) throw new Error("email is not set up on this hub");
-    if (!(await guardOk(m))) return false;   // the shared mail guard said no: not sent (logged); callers that keep state (the digest) must not count it
+    const g = await guardOk(m);
+    if (!g) return false;   // the shared mail guard said no: not sent (logged); callers that keep state (the digest) must not count it
     // Resend allows 10 requests a second: sends go out one at a time at most ~8 a second, and a 429 waits and retries
     const turn = sendChain.then(async () => {
       const wait = lastSend + 125 - Date.now(); if (wait > 0) await sleep(wait);
@@ -212,6 +223,8 @@ export function emailer(ctx: EmailCtx) {
       }
     });
     sendChain = turn.catch(() => {});
+    // the provider refused it for good: tell the guard, so it doesn't count as sent (nor on the learning arm) and a re-send isn't a repeat
+    turn.catch(() => { if (typeof g === "number") guardRelease(g); });
     return turn;
   }
   let sendChain: Promise<void> = Promise.resolve(), lastSend = 0;
@@ -219,22 +232,88 @@ export function emailer(ctx: EmailCtx) {
   // = not sent; no answer in 2 s = sign-in mail and the daily summary still go, the rest is held. MAILGUARD=off skips it.
   const KIND: Record<string, string> = { "signup-email": "auth", "signin-code": "auth", "email-message": "transactional", "email-message-request": "transactional",
     "email-invite": "transactional", "email-reconnect": "marketing", "email-update-nudge": "marketing", "stuck-claim": "marketing" };
-  async function guardOk(m: Mail): Promise<boolean> {
+  /** true, or the guard's check id = send it; false = don't */
+  async function guardOk(m: Mail): Promise<boolean | number> {
     if (process.env.MAILGUARD === "off") return true;
     const kind = m.kind || KIND[m.src || ""] || "transactional", template = m.src || m.kind || "note";
     const hdr = m.headers || {}, unsub = Object.keys(hdr).some(k => /^list-unsubscribe$/i.test(k));
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 2000);
     try {
       const r = await fetch(process.env.MAILGUARD_URL || "http://127.0.0.1:4835/mailguard/check", { method: "POST", headers: { "content-type": "application/json" }, signal: ctl.signal,
-        body: JSON.stringify({ product: "caldera", template, kind, to: m.to, subject: m.subject, text: m.text || "", html: m.html || "", generated: false, has_list_unsubscribe: unsub, test_mode: process.env.NODE_ENV === "test" }) });
+        body: JSON.stringify({ product: "caldera", template, kind, to: m.to, subject: m.subject, text: m.text || "", html: m.html || "", generated: false, has_list_unsubscribe: unsub, test_mode: process.env.NODE_ENV === "test",
+          ...(m.learn ? { learn: m.learn } : {}) }) });   // a passed check carrying "learn" is the one place a send counts on its arm
       const g: any = await r.json();
-      if (g && g.ok && !g.regenerate) return true;
+      if (g && g.ok && !g.regenerate) return Number(g.id) > 0 ? Number(g.id) : true;
       console.log("[mailguard] blocked", template, kind, String(m.to || "").replace(/(.{2}).*@/, "$1…@"), ((g && g.reasons) || []).join("; ").slice(0, 200));
       return false;
     } catch (e) { const ok = kind === "auth" || kind === "daily"; if (!ok) console.log("[mailguard] held (no answer)", template, kind); return ok; }
     finally { clearTimeout(t); }
   }
+  function guardRelease(id: number) {
+    const url = (process.env.MAILGUARD_URL || "http://127.0.0.1:4835/mailguard/check").replace(/\/mailguard\/check$/, "/mailguard/release");
+    post(url, { id }).catch(() => {});
+  }
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+  // ---------------------------------------------------------------- the shared learning loop (Growth Engine, Mike 11-06)
+  // Before a learning send we ask for an arm (2 s, else our own copy). The arm's utm pair and an opaque per-send token (lt) go on
+  // every link back to us; the token maps to the member here, so a click or goal is tied to their address without the address
+  // ever being in a URL. Events are fire-and-forget: they never block a page and never throw.
+  q("CREATE TABLE IF NOT EXISTS learn_sends (token TEXT PRIMARY KEY, program TEXT, arm TEXT, owner TEXT, target TEXT, ts TEXT, goal_at TEXT)").run();
+  q("CREATE INDEX IF NOT EXISTS learn_sends_owner ON learn_sends(owner, ts)").run();
+  const learnBase = () => process.env.LEARN === "off" ? "" : (ctx.learnUrl || "").replace(/\/$/, "");
+  async function post(url: string, body: unknown, ms = 2000): Promise<any> {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+    try { const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: ctl.signal }); return await r.json(); }
+    finally { clearTimeout(t); }
+  }
+  type Arm = { arm: string; holdout: boolean; subject: string | null; cta: string | null; preheader: string | null; learn?: { program: string; arm: string }; utm?: Record<string, string> };
+  /** null = no arm (API down, slow, unknown program, missing token): send our normal mail */
+  async function learnArm(program: string, to: string, vars: Record<string, string>): Promise<Arm | null> {
+    const base = learnBase(); if (!base) return null;
+    try { const r = await post(`${base}/learn/arm`, { program, to, vars }); return r && r.ok === true && (r.holdout === true || (r.arm && r.learn)) ? r as Arm : null; }
+    catch { return null; }
+  }
+  function learnEvent(body: Record<string, unknown>) {
+    const base = learnBase(); if (!base) return;
+    try { post(`${base}/learn/event`, body).catch(() => {}); } catch { /* never throws */ }
+  }
+  const LEARN_WINDOW = 2 * DAY;   // a goal counts when it happens within 48 h of the send
+  let pendingAt = 0, pendingVal = false;
+  /** Is any learning send waiting for its goal? (cached 60 s, so pages only look up the member when it matters) */
+  function learnPending(): boolean {
+    if (!learnBase()) return false;
+    if (Date.now() - pendingAt > 60_000) { pendingAt = Date.now();
+      try { pendingVal = !!q("SELECT 1 FROM learn_sends WHERE goal_at IS NULL AND ts > ? LIMIT 1").get(new Date(Date.now() - LEARN_WINDOW).toISOString()); } catch { pendingVal = false; } }
+    return pendingVal;
+  }
+  /** A visit with ?utm_campaign=<program>: the member from the link's token, else the signed-in member. */
+  function learnClick(o: { program: string; token?: string | null; member?: () => string | null; ip: string; ua: string }) {
+    try {
+      if (!learnBase() || !(Object.values(LEARN_PROGRAMS) as string[]).includes(o.program)) return;
+      const t = o.token && /^[\w-]{8,64}$/.test(o.token) ? q("SELECT owner FROM learn_sends WHERE token=? AND program=?").get(o.token, o.program) as any : null;
+      const owner = t?.owner || o.member?.() || null; if (!owner) return;
+      const r = row(owner), to = r && r.confirmed ? addr(r) : ""; if (!to) return;
+      learnEvent({ program: o.program, to, type: "click", ip: o.ip, ua: String(o.ua || "").slice(0, 300) });
+    } catch { /* best effort */ }
+  }
+  /** The program's goal: a return visit (caldera_daily) or following the member the mail introduced (caldera_new_member). */
+  function learnGoal(owner: string, what: "visit" | "follow", target?: string) {
+    try {
+      if (!learnBase() || !owner) return;
+      const program = what === "visit" ? LEARN_PROGRAMS.daily : LEARN_PROGRAMS.newMember;
+      const s = q("SELECT token, target FROM learn_sends WHERE owner=? AND program=? AND goal_at IS NULL AND ts > ? ORDER BY ts DESC LIMIT 1").get(owner, program, new Date(Date.now() - LEARN_WINDOW).toISOString()) as any;
+      if (!s) return;
+      if (what === "follow" && s.target && String(s.target).toLowerCase() !== String(target || "").toLowerCase()) return;
+      const r = row(owner), to = r && r.confirmed ? addr(r) : ""; if (!to) return;
+      q("UPDATE learn_sends SET goal_at=? WHERE token=?").run(new Date().toISOString(), s.token); pendingAt = 0;
+      learnEvent({ program, to, type: "goal", name: LEARN_GOALS[program] });
+    } catch { /* best effort */ }
+  }
+  /** A first name we can stand behind: the first word of a real display name, never a handle. None = no first_name var, and an
+   *  arm that needs one falls back to our own copy (the API answers missing_token). */
+  const firstName = (d: DigestData) => { const n = String(d.name || "").trim(); if (!n || n.toLowerCase() === String(d.handle || "").toLowerCase()) return "";
+    const f = n.split(/\s+/)[0]!; return /^[A-Za-z][A-Za-z'-]{0,30}$/.test(f) ? f : ""; };
 
   const shell = (title: string, inner: string, unsub?: string) => `<!doctype html><html><body style="margin:0;background:#F4F3F8;padding:24px 12px;font:15px/1.55 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#24222B">
 <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border:1px solid #E4E1EE;border-radius:12px;overflow:hidden">
@@ -434,6 +513,7 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
     if (!force && last === today) return { sent: 0, skipped: 0, errors: 0 };
     q("INSERT OR REPLACE INTO hub_meta VALUES ('digest_last', ?)").run(today);
     let sent = 0, skipped = 0, errors = 0;
+    try { q("DELETE FROM learn_sends WHERE ts < ?").run(new Date(Date.now() - 30 * DAY).toISOString()); } catch { /* best effort */ }
     const news = ctx.news ? await ctx.news().catch((e: any) => { console.error("digest news", e?.message); return []; }) : [];
     for (const r of q("SELECT * FROM email_subs WHERE confirmed=1").all() as any[]) {
       const to = addr(r); if (!to || suppressed(to)) { skipped++; continue; }
@@ -451,9 +531,21 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
       const quietOk = !r.last_quiet || Date.parse(r.last_quiet) < Date.now() - 7 * DAY;   // people to meet / one setup step / their week alone: at most weekly
       if (!active && !(quietOk && (d.suggestions.length || d.setup || d.nudge || weekly))) { skipped++; q("UPDATE email_subs SET last_links=? WHERE owner=?").run(totalLinks, r.owner); continue; }
       const m = compose(d, unsubUrl(r.token), !active); if (!m) { skipped++; continue; }
+      // learning: "Meet @x, who just joined" days are the new-member program (goal: follow @x); every other digest is caldera_daily
+      const meet = /Meet @([A-Za-z0-9_-]+), who just joined/.exec(m.subject), program = meet ? LEARN_PROGRAMS.newMember : LEARN_PROGRAMS.daily;
+      const fn = firstName(d), arm = await learnArm(program, to, fn ? { first_name: fn } : {});
+      if (arm?.holdout) { skipped++; continue; }   // the holdout gets no mail this round
+      let lt = "";
+      if (arm?.learn) {
+        if (arm.subject) m.subject = ascii(arm.subject).slice(0, 150);
+        if (arm.preheader) m.html = m.html.replace(/<body([^>]*)>/, `<body$1><div style="display:none;max-height:0;overflow:hidden;opacity:0">${esc(ascii(arm.preheader))}</div>`);
+        lt = crypto.randomBytes(12).toString("base64url");
+        m.learn = arm.learn; m.utm = { ...(arm.utm || {}), lt };
+      }
       try {
         // blocked by the mail guard: not sent, so last_sent stays put and the next run covers this window (11-05: 33 blocked digests were counted as sent)
         if ((await send({ ...m, to, kind: "daily" })) === false) { skipped++; continue; }
+        if (lt && m.learn) q("INSERT OR IGNORE INTO learn_sends VALUES (?,?,?,?,?,?,NULL)").run(lt, m.learn.program, m.learn.arm, r.owner, meet ? meet[1] : null, new Date().toISOString());
         q("UPDATE email_subs SET last_sent=?, last_links=?, last_quiet=COALESCE(?, last_quiet) WHERE owner=?").run(new Date().toISOString(), totalLinks, active ? null : new Date().toISOString(), r.owner);
         sent++;
       } catch (e: any) { errors++; console.error("digest", r.owner, e?.message); }
@@ -547,5 +639,5 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
     if (!m.to || suppressed(m.to)) return false;
     await send({ to: m.to, subject: ascii(m.subject), html: shell(esc(m.title), m.html), text: ascii(/450 S Melrose/.test(m.text) ? m.text : `${m.text}\n\n--\nCaldera is run by ${POSTAL}. Privacy: ${hub}/privacy`), headers: m.headers, src: m.src }); return true;
   }
-  return { reconnectCompose, reconnectTo: (owner: string) => !!reconnectTo(owner), sendReconnect, note, subscribe, confirm, messageAlert, unsubToken, unsubscribe, status, runDigest, schedule, page, compose, isActive: (d: DigestData) => rank.active(d), hashOf, suggest, suggestion, promptFor, dismissPrompt, matches, hasConfirmed, sendSignin, sendInvite, inviteBlock, inviteUnsub, invitesToday: (inviter: string) => (q("SELECT COUNT(*) n FROM invites_sent WHERE inviter=? AND ts > ?").get(inviter, new Date(Date.now() - DAY).toISOString()) as any).n as number, inviteCap: INVITES_PER_DAY };
+  return { learnClick, learnGoal, learnPending, reconnectCompose, reconnectTo: (owner: string) => !!reconnectTo(owner), sendReconnect, note, subscribe, confirm, messageAlert, unsubToken, unsubscribe, status, runDigest, schedule, page, compose, isActive: (d: DigestData) => rank.active(d), hashOf, suggest, suggestion, promptFor, dismissPrompt, matches, hasConfirmed, sendSignin, sendInvite, inviteBlock, inviteUnsub, invitesToday: (inviter: string) => (q("SELECT COUNT(*) n FROM invites_sent WHERE inviter=? AND ts > ?").get(inviter, new Date(Date.now() - DAY).toISOString()) as any).n as number, inviteCap: INVITES_PER_DAY };
 }
