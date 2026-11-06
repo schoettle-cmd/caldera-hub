@@ -143,8 +143,7 @@ body:has(.ms.is-thread) .ch-bn{display:none}body:has(.ms.is-thread){padding-bott
    item pitch 50pt (41pt circles, 9pt gap, 44pt+ hit area), bottom-anchored and growing upward, the top 272pt left empty for the system status, scrolls when short. */
 html:is(.ch-duo,.ch-duof){--duo-status-reserve:272px;--duo-col-right:48px;--duo-col-w:47px;--duo-rail-gap:13px;--dr-r:calc(var(--duo-col-right) - var(--duo-col-w) / 2);--dr-pad:calc(var(--duo-col-right) + var(--duo-col-w) / 2 + var(--duo-rail-gap));--dr-padl:0px}
 html.ch-duol{--dr-r:max(34px,calc(env(safe-area-inset-right,0px) + 2px));--dr-pad:calc(var(--dr-r) + var(--duo-col-w) + var(--duo-rail-gap));--dr-padl:max(32px,env(safe-area-inset-left,0px))}
-/* Mike 11-06: on his folded Duo the Home Screen page is 382pt wide inside the 466pt screen with no safe inset: iOS keeps the status strip outside the page, so it must not be reserved twice. The capsule then sits 4pt from the page's real right edge and the content stops 13pt before it. */
-html.ch-duof.ch-duo-outer{--dr-r:4px;--dr-pad:calc(4px + var(--duo-col-w) + var(--duo-rail-gap))}
+/* Mike 11-06: when the Home Screen page is 382pt wide inside the 466pt screen with no safe inset (iOS keeps the status strip outside the page) the Duo side rail is replaced by the normal phone navigation: DUO_JS sets html.ch-duo-outer and no ch-duof, so the phone tab bar and full-width content apply. */
 html:is(.ch-duo,.ch-duof) body{padding-right:var(--dr-pad)!important;padding-left:var(--dr-padl)!important;padding-bottom:0!important;box-sizing:border-box}
 html:is(.ch-duo,.ch-duof) .ch-nav,html:is(.ch-duo,.ch-duof) .ch-menu{display:none!important}
 html:is(.ch-duo,.ch-duof) .ch-right{margin-left:auto}
@@ -168,8 +167,10 @@ html:is(.ch-duo,.ch-duof) .ch-bn .ch-badge{top:2px;right:2px}
 const DUO_JS = `<script data-duo>(function(){var r=document.documentElement;if(r.dataset.chDuo)return;r.dataset.chDuo='1';function f(){var c=false;try{c=matchMedia('(pointer:coarse)').matches}catch(e){}
 var q=location.search,sw=Math.min(screen.width,screen.height),sh=Math.max(screen.width,screen.height);
 var open=/[?&]duo=1/.test(q)||(c&&sw>=600&&sw<744&&sh>=880&&sh<1100),fold=!open&&(/[?&]duof=1/.test(q)||(c&&sw>=450&&sw<=500&&sh>=640&&sh<=720));
-r.classList.toggle('ch-duo',open);r.classList.toggle('ch-duof',fold);var ri=0;try{var pr=document.createElement('div');pr.style.cssText='position:fixed;left:-9px;top:0;width:1px;height:1px;visibility:hidden;padding-right:env(safe-area-inset-right,0px)';(document.body||r).appendChild(pr);ri=parseFloat(getComputedStyle(pr).paddingRight)||0;pr.remove()}catch(e){}
-r.classList.toggle('ch-duo-outer',!!(fold&&((c&&sw>=450&&sw<=500&&sh>=640&&sh<=720&&sw-innerWidth>=60&&ri<10)||/[?&]duoout=1/.test(q))));r.classList.toggle('ch-duol',open&&innerWidth>innerHeight)}f();addEventListener('resize',f)})()</script>`;
+var ri=0;try{var pr=document.createElement('div');pr.style.cssText='position:fixed;left:-9px;top:0;width:1px;height:1px;visibility:hidden;padding-right:env(safe-area-inset-right,0px)';(document.body||r).appendChild(pr);ri=parseFloat(getComputedStyle(pr).paddingRight)||0;pr.remove()}catch(e){}
+var outer=fold&&((c&&sw>=450&&sw<=500&&sh>=640&&sh<=720&&sw-innerWidth>=60&&ri<10)||/[?&]duoout=1/.test(q));if(outer)fold=false;
+r.classList.toggle('ch-duo-outer',!!outer);r.classList.toggle('ch-duo',open);r.classList.toggle('ch-duof',fold);
+r.classList.toggle('ch-duol',open&&innerWidth>innerHeight)}f();addEventListener('resize',f)})()</script>`;
 
 /** Live unread counts for the signed-in header: badges, the messages strip, "(3)" in the tab title and a dot on the
  *  favicon, refreshed every 30s while the tab is visible and right away when it comes back. On the hub's own pages the
