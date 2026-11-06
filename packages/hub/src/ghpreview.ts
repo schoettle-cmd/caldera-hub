@@ -333,4 +333,5 @@ const PAGE_CSS = `.ghp-why{flex:1 1 100%;margin:0;font-size:14px;line-height:1.5
 .ghp-gbtn{display:inline-flex;align-items:center;gap:10px;min-height:40px;padding:0 16px 0 12px;border-radius:999px;background:#fff;color:#1f1f1f!important;border:1px solid #747775;font:500 14px Roboto,"IBM Plex Sans",Arial,sans-serif;text-decoration:none;white-space:nowrap}.ghp-gbtn:hover{background:#f2f2f2}.ghp-alt{font-size:12.5px;color:var(--text-muted,#8F89A0)}.ghp-alt a{color:inherit;text-decoration:underline}.ghp-b-see .ghp-form{margin:0;max-width:420px}
 .ghp-badge summary{cursor:pointer;color:var(--accent-text,#B9A6FF);font-weight:600}.ghp-badge img{display:block;max-width:100%;height:auto;margin:10px 0}.ghp-badge pre{white-space:pre-wrap;word-break:break-all;background:var(--bg,#141416);border:1px solid var(--line,#2A2A2E);border-radius:8px;padding:10px;font:12px 'IBM Plex Mono',monospace;margin:0 0 8px}
 .ghp-fine{margin:0;color:var(--text-muted,#8A8A93);font-size:12.5px}
+@media (max-width:1000px){.ghp-top-t{flex-basis:60%}}
 @media (max-width:620px){.ghp-banner{padding:14px}.ghp-form .ghp-at{display:none}.ghp-b-actions .ghp-btn{min-height:32px;padding:0 12px}}`;

@@ -132,7 +132,7 @@ font:500 15px/1.2 'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;color:var(--
 .ch-brand{min-height:44px}.ch-icon{width:44px;height:44px}.ch-acct{height:44px}.ch-av{width:34px;height:34px}
 .ch-text{display:inline-flex;align-items:center;min-height:44px;padding:0 8px}.ch-cta{height:44px;padding:0 16px}.ch-seg a{height:38px;min-width:44px;justify-content:center}
 .ch-bn{display:grid}body{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
-.fd-tip,.ms-tip,.pc-tip{bottom:calc(76px + env(safe-area-inset-bottom,0px))!important}
+.fd-tip,.ms-tip,.pc-tip,.cal-nb{bottom:calc(76px + env(safe-area-inset-bottom,0px))!important}
 body:has(.ms.is-thread) .ch-bn{display:none}body:has(.ms.is-thread){padding-bottom:0}.ch-pop{position:fixed;left:12px;right:12px;top:58px;min-width:0}.ch-al{width:auto}}
 /* iPhone Duo, folded and unfolded (Mike 2026-11-05): the nav rail sits on the RIGHT edge as a glass capsule
    (product-standards/docs/duo-glass-rail.md), 44px icon-only, the phone tab bar's links. A left rail or sidebar is for
@@ -143,12 +143,18 @@ body:has(.ms.is-thread) .ch-bn{display:none}body:has(.ms.is-thread){padding-bott
    item pitch 50pt (41pt circles, 9pt gap, 44pt+ hit area), bottom-anchored and growing upward, the top 272pt left empty for the system status, scrolls when short. */
 html:is(.ch-duo,.ch-duof){--duo-status-reserve:272px;--duo-col-right:48px;--duo-col-w:47px;--duo-rail-gap:13px;--dr-r:calc(var(--duo-col-right) - var(--duo-col-w) / 2);--dr-pad:calc(var(--duo-col-right) + var(--duo-col-w) / 2 + var(--duo-rail-gap));--dr-padl:0px}
 html.ch-duol{--dr-r:max(34px,calc(env(safe-area-inset-right,0px) + 2px));--dr-pad:calc(var(--dr-r) + var(--duo-col-w) + var(--duo-rail-gap));--dr-padl:max(32px,env(safe-area-inset-left,0px))}
-/* Mike 11-06: on his folded Duo the Home Screen page is 382pt wide inside the 466pt screen with no safe inset: iOS keeps the status strip outside the page, so it must not be reserved twice. The capsule then sits 4pt from the page's real right edge and the content stops 13pt before it. */
-html.ch-duof.ch-duo-outer{--dr-r:4px;--dr-pad:calc(4px + var(--duo-col-w) + var(--duo-rail-gap))}
+/* Mike 11-06: iOS 27.2 keeps the Duo's status strip outside the page (382x678, 867x669, 585x951, 951x669 with no inset), so there is no strip for the rail to sit in. Then the rail goes and the phone tab bar and full-width content apply at any width: DUO_JS sets html.ch-duo-outer and neither ch-duo nor ch-duof. The rail stays only with a real right inset of 60pt or more, so it comes back by itself if iOS gives the strip back. */
+html.ch-duo-outer .ch-nav,html.ch-duo-outer .ch-menu,html.ch-duo-outer .ch .ch-msgs{display:none}html.ch-duo-outer .ch-right{margin-left:auto}
+html.ch-duo-outer .ch-bn{display:grid}html.ch-duo-outer body{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}html.ch-duo-outer body:has(.ms.is-thread) .ch-bn{display:none}html.ch-duo-outer body:has(.ms.is-thread){padding-bottom:0}
+html.ch-duo-outer :is(.fd-tip,.ms-tip,.pc-tip,.cal-nb){bottom:calc(76px + env(safe-area-inset-bottom,0px))!important}
+html.ch-duo-outer .cal-nb{left:calc(12px + env(safe-area-inset-left,0px));right:calc(12px + env(safe-area-inset-right,0px));max-width:none;transform:none;border-radius:16px}html.ch-duo-outer .cal-nb span{flex:1;min-width:0}
+html.ch-duo-outer body{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);box-sizing:border-box}html.ch-duo-outer .ch-bn{padding-left:calc(4px + env(safe-area-inset-left,0px));padding-right:calc(4px + env(safe-area-inset-right,0px))}
+@media (min-width:761px){html.ch-duo-outer .w-main .c-stage{height:calc(100svh - 214px)}}
 html:is(.ch-duo,.ch-duof) body{padding-right:var(--dr-pad)!important;padding-left:var(--dr-padl)!important;padding-bottom:0!important;box-sizing:border-box}
+html:is(.ch-duo,.ch-duof) .cal-nb{bottom:calc(16px + env(safe-area-inset-bottom,0px))!important}
 html:is(.ch-duo,.ch-duof) .ch-nav,html:is(.ch-duo,.ch-duof) .ch-menu{display:none!important}
 html:is(.ch-duo,.ch-duof) .ch-right{margin-left:auto}
-html:is(.ch-duo,.ch-duof) .ch-bn{display:flex!important;flex-direction:column;align-items:center;gap:9px;left:auto;top:auto;bottom:calc(env(safe-area-inset-bottom,0px) + 8px);right:var(--dr-r);width:var(--duo-col-w);height:auto;box-sizing:border-box;max-height:calc(100dvh - var(--duo-status-reserve) - env(safe-area-inset-bottom,0px) - 8px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;padding:2px;border-radius:999px;
+html:is(.ch-duo,.ch-duof) .ch-bn{display:flex!important;flex-direction:column;align-items:center;gap:9px;left:auto;top:auto;bottom:calc(env(safe-area-inset-bottom,0px) + 8px);right:var(--dr-r);width:var(--duo-col-w);height:auto;box-sizing:border-box;max-height:calc(var(--duo-vh,100dvh) - var(--duo-status-reserve) - env(safe-area-inset-bottom,0px) - 8px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;padding:2px;border-radius:999px;
 background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.03) 55%,rgba(0,0,0,.10)),rgba(20,20,22,.74);border:1px solid rgba(255,255,255,.22);box-shadow:0 8px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.18);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%)}
 html:is(.ch-duo,.ch-duof) .ch-bn::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;padding:1px;background:linear-gradient(135deg,rgba(255,255,255,.35) 0%,rgba(255,255,255,0) 22%,rgba(255,255,255,0) 70%,rgba(255,255,255,.12) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
 html:is(.ch-duo,.ch-duof) .ch-bn::-webkit-scrollbar{display:none}
@@ -163,13 +169,19 @@ html:is(.ch-duo,.ch-duof) .ch-bn .ch-badge{top:2px;right:2px}
 @media (prefers-reduced-transparency:reduce){html:is(.ch-duo,.ch-duof) .ch-bn{-webkit-backdrop-filter:none;backdrop-filter:none;background:#1C1C1F}}
 </style>`;
 
-/** Sets html.ch-duo (iPhone Duo open, 669x951 either way; ch-duol when sideways) or html.ch-duof (folded, 466x678) from
- *  the SCREEN size and a touch pointer (Safari's bars shrink the window, not the screen). Phones and desktops match neither. */
-const DUO_JS = `<script data-duo>(function(){var r=document.documentElement;if(r.dataset.chDuo)return;r.dataset.chDuo='1';function f(){var c=false;try{c=matchMedia('(pointer:coarse)').matches}catch(e){}
-var q=location.search,sw=Math.min(screen.width,screen.height),sh=Math.max(screen.width,screen.height);
-var open=/[?&]duo=1/.test(q)||(c&&sw>=600&&sw<744&&sh>=880&&sh<1100),fold=!open&&(/[?&]duof=1/.test(q)||(c&&sw>=450&&sw<=500&&sh>=640&&sh<=720));
-r.classList.toggle('ch-duo',open);r.classList.toggle('ch-duof',fold);var ri=0;try{var pr=document.createElement('div');pr.style.cssText='position:fixed;left:-9px;top:0;width:1px;height:1px;visibility:hidden;padding-right:env(safe-area-inset-right,0px)';(document.body||r).appendChild(pr);ri=parseFloat(getComputedStyle(pr).paddingRight)||0;pr.remove()}catch(e){}
-r.classList.toggle('ch-duo-outer',!!(fold&&((c&&sw>=450&&sw<=500&&sh>=640&&sh<=720&&sw-innerWidth>=60&&ri<10)||/[?&]duoout=1/.test(q))));r.classList.toggle('ch-duol',open&&innerWidth>innerHeight)}f();addEventListener('resize',f)})()</script>`;
+/** On an iPhone Duo (screen size + touch pointer, or a window size only a Duo has: 382x678, 867x669, 585x951; screen.* may not
+ *  follow the fold) a real right inset of 60pt or more means the strip is there: html.ch-duo (open; ch-duol sideways) or
+ *  html.ch-duof (folded) and the rail. With no such inset: html.ch-duo-outer, the phone tab bar and full-width content.
+ *  ?duo=1 / ?duof=1 preview the rail on a computer, ?duoout=1 the tab bar. Heights are never taken from visualViewport: Mike's
+ *  Duo reported -33554432, so any value outside a sane range falls back to the layout size, and --duo-vh feeds the capsule's
+ *  max-height. Phones, iPads and desktops match none of this. */
+const DUO_JS = `<script data-duo>(function(){var r=document.documentElement;if(r.dataset.chDuo)return;r.dataset.chDuo='1';function ok(n){return n>=100&&n<=8192}function f(){var c=false;try{c=matchMedia('(pointer:coarse)').matches}catch(e){}
+var q=location.search,sw=Math.min(screen.width,screen.height),sh=Math.max(screen.width,screen.height),w=ok(innerWidth)?innerWidth:r.clientWidth,h=ok(innerHeight)?innerHeight:r.clientHeight;
+var fs=sw>=450&&sw<=500&&sh>=640&&sh<=720,os=sw>=600&&sw<744&&sh>=880&&sh<1100,ow=(w>=855&&w<=880&&h>=620&&h<=720)||(w>=575&&w<=595&&h>=860&&h<=1000),fw=w>=380&&w<=383&&h>=640&&h<=720,duo=c&&(fs||os||ow||fw),big=w>=560;
+var ri=0;try{var pr=document.createElement('div');pr.style.cssText='position:fixed;left:-9px;top:0;width:1px;height:1px;visibility:hidden;padding-right:env(safe-area-inset-right,0px)';(document.body||r).appendChild(pr);ri=parseFloat(getComputedStyle(pr).paddingRight)||0;pr.remove()}catch(e){}
+var po=/[?&]duo=1/.test(q),pf=/[?&]duof=1/.test(q),out=/[?&]duoout=1/.test(q)||(duo&&ri<60&&!po&&!pf),rail=!out&&(duo||po||pf),open=rail&&!pf&&(po||big),fold=rail&&!open;
+r.classList.toggle('ch-duo-outer',out);r.classList.toggle('ch-duo',open);r.classList.toggle('ch-duof',fold);r.classList.toggle('ch-duol',open&&w>h);if(rail&&ok(h))r.style.setProperty('--duo-vh',h+'px');else r.style.removeProperty('--duo-vh')}
+f();addEventListener('resize',f);addEventListener('orientationchange',f);addEventListener('pageshow',f);try{if(window.visualViewport)visualViewport.addEventListener('resize',f)}catch(e){}})()</script>`;
 
 /** Live unread counts for the signed-in header: badges, the messages strip, "(3)" in the tab title and a dot on the
  *  favicon, refreshed every 30s while the tab is visible and right away when it comes back. On the hub's own pages the
@@ -195,7 +207,7 @@ if(same||(hub&&bt)){setInterval(tick,30000);document.addEventListener('visibilit
 /** Feedback button for signed-in members (2026-10-26, Mike: one product-feedback queue across HA, Caldera and Inbox
  *  Hero, reviewed at mjonesone.com/control/feedback). Not on sandboxed pages (origin "null"), where the post would be
  *  refused. Raised to clear the phone bottom nav. Viewers carry no email here, so the form asks for one (optional). */
-const FEEDBACK_JS = `<script>(function(){if(self.origin==='null'||document.querySelector('script[src*="/fb/widget.js"]'))return;var s=document.createElement('script');s.src='https://mjonesone.com/fb/widget.js';s.defer=true;var du=document.documentElement.matches('.ch-duo,.ch-duof');s.setAttribute('data-position',du?'none':'right');s.setAttribute('data-trigger','#chFbk');s.setAttribute('data-offset',innerWidth<760?'84':'20');document.body.appendChild(s)})()</script>`;
+const FEEDBACK_JS = `<script>(function(){if(self.origin==='null'||document.querySelector('script[src*="/fb/widget.js"]'))return;var s=document.createElement('script');s.src='https://mjonesone.com/fb/widget.js';s.defer=true;var du=document.documentElement.matches('.ch-duo,.ch-duof');s.setAttribute('data-position',du?'none':'right');s.setAttribute('data-trigger','#chFbk');s.setAttribute('data-offset',innerWidth<760||document.documentElement.matches('.ch-duo-outer')?'84':'20');document.body.appendChild(s)})()</script>`;
 
 /** The header for one request's viewer. Same markup and CSS everywhere: the regression test compares these. */
 export function appHeader(o: HeaderOpts): string {
