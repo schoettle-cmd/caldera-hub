@@ -138,22 +138,25 @@ body:has(.ms.is-thread) .ch-bn{display:none}body:has(.ms.is-thread){padding-bott
    desktop browsers only. Folded (466x678): the rail sits in the right status strip (84px) below the clock, y 200, and
    the page stops at the strip. Open (669x951 / 951x669): a column at the right edge, clear of the sideways insets.
    html.ch-duo / html.ch-duof come from DUO_JS (screen size + touch); ?duo=1 / ?duof=1 preview on a computer. */
-html:is(.ch-duo,.ch-duof){--dr-top:calc(var(--ch-h,56px) + 16px);--dr-r:12px;--dr-pad:76px;--dr-padl:0px}
-html.ch-duof{--dr-top:200px;--dr-r:calc((max(84px,env(safe-area-inset-right,0px)) - 54px) / 2);--dr-pad:max(84px,env(safe-area-inset-right,0px))}
-html.ch-duol{--dr-r:max(34px,calc(env(safe-area-inset-right,0px) + 2px));--dr-pad:calc(var(--dr-r) + 64px);--dr-padl:max(32px,env(safe-area-inset-left,0px))}
+/* Duo rail spec (Mike 11-05, product-standards/docs/duo-rail-spec.md): capsule 47pt, centre 48pt from the right edge, 13pt between content and capsule,
+   item pitch 50pt (41pt circles, 9pt gap, 44pt+ hit area), bottom-anchored and growing upward, the top 272pt left empty for the system status, scrolls when short. */
+html:is(.ch-duo,.ch-duof){--duo-status-reserve:272px;--duo-col-right:48px;--duo-col-w:47px;--duo-rail-gap:13px;--dr-r:calc(var(--duo-col-right) - var(--duo-col-w) / 2);--dr-pad:calc(var(--duo-col-right) + var(--duo-col-w) / 2 + var(--duo-rail-gap));--dr-padl:0px}
+html.ch-duol{--dr-r:max(34px,calc(env(safe-area-inset-right,0px) + 2px));--dr-pad:calc(var(--dr-r) + var(--duo-col-w) + var(--duo-rail-gap));--dr-padl:max(32px,env(safe-area-inset-left,0px))}
 html:is(.ch-duo,.ch-duof) body{padding-right:var(--dr-pad)!important;padding-left:var(--dr-padl)!important;padding-bottom:0!important;box-sizing:border-box}
 html:is(.ch-duo,.ch-duof) .ch-nav,html:is(.ch-duo,.ch-duof) .ch-menu{display:none!important}
 html:is(.ch-duo,.ch-duof) .ch-right{margin-left:auto}
-html:is(.ch-duo,.ch-duof) .ch-bn{display:flex!important;flex-direction:column;align-items:center;gap:2px;left:auto;bottom:auto;top:var(--dr-top);right:var(--dr-r);width:auto;height:auto;padding:4px;border-radius:999px;
+html:is(.ch-duo,.ch-duof) .ch-bn{display:flex!important;flex-direction:column;align-items:center;gap:9px;left:auto;top:auto;bottom:calc(env(safe-area-inset-bottom,0px) + 8px);right:var(--dr-r);width:var(--duo-col-w);height:auto;box-sizing:border-box;max-height:calc(100dvh - var(--duo-status-reserve) - env(safe-area-inset-bottom,0px) - 8px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;padding:2px;border-radius:999px;
 background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.03) 55%,rgba(0,0,0,.10)),rgba(20,20,22,.74);border:1px solid rgba(255,255,255,.22);box-shadow:0 8px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.18);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%)}
 html:is(.ch-duo,.ch-duof) .ch-bn::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;padding:1px;background:linear-gradient(135deg,rgba(255,255,255,.35) 0%,rgba(255,255,255,0) 22%,rgba(255,255,255,0) 70%,rgba(255,255,255,.12) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
-html:is(.ch-duo,.ch-duof) .ch-bn a{width:44px;height:44px;gap:0;border-radius:999px;color:#A8A8B3}
-html:is(.ch-duo,.ch-duof) .ch-bn a .ch-bi{width:44px;height:44px;border-radius:999px}
+html:is(.ch-duo,.ch-duof) .ch-bn::-webkit-scrollbar{display:none}
+html:is(.ch-duo,.ch-duof) .ch-bn a{position:relative;flex:none;width:41px;height:41px;gap:0;border-radius:50%;color:#A8A8B3}
+html:is(.ch-duo,.ch-duof) .ch-bn a::after{content:"";position:absolute;top:-2px;bottom:-2px;left:-2px;right:-2px}   /* invisible hit area: 45pt around the 41pt circle */
+html:is(.ch-duo,.ch-duof) .ch-bn a .ch-bi{width:41px;height:41px;border-radius:50%}
 html:is(.ch-duo,.ch-duof) .ch-bn a[aria-current="page"] .ch-bi{background:rgba(0,0,0,.42);box-shadow:inset 0 0 0 1px rgba(255,255,255,.10);color:#B9A6FF}
 html:is(.ch-duo,.ch-duof) .ch-bn a[aria-current="page"] .ch-i{stroke-width:2.2}
 html:is(.ch-duo,.ch-duof) .ch-bn .ch-bl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 html:is(.ch-duo,.ch-duof) .ch-bn .ch-badge{top:2px;right:2px}
-.ch-bn .ch-fbk{display:none!important}html:is(.ch-duo,.ch-duof) .ch-bn .ch-fbk{display:flex!important;margin-top:2px;border-top:0}   /* Duo: Feedback lives in the rail, not as an edge tab under it */
+.ch-bn .ch-fbk{display:none!important}html:is(.ch-duo,.ch-duof) .ch-bn .ch-fbk{display:flex!important;margin-top:0;border-top:0}   /* Duo: Feedback lives in the rail, not as an edge tab under it */
 @media (prefers-reduced-transparency:reduce){html:is(.ch-duo,.ch-duof) .ch-bn{-webkit-backdrop-filter:none;backdrop-filter:none;background:#1C1C1F}}
 </style>`;
 
