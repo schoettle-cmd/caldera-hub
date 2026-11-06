@@ -1022,6 +1022,8 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
       for (const t of ["member_tags", "tag_edits"]) if (!q(`SELECT 1 FROM ${t} WHERE member=?`).get(I)) run(t, `UPDATE ${t} SET member=? WHERE member=?`, I, F);
       run("gh_circle", "UPDATE OR IGNORE gh_circle SET member=? WHERE member=?", I, F);
       run("posts", "UPDATE posts SET author=? WHERE author=?", I, F);
+      run("agent_posts", "UPDATE agent_posts SET owner=? WHERE owner=?", I, F);
+      run("agent_tokens", "UPDATE agent_tokens SET owner=? WHERE owner=?", I, F);
       run("post_comments", "UPDATE post_comments SET author=? WHERE author=?", I, F);
       run("post_kudos", "UPDATE OR IGNORE post_kudos SET sender=? WHERE sender=?", I, F);
       run("post_links", "UPDATE OR IGNORE post_links SET src=? WHERE src=? AND dst<>?", I, F, I);
@@ -1151,6 +1153,8 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
       return { nudged: dry ? 0 : rows.length, handles: rows.map(r => r.handle) };
     }, "comment-list": () => FEED!.admin.commentsList(), "comment-hide": (id: string) => FEED!.admin.commentHide(id),
     "post-ban": (handle: string, reason = "") => FEED!.admin.postBan(handle, reason), "post-unban": (handle: string) => FEED!.admin.postUnban(handle),
+    "agent-list": () => FEED!.agents().list(), "agent-hide": (id: string) => FEED!.agents().hide(id), "agent-unhide": (id: string) => FEED!.agents().unhide(id), "agent-delete": (id: string) => FEED!.agents().remove(id),
+    "agent-token-list": () => FEED!.agents().tokens(), "agent-token-add": (handle: string, name: string, hash: string) => FEED!.agents().tokenAdd(handle, name, hash), "agent-token-revoke": (id: string) => FEED!.agents().tokenRevoke(id),
     "msg-reports": () => MSG!.admin.reports(), "msg-view": (id: string) => MSG!.admin.view(id), "msg-close": (id: string) => MSG!.admin.close(id),
     "msg-ban": (handle: string, reason = "") => MSG!.admin.ban(handle, reason), "msg-unban": (handle: string) => MSG!.admin.unban(handle),
   };
@@ -2057,7 +2061,7 @@ body{overflow-x:hidden}.kd{max-width:440px;margin:0 auto;padding:22px 16px 40px}
 <p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
 <div class="card"><h2>Already on Caldera?</h2><div class="row"><a rel="nofollow" class="btn small ghost" href="/auth/github${bq}" style="display:inline-flex;align-items:center;gap:7px">${GH_ICON}Sign in with GitHub</a></div><p class="mut" style="font-size:12.5px;margin-top:10px">Made your page in Obsidian? Open your page and tap <b>Sign in</b> in the bar at the top, then come back here. Made it with ChatGPT or Claude? <a href="/start${bq}">Email me a sign-in link</a>.</p></div>`;
   // ---- "Email me a code" screens (sign-in standard, 2026-10-29): the same form, check-your-email page and code box everywhere
-  const SIGNIN_BACK = /^\/(messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|alerts)$/;
+  const SIGNIN_BACK = /^\/(messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|settings\/agents|alerts)$/;
   const signinBack = (b: string) => SIGNIN_BACK.test(b) ? b : "";
   const CODE_OR = `<div class="mut" style="display:flex;align-items:center;gap:10px;margin:16px 0 12px"><span style="flex:1;height:1px;background:currentColor;opacity:.25"></span>or<span style="flex:1;height:1px;background:currentColor;opacity:.25"></span></div>`;
   const codeForm = (h: string, back: string) => `<form method="post" action="/signin/email">${h ? `<input type="hidden" name="h" value="${escAttr(h)}">` : ""}${back ? `<input type="hidden" name="back" value="${escAttr(back)}">` : ""}<input type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com" aria-label="Email"><button class="btn small" type="submit">Email me a code</button></form>`;
@@ -2068,7 +2072,7 @@ ${email ? `<form method="post" action="/signin/code"><input type="hidden" name="
   }
   const googleBtn = (qs = "") => EMP?.googleOn() ? `<a rel="nofollow" class="btn ghost" href="/auth/google${qs}" style="display:inline-flex;align-items:center;gap:8px">${GOOGLE_ICON}Continue with Google</a>` : "";
   function signinGeneral(res: http.ServerResponse, back = "", req?: http.IncomingMessage, note = "") {
-    const bq = /^\/(messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|alerts)$/.test(back) ? `?back=${encodeURIComponent(back)}` : "";   // come back to the page that asked (e.g. a conversation)
+    const bq = /^\/(messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|settings\/agents|alerts)$/.test(back) ? `?back=${encodeURIComponent(back)}` : "";   // come back to the page that asked (e.g. a conversation)
     // "Message" on someone's page, signed out: say why, offer sign-up first (credited to them), and land in the conversation after
     const mh = back.match(/^\/messages\/@([a-z0-9-]+)$/)?.[1] || "", them = mh ? byHandle(mh) : null;
     // a group link, signed out: same idea, "Sign up to join <group>", back into the group after
@@ -2184,7 +2188,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
     publicRepos: (h) => ((publicCityOf(h)?.districts || []) as any[]).flatMap((d: any) => (d.repos || []).filter((r: any) => !r.locked && r.name).map((r: any) => String(r.name))),
     notify: (to, a) => { alerts.post({ title: a.title, body: a.body, ctaLabel: a.ctaLabel, ctaUrl: a.ctaUrl, target: to, key: a.key, by: "gifts" }); },
     onChange: () => FEED?.invalidate() });
-  FEED = feed({ q, now, hub: opts.publicUrl || "https://caldera.social", profile, byHandle, body, listed, modOf, areFriends, befriend: (a, b, kind, ts, why) => { befriend(a, b, kind, ts, why); worldCache = null; },
+  FEED = feed({ agentLimits: (opts as any).agentLimits, q, now, hub: opts.publicUrl || "https://caldera.social", profile, byHandle, body, listed, modOf, areFriends, befriend: (a, b, kind, ts, why) => { befriend(a, b, kind, ts, why); worldCache = null; },
     memberOf, sameOrigin, readBody, json, navify, weekScore, tooMany, founder: opts.founder || null, ogTags, hasCity: (h: string) => fs.existsSync(path.join(opts.dataDir, "profiles", h, "city.html")), toolItems: () => TOOLS ? TOOLS.feedItems() : [],
     tagsOf: (pr: any) => B.tagsOf(pr), vocab: ext.tagVocab().problems, stackVocab: ext.tagVocab().stack, requestIntro: (from, to) => B.requestIntro(from, to), decide: (me, from, yes) => B.decide(me, from, yes),
     notify: (to, a) => { alerts.post({ title: a.title, body: a.body, ctaLabel: a.ctaLabel, ctaUrl: a.ctaUrl, target: to, key: a.key, by: "feed" }); },
@@ -2295,7 +2299,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (/^\/auth\/(github|google)(\/callback)?$/.test(p) && AUTH_CRAWLER_UA.test(String(req.headers["user-agent"] || ""))) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" }); return res.end("Sign-in needs a browser."); }
       if (/^\/(v1\/page\/claim(\/confirm)?|auth\/google(\/callback)?|start(\/confirm)?|settings(\/page|\/photo|\/typed|\/typed\/img|\/obsidian)?|me|join\/(designer|business|developer))$/.test(p) && await EMP!.route(req, res, url, p)) return;   // email pages (falls through for everyone else)   // email pages (falls through for everyone else)
       if (/^\/(auth\/github|me$|me\/upload$|settings$|settings\/(status|claim)$|alerts$|v1\/github\/)/.test(p) && await GH.route(req, res, url)) return;
-      if (/^\/(feed(\/|$)|v1\/feed$|v1\/posts|v1\/comments\/|v1\/me\/notices$)/.test(p) && await FEED!.route(req, res, url, p)) return;
+      if (/^\/(feed(\/|$)|v1\/feed$|v1\/posts|v1\/agent\/|settings\/agents$|v1\/comments\/|v1\/me\/notices$)/.test(p) && await FEED!.route(req, res, url, p)) return;
       if (p.startsWith("/v1/gifts") && await GIFTS!.route(req, res, p)) return;
       if (/^\/(messages\/groups|v1\/groups)(\/|$)/.test(p) && CHAT && await CHAT.route(req, res, url, p)) return;
       if (/^\/(tools|downloads|v1\/tools)(\/|$)/.test(p) && TOOLS && await TOOLS.route(req, res, url, p)) return;
@@ -2320,7 +2324,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (/^\/(me\/building\/?|v1\/tags|v1\/people\/[a-z0-9-]+\/similar-stack$|v1\/intro\/|v1\/me\/intro-state|v1\/owner\/cal:[^/]+\/intros)/.test(p) && await B.route(req, res, url, p)) return;
 
       if (req.method === "GET" && p === "/v1/weather") { const w = await WX.forIp(ipOf(req)); res.setHeader("cache-control", "no-store"); return json(res, 200, w || { c: null }); }   // the requester's own weather, never stored
-      if (req.method === "GET" && p === "/v1/info") return json(res, 200, { name: "Caldera Hub", protocol: C.PROTOCOL_VERSION, profiles: (q("SELECT COUNT(*) c FROM profiles").get() as any).c });
+      if (req.method === "GET" && p === "/v1/info") return json(res, 200, { name: "Caldera Hub", protocol: C.PROTOCOL_VERSION, profiles: (q("SELECT COUNT(*) c FROM profiles").get() as any).c, agent_posting: { endpoint: "/v1/agent/posts", docs: "/guide#f-agent-posts" } });
       if (req.method === "GET" && p === "/v1/gardens/recent" && !C.gardenEnabled()) return json(res, 404, { error: "not found" });
       if (req.method === "GET" && (p === "/gardens" || p === "/gardens/") && !C.gardenEnabled()) { res.writeHead(301, { location: "/" }); return res.end(); }
       if (req.method === "GET" && p === "/v1/gardens/recent") return json(res, 200, { notes: recentGardenNotes(Math.max(1, Math.min(100, Number(url.searchParams.get("limit")) || 60))) });

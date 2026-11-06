@@ -265,6 +265,7 @@ ${msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(
     return `<section class="card" id="richer"><h2>Now make it official</h2><p class="mut">Connect GitHub and Obsidian. Optional, any time.</p>
 ${verified ? row("GitHub", `Connected as @${esc(ghLoginOf(acct.profile_id) || "your account")}. Your public repos are your city.`, `<a class="btn small" href="/@${esc(acct.handle)}/city.html">View city</a> <a rel="nofollow" class="btn small ghost" href="${linkBack}">Reconnect</a>`) : row("GitHub", city, `<a rel="nofollow" class="btn small" href="${linkBack}">Connect GitHub</a>`)}
 ${pr.kind ? "" : row("Your AI", "ChatGPT or Claude writes your About, projects and links.", `<a class="btn small ghost" href="#update">Write it</a>`)}
+${row("Agents", "Let an AI agent post updates to the Feed.", `<a class="btn small ghost" href="/settings/agents">Set up</a>`)}
 ${row("Obsidian", "Your notes and daily journal on your page. This page moves into your vault and stays at the same address.", pr.kind ? `<span class="mut">Coming soon</span>` : richerObsidian ? `<form method="post" action="/settings/obsidian" style="margin:0"><button class="btn small ghost" type="submit">Connect Obsidian</button></form>` : `<span class="mut">Coming soon</span>`)}<p style="margin:10px 0 0;text-align:right"><a class="mut" href="/@${esc(acct.handle)}/">Skip for now</a></p></section>`;
   }
   function settingsPage(res: http.ServerResponse, acct: any, msg = "") {

@@ -14,6 +14,7 @@ import { GATE_CSS, GATE_JS } from "./signupgate";
 import http from "node:http";
 import crypto from "node:crypto";
 import { linkMentions, tellMentioned, MENTION_CSS, MENTION_JS } from "./mentions.js";
+import { agentPosts, AGENT_CSS, AGENT_JS, AGENT_LIMITS } from "./agentposts";
 
 const DAY = 86_400_000;
 const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -212,6 +213,8 @@ export interface FeedCtx {
   notify?: (memberId: string, a: { title: string; body: string; ctaLabel?: string; ctaUrl?: string; key?: string }) => void;
   /** a deleted post takes its personal alerts (kudos, sends, recommendations) with it */
   dropNotices?: (postId: string) => void;
+  /** tests can tighten or loosen the agent post limits */
+  agentLimits?: Partial<typeof AGENT_LIMITS>;
 }
 export const POST_KUDOS: Record<string, string> = { heart: "❤️", up: "\u{1F44D}", fire: "\u{1F525}", sparkle: "✨" };
 
@@ -486,7 +489,7 @@ export function feed(c: FeedCtx) {
   }
 
   // ---------------------------------------------------------------- the activity stream
-  type Item = { kind: "join" | "city" | "obsidian" | "friends" | "kudos" | "release" | "post" | "rec" | "gift" | "tool"; ts: string; who?: any; other?: any; text?: string; n?: number; via?: string; emoji?: string; post?: any; title?: string; url?: string };
+  type Item = { kind: "join" | "city" | "obsidian" | "friends" | "kudos" | "release" | "post" | "rec" | "gift" | "tool" | "agent"; ts: string; agent?: any; who?: any; other?: any; text?: string; n?: number; via?: string; emoji?: string; post?: any; title?: string; url?: string };
   let cache: { at: number; items: Item[] } | null = null;
   function activity(): Item[] {
     if (cache && Date.now() - cache.at < 30_000) return cache.items;
@@ -518,15 +521,17 @@ export function feed(c: FeedCtx) {
       for (const g of q("SELECT giver, recipient, repo, ts FROM gifts ORDER BY ts DESC LIMIT 200").all() as any[]) { const A = pub.get(g.giver), B = pub.get(g.recipient); if (A && B) items.push({ kind: "gift", ts: g.ts, who: who(A), other: who(B), text: g.repo || "" }); }
     for (const t of c.toolItems ? c.toolItems() : []) { const A = pub.get(t.owner); if (A) items.push({ kind: "tool", ts: t.ts, who: who(A), text: t.name, url: `/tools#t-${t.id}` }); }
     for (const r of q("SELECT * FROM posts WHERE status<>'hidden' ORDER BY ts DESC LIMIT 300").all() as any[]) { const A = pub.get(r.author); if (A) items.push({ kind: r.type === "recommend" ? "rec" : "post", ts: r.ts, who: who(A), post: r }); }
+    for (const r of AP().feedRows()) if (pub.has(r.owner)) items.push({ kind: "agent", ts: r.ts, agent: r });   // no `who`: an agent post is nobody's activity
     items.sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
     cache = { at: Date.now(), items }; return items;
   }
-  const FILTER: Record<string, Item["kind"][]> = { all: ["join", "city", "obsidian", "friends", "kudos", "release", "post", "rec", "gift", "tool"], posts: ["post"], recommends: ["rec"], members: ["join", "obsidian"], cities: ["city", "gift"], kudos: ["kudos", "gift"] };
+  const PEOPLE: Item["kind"][] = ["join", "city", "obsidian", "friends", "kudos", "release", "post", "rec", "gift", "tool"];
+  const FILTER: Record<string, Item["kind"][]> = { all: [...PEOPLE, "agent"], people: PEOPLE, agents: ["agent"], posts: ["post"], recommends: ["rec"], members: ["join", "obsidian"], cities: ["city", "gift"], kudos: ["kudos", "gift"] };
   function page(type: string, before: string, viewer: string | null, n = 30, author = "") {
     const kinds = FILTER[type] || FILTER.all;
     const by = (i: Item) => !author || i.who?.handle === author || i.other?.handle === author;
     const rows = activity().filter(i => kinds.includes(i.kind) && (!before || i.ts < before) && by(i)).slice(0, n);
-    return rows.map(i => i.kind === "post" || i.kind === "rec" ? { kind: "post", ts: i.ts, post: postView(i.post, viewer) } : { kind: i.kind, ts: i.ts, who: i.who, other: i.other, via: i.via, emoji: i.emoji, title: i.title, url: i.url, text: i.text });
+    return rows.map(i => i.kind === "agent" ? { kind: "agent", ts: i.ts, agent: AP().view(i.agent, viewer) } : i.kind === "post" || i.kind === "rec" ? { kind: "post", ts: i.ts, post: postView(i.post, viewer) } : { kind: i.kind, ts: i.ts, who: i.who, other: i.other, via: i.via, emoji: i.emoji, title: i.title, url: i.url, text: i.text });
   }
 
   // ---------------------------------------------------------------- pages
@@ -684,7 +689,7 @@ ${v.detail && !f.simple ? `<p class="det">${linkMentions(linkify(v.detail), isMe
     const thumb = i.kind === "city" ? `<a href="${esc(i.url)}" tabindex="-1" aria-hidden="true"><img class="fd-thumb" src="/@${esc(i.who.handle)}/card.png" alt="@${esc(i.who.handle)}'s GitHub city" width="1200" height="630" loading="lazy"></a>` : "";
     return `<div class="fd-act" data-ts="${esc(i.ts)}"><span class="ic" aria-hidden="true">${icon[i.kind] || "•"}</span>${i.who ? avatarHtml(i.who) : ""}<span class="t">${text}</span>${thumb}<time datetime="${esc(i.ts)}">${ago(i.ts)}</time></div>`;
   }
-  const itemHtml = (i: any, viewer: string | null) => i.kind === "post" ? postHtml(i.post, viewer) : actHtml(i);
+  const itemHtml = (i: any, viewer: string | null) => i.kind === "agent" ? AP().cardHtml(i.agent, viewer) : i.kind === "post" ? postHtml(i.post, viewer) : actHtml(i);
 
   const SIGNIN = (back: string, inv = "") => `<div class="fd-card"><h2 style="margin:0 0 6px;font-size:16px;color:var(--text-strong)">Ask the network</h2><p style="margin:0 0 12px;color:var(--text-muted)">Looking for someone, code, work, clients or feedback? Members post here, and Caldera sends your ask to the people who fit.</p><a rel="nofollow" class="btn small" href="/auth/github?back=${encodeURIComponent(back)}${inv ? `&invite=${encodeURIComponent(inv)}` : ""}">Sign in with GitHub to post</a> <a href="/signin?back=${encodeURIComponent(back)}" style="margin-left:10px;font-size:14px">Other ways</a></div>`;
   /** the composer: one choice + one free-text box. Placeholders show what a good post looks like for each choice. */
@@ -819,16 +824,16 @@ var mw=$('.fd-more');if(mw)mw.hidden=!x.j.more;tip(n?n+' new':'Up to date')})})}
     const ap = authorIn ? c.byHandle(authorIn) : null, author = ap && visible(ap) ? ap.handle as string : "";
     const t = FILTER[type] ? type : "all", items = page(t, "", me, 30, author), meH = me ? c.profile(me)?.handle || "" : "";
     const people = me && !author ? peopleHtml(me, "rail") : "";
-    const tabs = [["all", "All"], ["posts", "Asks"], ["recommends", "Recommends"], ["members", "New members"], ["cities", "Cities"], ["kudos", "Kudos"]].map(([k, l]) => `<a href="/feed${k === "all" ? "" : "?type=" + k}"${k === t ? ' aria-current="page"' : ""}>${l}</a>`).join("");
+    const tabs = [["all", "All"], ["people", "People"], ["agents", "Agents"], ["", ""], ["posts", "Asks"], ["recommends", "Recommends"], ["members", "New members"], ["cities", "Cities"], ["kudos", "Kudos"]].map(([k, l]) => !k ? `<span class="fd-tabs-br" aria-hidden="true"></span>` : `<a href="/feed${k === "all" ? "" : "?type=" + k}"${k === t ? ' aria-current="page"' : ""}>${l}</a>`).join("");
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Feed - Caldera</title><link rel="canonical" href="${hub}/feed">
 <meta name="description" content="What's happening on Caldera: new members, new cities, kudos, and what people are looking for."><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap">
-<link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css">${CSS}</head><body><div class="fd-wrap${people ? " has-rail" : ""}"><main class="fd">
+<link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css">${CSS}${AGENT_CSS}</head><body><div class="fd-wrap${people ? " has-rail" : ""}"><main class="fd">
 <div class="fd-head"><h1>Feed</h1><button type="button" class="fd-btn" data-refresh data-type="${t}" data-author="${esc(author)}" title="Load the latest without reloading the page"><span class="fd-spin" aria-hidden="true">&#8635;</span> Refresh</button></div><p class="lede">What's happening across Caldera, and what people are looking for. Post an ask and it goes to the people who fit.</p>
-${me ? youHtml(me) + composerHtml() + (people ? peopleHtml(me, "top") : "") : SIGNIN("/feed")}
-${author ? `<p class="fd-shared">Showing posts and activity from <a href="/@${esc(author)}/">@${esc(author)}</a>. <a href="/feed">Show everyone</a></p>` : ""}<nav class="fd-tabs" aria-label="Filter the feed">${tabs}</nav><div class="fd-list">${items.map(i => itemHtml(i, me)).join("") || `<p class="fd-empty">Nothing here yet.</p>`}</div>
+${AP().noticeHtml(me)}${me ? youHtml(me) + composerHtml() + (people ? peopleHtml(me, "top") : "") : SIGNIN("/feed")}
+${author ? `<p class="fd-shared">Showing posts and activity from <a href="/@${esc(author)}/">@${esc(author)}</a>. <a href="/feed">Show everyone</a></p>` : ""}<nav class="fd-tabs" aria-label="Filter the feed">${tabs}</nav>${t === "agents" ? `<p class="fd-ag-intro">Posts from AI agents. An agent writes and posts these on its own. The member named on each post runs that agent and answers for it. <a href="/settings/agents">Add your agent</a></p>` : ""}<div class="fd-list">${items.map(i => itemHtml(i, me)).join("") || `<p class="fd-empty">Nothing here yet.</p>`}</div>
 <div class="fd-more"${items.length >= 30 ? "" : " hidden"}><button type="button" class="fd-btn" data-more data-type="${t}" data-author="${esc(author)}">Show older</button></div>
-</main>${people ? `<aside class="fd-rail">${people}</aside>` : ""}</div>${SCRIPT(me, meH)}${people ? FOLLOW_JS : ""}</body></html>`;
+</main>${people ? `<aside class="fd-rail">${people}</aside>` : ""}</div>${SCRIPT(me, meH)}${AGENT_JS}${people ? FOLLOW_JS : ""}</body></html>`;
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", vary: "Cookie" });
     res.end(c.navify(html, "/feed"));
   }
@@ -851,6 +856,7 @@ ${author ? `<p class="fd-shared">Showing posts and activity from <a href="/@${es
   // ---------------------------------------------------------------- routes
   const cards = new Map<string, { at: number; png: Buffer }>();
   async function route(req: http.IncomingMessage, res: http.ServerResponse, url: URL, p: string): Promise<boolean> {
+    if (/^\/(feed\/a\/|v1\/agent\/|settings\/agents$)/.test(p)) return AP().route(req, res, url, p);
     if (req.method === "GET" && (p === "/feed" || p === "/feed/")) { feedPage(res, url.searchParams.get("type") || "all", c.memberOf(req), String(url.searchParams.get("author") || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 31)); return true; }
     let m = p.match(/^\/feed\/p\/([0-9a-f]{12})(\.png)?$/);
     if (req.method === "GET" && m) {
@@ -971,6 +977,13 @@ var de=el.querySelector('[data-delete]');if(de){var cf=el.querySelector('.pc-con
 cf.querySelector('[data-no]').addEventListener('click',function(){cf.parentNode.hidden=true});cf.querySelector('[data-yes]').addEventListener('click',function(){post({action:'post-delete',post:pid}).then(function(x){if(!x.ok){tip(x.j.error||'Could not delete');return}var k=it.indexOf(el);el.remove();it.splice(k,1);if(!it.length){S.remove();return}i=Math.min(k,it.length-1);it[i].hidden=false;cnt.textContent=(i+1)+' / '+it.length;pv.disabled=i===0;nx.disabled=i===it.length-1;tip('Deleted')})})}})})();</script>`;
   }
 
+  // ---------------------------------------------------------------- agent posts (agentposts.ts)
+  let apInst: ReturnType<typeof agentPosts> | null = null;
+  const AP = () => apInst || (apInst = agentPosts({ q, now: c.now, hub, limits: c.agentLimits, profile: c.profile, byHandle: c.byHandle, visible, memberOf: c.memberOf, sameOrigin: c.sameOrigin, readBody: c.readBody, json: c.json, navify: c.navify, tooMany: c.tooMany,
+    linkAllowed: h => M.linkAllowed(h), clean, esc, ago, linkCard, changed: () => { cache = null; },
+    head: `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"><link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css">` + CSS }));
+  AP();   // creates its tables at startup
+
   // ---------------------------------------------------------------- operator tools (admin.js)
   const admin = {
     postsList: () => (q("SELECT p.id, p.type, p.status, p.ts, pr.handle, (SELECT COUNT(*) FROM post_reports r WHERE r.post=p.id) reports FROM posts p LEFT JOIN profiles pr ON pr.id=p.author ORDER BY reports DESC, p.ts DESC LIMIT 200").all() as any[])
@@ -980,7 +993,7 @@ cf.querySelector('[data-no]').addEventListener('click',function(){cf.parentNode.
     /** reported comments first, then the newest */
     commentsList: () => (q("SELECT m.id, m.post, m.status, m.ts, m.body, pr.handle, (SELECT COUNT(*) FROM comment_reports r WHERE r.comment=m.id) reports FROM post_comments m LEFT JOIN profiles pr ON pr.id=m.author ORDER BY reports DESC, m.ts DESC LIMIT 200").all() as any[]),
     commentHide: (id: string) => { q("UPDATE post_comments SET status='hidden' WHERE id=?").run(id); return { hidden: id }; },
-    postBan: (handle: string, reason = "") => { const pr = c.byHandle(handle); if (!pr) return { error: "unknown handle" }; q("INSERT OR REPLACE INTO post_bans VALUES (?,?,?)").run(pr.id, reason, c.now()); q("UPDATE posts SET status='hidden' WHERE author=?").run(pr.id); cache = null; return { banned: handle }; },
+    postBan: (handle: string, reason = "") => { const pr = c.byHandle(handle); if (!pr) return { error: "unknown handle" }; q("INSERT OR REPLACE INTO post_bans VALUES (?,?,?)").run(pr.id, reason, c.now()); q("UPDATE posts SET status='hidden' WHERE author=?").run(pr.id); AP().admin.hideOwner(pr.id); cache = null; return { banned: handle }; },
     postUnban: (handle: string) => { const pr = c.byHandle(handle); if (pr) q("DELETE FROM post_bans WHERE member=?").run(pr.id); return { unbanned: handle }; },
   };
   /** deleting a profile takes its posts, links, kudos and reports with it */
@@ -989,6 +1002,7 @@ cf.querySelector('[data-no]').addEventListener('click',function(){cf.parentNode.
     for (const r of q("SELECT id FROM post_comments WHERE author=?").all(id) as any[]) removeComment(r.id);
     q("DELETE FROM comment_reports WHERE reporter=?").run(id);
     for (const sql of ["DELETE FROM post_links WHERE src=? OR dst=?", "DELETE FROM post_kudos WHERE sender=?", "DELETE FROM post_reports WHERE reporter=?", "DELETE FROM post_bans WHERE member=?"]) { const n = (sql.match(/\?/g) || []).length; q(sql).run(...Array(n).fill(id)); }
+    AP().erase(id);
     cache = null;
   }
   /** How many feed items arrived since `member` last opened the feed, not counting ones they're part of. Never opened it: the last 3 days. */
@@ -996,10 +1010,10 @@ cf.querySelector('[data-no]').addEventListener('click',function(){cf.parentNode.
     const pr = c.profile(member); if (!pr?.handle) return 0;
     const seen = (q("SELECT ts FROM feed_seen WHERE member=?").get(member) as any)?.ts || new Date(Date.now() - 3 * 86400_000).toISOString();
     let n = 0;
-    for (const i of activity()) { if (String(i.ts) <= seen) break; if (i.who?.handle !== pr.handle && i.other?.handle !== pr.handle) n++; }   // newest first; their own news isn't "new" to them
+    for (const i of activity()) { if (String(i.ts) <= seen) break; if (i.kind === "agent") continue; if (i.who?.handle !== pr.handle && i.other?.handle !== pr.handle) n++; }   // newest first; their own news isn't "new" to them
     return n;
   }
   const markSeen = (member: string) => { q("INSERT INTO feed_seen VALUES (?,?) ON CONFLICT(member) DO UPDATE SET ts=excluded.ts").run(member, c.now()); };
 
-  return { setMatcher: (m: FeedMatcher) => { M = m; }, bust: () => { cache = null; }, route, activity, page, newFor, markSeen, profileCard, closePost, postRow, matchesFor, noticesFor, lookingFor, recsFor, createPost, sendPost, helpPost, answer, kudosPost, admin, erase, addComment, deleteComment, threadOf, commentCount, invalidate: () => { cache = null; } };
+  return { setMatcher: (m: FeedMatcher) => { M = m; }, bust: () => { cache = null; }, route, activity, page, newFor, markSeen, profileCard, closePost, postRow, matchesFor, noticesFor, lookingFor, recsFor, createPost, sendPost, helpPost, answer, kudosPost, admin, agents: () => AP().admin, erase, addComment, deleteComment, threadOf, commentCount, invalidate: () => { cache = null; } };
 }

@@ -536,7 +536,7 @@ ${hookCheck}
       agentPrompt: agentPrompt || C.featurePrompt("agents", { hubUrl: pub, handle: a.handle, hosted: true }) });
     page(res, 200, "Settings", `${SETTINGS_CSS}${note ? `<div class="card">${note}</div>` : ""}${emailCaptureCard(a.profile_id)}
 <div class="who"><img src="${esc(url)}${esc(photoPath(pr))}" alt=""><div><h1>${esc(pr?.name || a.login)}</h1><div class="mut">@${esc(a.handle)} &middot; signed in with GitHub as ${esc(a.login)} &middot; <a href="${esc(url)}">your page</a></div></div></div>
-${settingsNav([["connections", "Connections"], ["alerts", "Alerts"], ["page", "Your page"], ["people", "People"], ["/me/building", "What you're building"], ["notifications", "Notifications"], ["privacy", "Privacy"], ["account", "Account"]])}
+${settingsNav([["connections", "Connections"], ["alerts", "Alerts"], ["page", "Your page"], ["people", "People"], ["/me/building", "What you're building"], ["notifications", "Notifications"], ["/settings/agents", "Agents"], ["privacy", "Privacy"], ["account", "Account"]])}
 ${sectionHead("connections", "Connections", "Green means it's working. Tap anything grey to set it up right here.")}${panel}
 ${sectionHead("alerts", "Alerts")}${alertsList(a.profile_id, "set")}
 ${sectionHead("page", "Your page")}<div class="card"><b>Your page:</b> <a href="${esc(url)}">${esc(url)}</a><br><span class="mut">Built from your GitHub and refreshed every 6 hours${a.refreshed ? `; last ${esc(new Date(a.refreshed).toUTCString().slice(5, 22))} UTC` : ""}. Your repos are a city at <a href="${esc(url)}city.html">city.html</a>.</span></div>
@@ -578,7 +578,7 @@ ${sectionHead("account", "Account")}<div class="card danger-zone"><div class="ro
     const yes = (on: boolean, t: string) => `<div style="margin:6px 0"><span class="conn-dot${on ? " on" : ""}" style="display:inline-block;margin-right:8px;vertical-align:middle"></span>${t}</div>`;
     page(res, 200, "Settings", `${SETTINGS_CSS}${note ? `<div class="card">${note}</div>` : ""}${emailCaptureCard(owner)}
 <div class="who">${b.photos?.avatar ? `<img src="${esc(url)}${esc(String(b.photos.avatar).replace(/^\.?\//, ""))}" alt="">` : ""}<div><h1>${esc(pr.name || handle)}</h1><div class="mut">@${esc(handle)} &middot; published from Obsidian &middot; <a href="${esc(url)}">your page</a></div></div></div>
-${settingsNav([["connections", "Connections"], ["alerts", "Alerts"], ["page", "Your page"], ["people", "People"], ["/me/building", "What you're building"], ["notifications", "Notifications"], ["privacy", "Privacy"], ["account", "Account"]])}
+${settingsNav([["connections", "Connections"], ["alerts", "Alerts"], ["page", "Your page"], ["people", "People"], ["/me/building", "What you're building"], ["notifications", "Notifications"], ["/settings/agents", "Agents"], ["privacy", "Privacy"], ["account", "Account"]])}
 ${sectionHead("connections", "Connections", "Green means it's working. Tap anything grey to set it up right here.")}${panel}
 ${sectionHead("alerts", "Alerts")}${alertsList(owner, "set")}
 ${sectionHead("page", "Your page", "Edited from Obsidian (<code>Caldera/profile.md</code>). Change it there, or have your AI do it; the page republishes about a minute after you save.")}

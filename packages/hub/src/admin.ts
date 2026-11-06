@@ -11,6 +11,9 @@
  *   ... gh-remove | gh-restore <login>  take a non-member's caldera.social/gh/<login> preview down (removal request) or back
  *   ... stuck-claim [--send] [backup.sqlite ...]  unconfirmed sign-ups: counts, or email each a claim link once
  *   ... reconnect-stats            counts only: members whose GitHub sign-in died, and how many have an address to email
+ *   ... agent-list | agent-hide|agent-unhide|agent-delete <post-id>   agent posts, reported first
+ *   ... agent-token-list | agent-token-revoke <token-id>
+ *   ... agent-token-add <owner-handle> <agent-name> <sha256-of-token>   register a token made elsewhere; the secret never comes here
  * Alerts, the GitHub circle job and other operator commands live in caldera.social's private tools.
  */
 import fs from "node:fs";
@@ -42,6 +45,11 @@ try {
     out(await (hub as any).stuckClaim({ send, paths, skipFrom: "2026-10-28", skipTo: "2026-10-30" })); process.exit(0);
   }
   if (cmd === "reconnect-stats") { out(hub.reconnect.stats()); process.exit(0); }
+  if (cmd.startsWith("agent-")) {
+    const fn = a[cmd]; if (!fn) usage();
+    out(fn(...(cmd === "agent-token-add" ? [clean(argv[1] || ""), argv[2] || "", argv[3] || ""] : argv.slice(1))));
+    process.exit(0);
+  }
   if (cmd === "merge") {
     const [, from, into, ...why] = argv;
     if (!from || !into) usage();
