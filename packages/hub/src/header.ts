@@ -64,6 +64,7 @@ export const ICON: Record<string, string> = {
   menu: `<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>`,
   chevron: `<path d="m6 9 6 6 6-6"/>`,
   message: `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>`,
+  feedback: `<path d="M4 10v4h3l6 4V6l-6 4z"/><path d="M16.5 9.5a3.5 3.5 0 0 1 0 5"/>`,   // megaphone: the rail's Feedback must not look like Messages
   ext: `<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>`,
   pin: `<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>`,
 };
@@ -142,6 +143,8 @@ body:has(.ms.is-thread) .ch-bn{display:none}body:has(.ms.is-thread){padding-bott
    item pitch 50pt (41pt circles, 9pt gap, 44pt+ hit area), bottom-anchored and growing upward, the top 272pt left empty for the system status, scrolls when short. */
 html:is(.ch-duo,.ch-duof){--duo-status-reserve:272px;--duo-col-right:48px;--duo-col-w:47px;--duo-rail-gap:13px;--dr-r:calc(var(--duo-col-right) - var(--duo-col-w) / 2);--dr-pad:calc(var(--duo-col-right) + var(--duo-col-w) / 2 + var(--duo-rail-gap));--dr-padl:0px}
 html.ch-duol{--dr-r:max(34px,calc(env(safe-area-inset-right,0px) + 2px));--dr-pad:calc(var(--dr-r) + var(--duo-col-w) + var(--duo-rail-gap));--dr-padl:max(32px,env(safe-area-inset-left,0px))}
+/* Mike 11-06: on his folded Duo the Home Screen page is 382pt wide inside the 466pt screen with no safe inset: iOS keeps the status strip outside the page, so it must not be reserved twice. The capsule then sits 4pt from the page's real right edge and the content stops 13pt before it. */
+html.ch-duof.ch-duo-outer{--dr-r:4px;--dr-pad:calc(4px + var(--duo-col-w) + var(--duo-rail-gap))}
 html:is(.ch-duo,.ch-duof) body{padding-right:var(--dr-pad)!important;padding-left:var(--dr-padl)!important;padding-bottom:0!important;box-sizing:border-box}
 html:is(.ch-duo,.ch-duof) .ch-nav,html:is(.ch-duo,.ch-duof) .ch-menu{display:none!important}
 html:is(.ch-duo,.ch-duof) .ch-right{margin-left:auto}
@@ -165,7 +168,8 @@ html:is(.ch-duo,.ch-duof) .ch-bn .ch-badge{top:2px;right:2px}
 const DUO_JS = `<script data-duo>(function(){var r=document.documentElement;if(r.dataset.chDuo)return;r.dataset.chDuo='1';function f(){var c=false;try{c=matchMedia('(pointer:coarse)').matches}catch(e){}
 var q=location.search,sw=Math.min(screen.width,screen.height),sh=Math.max(screen.width,screen.height);
 var open=/[?&]duo=1/.test(q)||(c&&sw>=600&&sw<744&&sh>=880&&sh<1100),fold=!open&&(/[?&]duof=1/.test(q)||(c&&sw>=450&&sw<=500&&sh>=640&&sh<=720));
-r.classList.toggle('ch-duo',open);r.classList.toggle('ch-duof',fold);r.classList.toggle('ch-duol',open&&innerWidth>innerHeight)}f();addEventListener('resize',f)})()</script>`;
+r.classList.toggle('ch-duo',open);r.classList.toggle('ch-duof',fold);var ri=0;try{var pr=document.createElement('div');pr.style.cssText='position:fixed;left:-9px;top:0;width:1px;height:1px;visibility:hidden;padding-right:env(safe-area-inset-right,0px)';(document.body||r).appendChild(pr);ri=parseFloat(getComputedStyle(pr).paddingRight)||0;pr.remove()}catch(e){}
+r.classList.toggle('ch-duo-outer',!!(fold&&((c&&sw>=450&&sw<=500&&sh>=640&&sh<=720&&sw-innerWidth>=60&&ri<10)||/[?&]duoout=1/.test(q))));r.classList.toggle('ch-duol',open&&innerWidth>innerHeight)}f();addEventListener('resize',f)})()</script>`;
 
 /** Live unread counts for the signed-in header: badges, the messages strip, "(3)" in the tab title and a dot on the
  *  favicon, refreshed every 30s while the tab is visible and right away when it comes back. On the hub's own pages the
@@ -205,7 +209,7 @@ export function appHeader(o: HeaderOpts): string {
     + `</div></details>`;
   // phones: a bottom tab bar instead of the hamburger (thumb-reachable, big targets); hidden above 760px
   const tab = (key: string, label: string, href: string, inner: string, on: boolean, cls = "") => `<a${cls ? ` class="${cls}"` : ""} href="${e(href)}"${on ? ' aria-current="page"' : ""}><span class="ch-bi">${inner}</span><span class="ch-bl">${label}</span></a>`;
-  const tabs = (list: string[]) => `${DUO_JS}<nav class="ch-bn" id="drRail" data-strip-rail aria-label="Main" style="grid-template-columns:repeat(${list.length},1fr)">${list.join("")}<a class="ch-fbk" id="chFbk" href="#feedback"><span class="ch-bi">${icon("message", 22)}</span><span class="ch-bl">Feedback</span></a></nav>`;
+  const tabs = (list: string[]) => `${DUO_JS}<nav class="ch-bn" id="drRail" data-strip-rail aria-label="Main" style="grid-template-columns:repeat(${list.length},1fr)">${list.join("")}<a class="ch-fbk" id="chFbk" href="#feedback"><span class="ch-bi">${icon("feedback", 22)}</span><span class="ch-bl">Feedback</span></a></nav>`;
   const base3 = [tab("feed", "Feed", `${hub}/feed`, icon("feed", 22) + fbadge, cur === "feed", "ch-bn-feed"), tab("people", "People", `${hub}/people`, icon("people", 22), cur === "people"), tab("world", "World", `${hub}/world`, icon("world", 22), cur === "world")];
   if (!v) {
     const signin = o.signinHref || `${hub}/signin`, join = o.joinHref || `${hub}/join?tp=header`;

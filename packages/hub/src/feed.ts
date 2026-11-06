@@ -595,7 +595,9 @@ export function feed(c: FeedCtx) {
 .fd-row2{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:6px 0 4px}.fd-row2 .fd-hint{font-size:12.5px;color:var(--accent-text)}
 .fd-postbtn{min-height:38px;padding:0 18px;transition:transform .15s}.fd-postbtn:hover{transform:translateY(-1px)}
 .fd-burst{position:fixed;z-index:70;pointer-events:none;font-size:20px;animation:fdburst .9s ease-out forwards}@keyframes fdburst{to{transform:translate(var(--dx),var(--dy)) scale(1.2);opacity:0}}
-.fd-big button span{white-space:nowrap}@media (max-width:420px){.fd-big{gap:8px}.fd-big button{font-size:14px;gap:6px;padding:0 8px}.fd-big button b{font-size:18px}}
+.fd-big{grid-template-columns:repeat(2,minmax(0,1fr))}.fd-big button{min-width:0}.fd-big button span{white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}@media (max-width:420px){.fd-big{gap:8px}.fd-big button{font-size:13px;gap:5px;padding:0 6px}.fd-big button b{font-size:18px}}
+html.ch-duof .fd-big{grid-template-columns:1fr}   /* folded Duo: the two post buttons stack, each with its full label */
+@media (max-width:520px){.fd-m{flex-wrap:wrap}.fd-m .t{flex:1 1 100%}.fd-m .acts{display:flex;gap:8px}}   /* narrow: Accept / Not now go under the text, not in a sliver beside it */
 @media (prefers-reduced-motion:reduce){.fd-big button,.fd-chips2 button,.fd-postbtn{transition:none}.fd-big button:hover,.fd-chips2 button:hover{transform:none}.fd-pop1{animation:none}}
 .fd-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.fd-spin{display:inline-block;font-size:15px}.fd-btn.busy .fd-spin{animation:fdspin .8s linear infinite}@keyframes fdspin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.fd-btn.busy .fd-spin{animation:none}}
