@@ -13,6 +13,8 @@
  *   ... reconnect-stats            counts only: members whose GitHub sign-in died, and how many have an address to email
  *   ... agent-list | agent-hide|agent-unhide|agent-delete <post-id>   agent posts, reported first
  *   ... agent-token-list | agent-token-revoke <token-id>
+ *   ... growth-run [--polls N] [--backfills N] | growth-run @handle [--backfill]   the World's growth views: one tick now
+ *   ... growth-drops                    today's daily drop manifest
  *   ... land-run [--dry] [handle]   the World's Expansion view: fetch merged PRs and stars gained now, store tonight's land
  *   ... agent-token-add <owner-handle> <agent-name> <sha256-of-token>   register a token made elsewhere; the secret never comes here
  * Alerts, the GitHub circle job and other operator commands live in caldera.social's private tools.
@@ -46,6 +48,15 @@ try {
     out(await (hub as any).stuckClaim({ send, paths, skipFrom: "2026-10-28", skipTo: "2026-10-30" })); process.exit(0);
   }
   if (cmd === "reconnect-stats") { out(hub.reconnect.stats()); process.exit(0); }
+  if (cmd === "growth-run") {   // the World's growth views: one tick now (poll GitHub, re-run the simulation); --polls N --backfills N; or one member: growth-run @handle [--backfill]
+    const g = a.growth; if (!g) { out({ error: "growth is off (CALDERA_GROWTH=0)" }); process.exit(1); }
+    const who = argv.find((x, i) => i > 0 && x.startsWith("@"))?.slice(1), num = (f: string) => { const i = argv.indexOf(f); return i > 0 ? Number(argv[i + 1]) : undefined; };
+    if (who) { const gm = (g as any); const list = a.growthMembers?.() || []; const mm = list.find((x: any) => x.handle === who) || { id: null, login: null };
+      if (!mm.login) { out({ error: "no GitHub login for @" + who }); process.exit(1); }
+      out(await gm.poller.poll({ id: mm.id, login: mm.login }, { backfill: argv.includes("--backfill") })); gm.recompute(); process.exit(0); }
+    await g.tick({ maxPolls: num("--polls"), maxBackfills: num("--backfills") }); const s = g.state("week"); out({ members: s.totals.members, week: s.totals }); process.exit(0);
+  }
+  if (cmd === "growth-drops") { const g = a.growth; out(g ? g.drops() : { error: "growth is off" }); process.exit(0); }
   if (cmd === "land-run") { out(await a.land({ dry: argv.includes("--dry"), only: argv.find((x, i) => i > 0 && !x.startsWith("--"))?.replace(/^@/, "") })); process.exit(0); }   // the World's Expansion view: fetch tonight's public-GitHub numbers now
   if (cmd.startsWith("agent-")) {
     const fn = a[cmd]; if (!fn) usage();

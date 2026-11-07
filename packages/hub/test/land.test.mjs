@@ -126,9 +126,8 @@ test("the World serves the Expansion view: toggle on the page, land JSON from th
     assert.equal(r.status, 200);
 
     const page = await (await fetch(base + "/world")).text();
-    assert.ok(page.includes('data-wview="current"') && page.includes('data-wview="expansion"'), "Current | Expansion toggle");
-    assert.ok(page.includes('id="land"') && page.includes("caldera.worldView"), "the land stage and the remembered choice");
-    assert.ok(/<button type="button" data-wview="current" aria-pressed="true">/.test(page), "Current is the default");
+    assert.ok(!page.includes('data-wview="expansion"') && !page.includes('id="land"'), "the Expansion toggle migrated into the Now | Day | Week | Month views (growth.test.mjs)");
+    assert.ok(/<button type="button" data-gview="now" aria-pressed="true">/.test(page), "Now (the Current map) is the default");
 
     let land = await (await fetch(base + "/v1/world/land")).json();
     assert.equal(calls.length, 0, "page loads never call GitHub");
