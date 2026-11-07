@@ -40,12 +40,13 @@ import { mapPanel } from "./mapprompt";
 import { ghPreview, GH_SITEMAP } from "./ghpreview";
 import { liveGen, liveClient } from "./livegen";
 export { cleanText, renderText } from "./messages";
-import { emailer, type Mail, type You } from "./email";
+import { emailer, POSTAL, type Mail, type You } from "./email";
 export { tagLinks } from "./email";
 import { weatherService, dayStats, ownerSetup, extrasScript } from "./cityextra";
 import { closenessOrder, buildWorld, foldLive, worldPage, type World, type WorldMemberIn } from "./world";
 import { buildLand, landJob, landStore, type LandIn, type LandWorld } from "./land";
 import { growthHub, type GrowthMember } from "./growthhub";
+import { battleHub } from "./battlehub";
 import { citySnapshot, applyPrivateMode, rewriteCityPage, upgradeCityScript, type CityData } from "../../../../caldera/packages/plugin/src/city";
 import { mentionSearch } from "./mentions.js";
 import { privateModes, scrubPrivateLive } from "./privatemode";
@@ -62,7 +63,7 @@ export interface HubOptions { dataDir: string; port?: number; publicUrl?: string
   /** Private owner address (e.g. behind `tailscale serve`): a second listener on 127.0.0.1:privatePort that serves the
    *  owner's private view only when the proxy-set Tailscale-User-Login header maps to that profile's handle. */
   privatePort?: number; privateUrl?: string;
-  /** Handle of the founder: every new profile starts out as their friend (MySpace's Tom). */ founder?: string; tailnetOwners?: Record<string, string>; githubFetch?: typeof fetch; /** tests: stand-ins for DNS and fetching listed apps and websites */ listingsLookup?: Lookup; listingsGet?: typeof safeGet; /** run the shared-repo friendship job every 6 hours (the server binary turns it on; tests call it directly) */ repoJob?: boolean; /** read members' public GitHub signals into "what they're building" tags every 12 hours */ tagJob?: boolean; /** the World's Expansion view: nightly public-GitHub numbers (merged PRs, stars gained) */ landJob?: boolean; /** the World's Day/Week/Month growth views: false turns them off (CALDERA_GROWTH=0); growthJob runs the 15-minute tick, growthPoll lets it call GitHub */ growth?: boolean; growthJob?: boolean; growthPoll?: boolean; /** OpenRouter key for the tag normalising pass (rules only without it) */ llmKey?: string; onEvent?: (e: { type: "signup" | "delete"; handle?: string; name?: string; kind?: string; total: number }) => void; limits?: { perMinute?: number; writesPerMinute?: number; newProfilesPerDay?: number; newProfilesPerMinute?: number };
+  /** Handle of the founder: every new profile starts out as their friend (MySpace's Tom). */ founder?: string; tailnetOwners?: Record<string, string>; githubFetch?: typeof fetch; /** tests: stand-ins for DNS and fetching listed apps and websites */ listingsLookup?: Lookup; listingsGet?: typeof safeGet; /** run the shared-repo friendship job every 6 hours (the server binary turns it on; tests call it directly) */ repoJob?: boolean; /** read members' public GitHub signals into "what they're building" tags every 12 hours */ tagJob?: boolean; /** the World's Expansion view: nightly public-GitHub numbers (merged PRs, stars gained) */ landJob?: boolean; /** the World's Day/Week/Month growth views: false turns them off (CALDERA_GROWTH=0); growthJob runs the 15-minute tick, growthPoll lets it call GitHub */ growth?: boolean; growthJob?: boolean; growthPoll?: boolean; /** the World's battles: false turns them off (CALDERA_BATTLE=0) */ battle?: boolean; /** OpenRouter key for the tag normalising pass (rules only without it) */ llmKey?: string; onEvent?: (e: { type: "signup" | "delete"; handle?: string; name?: string; kind?: string; total: number }) => void; limits?: { perMinute?: number; writesPerMinute?: number; newProfilesPerDay?: number; newProfilesPerMinute?: number };
   /** daily summary emails: Resend key (production) or a send hook (tests); schedule starts the daily job */
   email?: { resendKey?: string; send?: (m: Mail) => Promise<void>; schedule?: boolean; reconnect?: boolean;
     /** Growth Engine's learning API (arms, clicks, goals). Default: LEARN_URL or 127.0.0.1:4835 when mail really goes out (Resend);
@@ -1014,6 +1015,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     del("DELETE FROM gh_accounts WHERE profile_id=?", id); del("DELETE FROM gh_links WHERE profile_id=?", id);
     for (const t of ["land_gh", "land_side", "land_hist"]) del(`DELETE FROM ${t} WHERE profile=?`, id);   // the World's Expansion view
     GROWTH?.erase(id);   // the World's growth views
+    BATTLE?.erase(id);   // the World's battles
   }
 
   // ---------------------------------------------------------------- one person, one profile: merging duplicates
@@ -1632,6 +1634,17 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   const mail = emailer({ q, seal, unseal, hub: opts.publicUrl || "https://caldera.social", pepper: PRIV_KEY, send: opts.email?.send, resendKey: opts.email?.resendKey, learnUrl, digest: digestFor, network: networkFor, news: opts.email?.schedule ? () => newsToday(q) : undefined, rank: { active: d => ext.digestActive(d), subject: d => ext.digestSubject(d) } });
   const CODES = signinCodes(q, e => mail.hashOf(e));   // "Email me a code" (sign-in standard, 2026-10-29)
   if (opts.email?.schedule) mail.schedule();
+  // ---------------------------------------------------------------- the World's battles (battle.ts, battlehub.ts): opt-in, idle, overnight, on the growth tick
+  // Kill switch CALDERA_BATTLE=0 (no Battle view, no nights). The battle-report email sends only with CALDERA_BATTLE_EMAIL=1.
+  const BATTLE = !GROWTH || opts.battle === false || process.env.CALDERA_BATTLE === "0" ? null : battleHub({ q, hub: opts.publicUrl || "https://caldera.social", postal: POSTAL,
+    growth: GROWTH, members: growthMembers, memberOf: r => memberOf(r), sameOrigin: r => sameOrigin(r), readBody: r => readBody(r), json: (r, s, b) => json(r, s, b), page: (t, h) => mail.page(t, h),
+    emailOf: id => {
+      const ok = (e: string | null | undefined) => e && !q("SELECT 1 FROM email_suppress WHERE hash=?").get(mail.hashOf(e)) ? e : null;
+      const st = mail.status(id); if (st?.confirmed && ok(st.email)) return st.email;
+      try { const a = q("SELECT email_sealed FROM email_accounts WHERE profile_id=?").get(id) as any; if (a?.email_sealed) return ok(unseal(a.email_sealed)); } catch { /* no email sign-in */ }
+      return null;
+    },
+    send: m => mail.sendRaw(m), emailOn: () => process.env.CALDERA_BATTLE_EMAIL === "1" });
 
   const autoOff = (pr: any) => { const b = body(pr); return b.autoConnectGithub === false || b.autoConnectRepos === false; };
   const circleHooks: { joined?: (id: string) => void; signedIn?: (id: string) => void } = {};
@@ -1765,6 +1778,8 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   (admin as any).land = (o: { dry?: boolean; only?: string } = {}) => LANDJOB.run(o);
   if (opts.landJob) LANDJOB.schedule();
   (admin as any).growth = GROWTH;
+  (admin as any).battle = BATTLE;
+  (admin as any).seal = seal;   // tests and operator scripts
   (admin as any).growthMembers = growthMembers;
   if (GROWTH && opts.growthJob) GROWTH.schedule();
   if (opts.tagJob) B.schedule();
@@ -2414,13 +2429,15 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           return res.end(navify(groupPage({ slug: g[1], hub: opts.publicUrl || "https://caldera.social", members: groupMembers(g[1]) })));
         } }
       if (req.method === "GET" && p === "/v1/world") { res.setHeader("cache-control", "public, max-age=60"); const w = worldNow(); return json(res, 200, { at: w.at, members: w.members, links: w.links, city: w.city }); }
+      if (BATTLE && (p.startsWith("/v1/world/battle") || p === "/u/battle") && await BATTLE.route(req, res, p, url)) return;
       if (GROWTH && (p.startsWith("/v1/world/") || p === "/hooks/github") && await GROWTH.route(req, res, p, url)) return;
       if (req.method === "GET" && p === "/v1/world/land") { res.setHeader("cache-control", "public, max-age=120"); return json(res, 200, landNow()); }
       if (req.method === "GET" && p === "/v1/world/live") { res.setHeader("cache-control", "no-store"); return json(res, 200, worldLive(url.searchParams.get("since"))); }
       if (req.method === "GET" && (p === "/world" || p === "/world/")) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache",
           "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" });
-        return res.end(worldPage(worldNow(), { hub: opts.publicUrl || "https://caldera.social", nav: worldNav(), tools: TOOLS ? TOOLS.mapData() : [], growth: GROWTH ? (() => { try { return GROWTH.state("day"); } catch (e: any) { console.error("growth state", e?.message); return null; } })() : null }));
+        return res.end(worldPage(worldNow(), { hub: opts.publicUrl || "https://caldera.social", nav: worldNav(), tools: TOOLS ? TOOLS.mapData() : [], growth: GROWTH ? (() => { try { return GROWTH.state("day"); } catch (e: any) { console.error("growth state", e?.message); return null; } })() : null,
+          battle: BATTLE ? (() => { try { return BATTLE.state(); } catch (e: any) { console.error("battle state", e?.message); return null; } })() : null }));
       }
       if (req.method === "GET" && /^\/gh\/[A-Za-z0-9-]+\/?$/.test(p)) FUNNEL.track(req, "preview");
       if (req.method === "GET" && /^\/gh\/[A-Za-z0-9-]+\/career$/.test(p)) FUNNEL.track(req, "career");

@@ -144,6 +144,7 @@ export function growthHub(c: GrowthHubCtx) {
   }
   // ---------------------------------------------------------------- the tick
   let running = false, lastAi = -1;
+  const after: (() => void | Promise<void>)[] = [];
   async function tick(o: { maxPolls?: number; maxBackfills?: number } = {}) {
     if (running) return; running = true;
     try {
@@ -160,6 +161,7 @@ export function growthHub(c: GrowthHubCtx) {
       }
       recompute(c.members());
       drops();
+      for (const fn of after) { try { await fn(); } catch (e: any) { console.error("growth after-tick", e?.message); } }   // the battles ride this tick
     } finally { running = false; }
   }
   function schedule() {
@@ -193,5 +195,7 @@ export function growthHub(c: GrowthHubCtx) {
     if (req.method === "POST" && p === "/hooks/github") { await hook(req, res); return true; }
     return false;
   }
-  return { route, tick, schedule, recompute, state, drops, today, store: S, poller: POLL, erase: (id: string) => { S.erase(id); views.clear(); simAt = 0; } };
+  /** the simulation as it stands (fresh within 15 minutes), for the battles: they read it, never change it */
+  const sim = () => { fresh(); return { sims, events, ai: S.ai() }; };
+  return { route, tick, schedule, recompute, state, drops, today, store: S, poller: POLL, sim, onTick: (fn: () => void | Promise<void>) => { after.push(fn); }, erase: (id: string) => { S.erase(id); views.clear(); simAt = 0; } };
 }

@@ -231,7 +231,7 @@ export function emailer(ctx: EmailCtx) {
   // Shared mail guard (Growth Engine 2026-11-04): every Caldera email is checked on this box first. ok:false or regenerate
   // = not sent; no answer in 2 s = sign-in mail and the daily summary still go, the rest is held. MAILGUARD=off skips it.
   const KIND: Record<string, string> = { "signup-email": "auth", "signin-code": "auth", "signin-link": "auth", "publish-confirm": "auth", "email-message": "transactional", "email-message-request": "transactional",
-    "email-invite": "transactional", "email-reconnect": "marketing", "email-update-nudge": "marketing", "stuck-claim": "marketing" };
+    "email-invite": "transactional", "email-reconnect": "marketing", "email-update-nudge": "marketing", "stuck-claim": "marketing", "battle-report": "daily" };
   /** true, or the guard's check id = send it; false = don't */
   async function guardOk(m: Mail): Promise<boolean | number> {
     if (process.env.MAILGUARD === "off") return true;
@@ -639,5 +639,5 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
     if (!m.to || suppressed(m.to)) return false;
     await send({ to: m.to, subject: ascii(m.subject), html: shell(esc(m.title), m.html), text: ascii(/450 S Melrose/.test(m.text) ? m.text : `${m.text}\n\n--\nCaldera is run by ${POSTAL}. Privacy: ${hub}/privacy`), headers: m.headers, src: m.src }); return true;
   }
-  return { learnClick, learnGoal, learnPending, reconnectCompose, reconnectTo: (owner: string) => !!reconnectTo(owner), sendReconnect, note, subscribe, confirm, messageAlert, unsubToken, unsubscribe, status, runDigest, schedule, page, compose, isActive: (d: DigestData) => rank.active(d), hashOf, suggest, suggestion, promptFor, dismissPrompt, matches, hasConfirmed, sendSignin, sendInvite, inviteBlock, inviteUnsub, invitesToday: (inviter: string) => (q("SELECT COUNT(*) n FROM invites_sent WHERE inviter=? AND ts > ?").get(inviter, new Date(Date.now() - DAY).toISOString()) as any).n as number, inviteCap: INVITES_PER_DAY };
+  return { sendRaw: (m: Mail) => send(m), learnClick, learnGoal, learnPending, reconnectCompose, reconnectTo: (owner: string) => !!reconnectTo(owner), sendReconnect, note, subscribe, confirm, messageAlert, unsubToken, unsubscribe, status, runDigest, schedule, page, compose, isActive: (d: DigestData) => rank.active(d), hashOf, suggest, suggestion, promptFor, dismissPrompt, matches, hasConfirmed, sendSignin, sendInvite, inviteBlock, inviteUnsub, invitesToday: (inviter: string) => (q("SELECT COUNT(*) n FROM invites_sent WHERE inviter=? AND ts > ?").get(inviter, new Date(Date.now() - DAY).toISOString()) as any).n as number, inviteCap: INVITES_PER_DAY };
 }

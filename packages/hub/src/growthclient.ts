@@ -9,7 +9,7 @@
 export function growthClient() {
   'use strict';
   var G0 = window.CALDERA_GROWTH; if (!G0) return;
-  var KEY = 'caldera.worldView', VIEWS = ['now', 'day', 'week', 'month'], SPEEDS = { turtle: 20000, llama: 10000, cheetah: 5000 };
+  var KEY = 'caldera.worldView', VIEWS = window.CALDERA_BATTLE ? ['now', 'day', 'week', 'month', 'battle'] : ['now', 'day', 'week', 'month'], SPEEDS = { turtle: 20000, llama: 10000, cheetah: 5000 };
   var html = document.documentElement, bar = document.getElementById('g-bar'), stage = document.getElementById('stage');
   var btns = Array.prototype.slice.call(document.querySelectorAll('[data-gview]'));
   var cache = { day: { d: G0, at: Date.now() } }, cur = 'now', data = G0, playing = null;
@@ -40,14 +40,17 @@ export function growthClient() {
   function setView(v, save) {
     if (VIEWS.indexOf(v) < 0) v = 'now';
     stop(); cur = v;
-    html.classList.toggle('w-grow', v !== 'now');
+    var BU = window.CALDERA_BATTLE_UI;   // the Battle view (battleclient.ts): the current map with the battle layers on top
+    html.classList.toggle('w-grow', v !== 'now' && v !== 'battle');
     btns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-gview') === v)); });
-    if (bar) bar.hidden = v === 'now';
+    if (bar) bar.hidden = v === 'now' || v === 'battle';
+    if (BU && v !== 'battle') BU.hide();
     if (save) {
       try { localStorage.setItem(KEY, v); } catch (e) {}
       try { var u = new URL(location.href); if (v === 'now') u.searchParams.delete('view'); else u.searchParams.set('view', v); history.replaceState(history.state, '', u.pathname + u.search + u.hash); } catch (e) {}
     }
     if (v === 'now') { if (api()) api().view('now', cache.day.d); return; }
+    if (v === 'battle') { if (api()) api().view('now', cache.day.d); if (BU) BU.show(); return; }
     if (bar) bar.setAttribute('aria-busy', 'true');
     load(v).then(function (d) { if (cur !== v) return; data = d; if (api()) api().view(v, d); stats(d); })
       .catch(function () { setText('date', 'Could not load this view. Try again in a minute.'); })
@@ -112,7 +115,7 @@ export function growthClient() {
     if (!t) return;
     if (api()) api().drops({ drops: t.drops || [] });
     var tk = q('[data-g="ticker"]'); if (tk) tk.textContent = 'Today: ' + (t.drops || []).map(phrase).filter(Boolean).join(' · ');
-    if (!t.me || !t.lines || !t.lines.length || !stage) return;
+    if (!t.me || !t.lines || !t.lines.length || !stage || document.querySelector('.b-recap')) return;   // the battle recap card wins
     try { if (localStorage.getItem('caldera.world.today') === t.day) return; } catch (e) {}
     var card = document.createElement('div'); card.className = 'g-today'; card.setAttribute('role', 'status');
     var line = t.lines.join(', '); line = line.charAt(0).toUpperCase() + line.slice(1);
@@ -127,7 +130,7 @@ export function growthClient() {
 export const GROWTH_CLIENT_JS = "(" + growthClient.toString() + ")();";
 
 /** Before first paint: the right button pressed and the date bar shown, without a flash; the renderer reads CALDERA_GVIEW */
-export const GROWTH_HEAD_JS = `(function(){try{var v=new URL(location.href).searchParams.get('view');if(v==='expansion')v='month';if(v==='current')v='now';if(['now','day','week','month'].indexOf(v)<0){v=localStorage.getItem('caldera.worldView');if(v==='expansion')v='month';}if(['day','week','month'].indexOf(v)<0)v='now';window.CALDERA_GVIEW=v;if(v!=='now')document.documentElement.classList.add('w-grow')}catch(e){}})();`;
+export const GROWTH_HEAD_JS = `(function(){try{var v=new URL(location.href).searchParams.get('view');if(v==='expansion')v='month';if(v==='current')v='now';var B=!!window.CALDERA_BATTLE_ON;if(['now','day','week','month'].concat(B?['battle']:[]).indexOf(v)<0){v=localStorage.getItem('caldera.worldView');if(v==='expansion')v='month';}if(['day','week','month'].concat(B?['battle']:[]).indexOf(v)<0)v='now';window.CALDERA_GVIEW=v==='battle'?'now':v;if(v==='battle')document.documentElement.classList.add('w-battle');else if(v!=='now')document.documentElement.classList.add('w-grow')}catch(e){}})();`;
 
 export const GROWTH_CSS = `
 .w-view{display:inline-flex;gap:2px;padding:3px;border-radius:999px;border:1px solid var(--border,rgba(255,255,255,.14));background:var(--surface,rgba(255,255,255,.04));align-self:center;flex:none;max-width:100%}
