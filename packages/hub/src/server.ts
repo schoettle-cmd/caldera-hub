@@ -307,6 +307,7 @@ export function createHub(opts: HubOptions) {
   const db = new DatabaseSync(path.join(opts.dataDir, "hub.sqlite"));
   db.exec(`
     PRAGMA journal_mode=WAL;
+    PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS envelopes (hash TEXT PRIMARY KEY, type TEXT, sender TEXT, recipient TEXT, ts TEXT, json TEXT);
     CREATE INDEX IF NOT EXISTS env_to ON envelopes(recipient, ts);
     CREATE TABLE IF NOT EXISTS profiles (id TEXT PRIMARY KEY, handle TEXT UNIQUE, box_key TEXT, name TEXT, headline TEXT,
