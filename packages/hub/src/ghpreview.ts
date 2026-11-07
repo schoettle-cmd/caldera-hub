@@ -38,6 +38,8 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 const CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://mjonesone.com; connect-src 'self' https://mjonesone.com; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 /** stats a badge shows: public repos and commits in the last year (public repos only) */
+/** Curated /gh cities in the sitemap: the homepage featured developers + the "Try:" examples. Not every /gh page: those stay crawl-only. */
+export const GH_SITEMAP = ["karpathy", "ggerganov", "lucidrains", "rasbt", "simonw", "soumith", "hwchase17", "jph00", "thomwolf", "gdb", "torvalds", "sindresorhus", "antirez", "tj"];
 export function cityStats(city: CityData): { repos: number; commits: number } {
   const pub = city.districts.flatMap(d => d.repos).filter(r => !r.locked && r.public !== false);
   return { repos: pub.length, commits: pub.reduce((a, r) => a + (r.commits || 0), 0) };
@@ -219,7 +221,7 @@ ${tail}`}`;
 <p class="ghp-small" style="margin:8px 0 0">&#128274; Claiming is read-only: your public profile and email. Caldera can't see your code or private repos; GitHub enforces it. <a href="/security">How we keep it safe</a></p>
 <p class="ghp-fine">Built from public GitHub data only (${fmt(p.repos)} public repos, ${fmt(p.commits)} commits in the last year across the 20 most recently pushed), refreshed daily. Want it removed? Email privacy@caldera.social from the email on your GitHub profile (say which GitHub account), and we remove it within 7 days.</p></section>`;
     html = html.replace('<meta name="robots" content="noindex, nofollow">', "")
-      .replace(/<title>[^<]*<\/title>/, `<title>@${esc(p.login)}'s GitHub city - Caldera</title>` + ogTags({ url, image: `${url}/card.png?v=${Date.parse(p.fetched) % 1e8}`, title: `@${p.login}'s GitHub city`, description: `${p.bio ? p.bio + " " : ""}${fmt(p.repos)} public repos as a living city on Caldera.` }))
+      .replace(/<title>[^<]*<\/title>/, `<title>${esc(who)}'s GitHub city - Caldera</title><meta name="description" content="${esc(`${who}'s public GitHub as a living city on Caldera: ${fmt(p.repos)} public repos.${p.bio ? " " + p.bio : ""}`)}">` + ogTags({ url, image: `${url}/card.png?v=${Date.parse(p.fetched) % 1e8}`, title: `@${p.login}'s GitHub city`, description: `${p.bio ? p.bio + " " : ""}${fmt(p.repos)} public repos as a living city on Caldera.` }))
       .replace('<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">', '<link rel="icon" href="/favicon.svg" type="image/svg+xml">')
       .replace('href="assets/theme.css"', 'href="/gh/assets/theme.css"').replace('href="assets/profile.css"', 'href="/gh/assets/profile.css"')
       .replace(/href="index\.html"/g, `href="${esc(p.html_url)}" target="_blank" rel="noopener"`)

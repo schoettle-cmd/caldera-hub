@@ -37,7 +37,7 @@ import { setupGuide } from "./setupguide";
 import { tools } from "./tools";
 import { listings, type Lookup, type safeGet } from "./listings";
 import { mapPanel } from "./mapprompt";
-import { ghPreview } from "./ghpreview";
+import { ghPreview, GH_SITEMAP } from "./ghpreview";
 import { liveGen, liveClient } from "./livegen";
 export { cleanText, renderText } from "./messages";
 import { emailer, type Mail, type You } from "./email";
@@ -2436,7 +2436,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         const rows = (q("SELECT * FROM profiles WHERE handle IS NOT NULL ORDER BY updated DESC").all() as any[]).filter(searchable);
         const u = (loc: string, mod: string) => `<url><loc>${loc}</loc><lastmod>${String(mod || now()).slice(0, 10)}</lastmod></url>`;
         res.writeHead(200, { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" });
-        return res.end(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${rows.map(r => u(`${PUB()}/@${r.handle}/`, r.updated) + (cityOf(r.handle)?.buildings ? u(`${PUB()}/@${r.handle}/city.html`, r.updated) : "")).join("")}</urlset>\n`);
+        return res.end(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${GH_SITEMAP.map(l => u(`${PUB()}/gh/${l}`, now())).join("")}${rows.map(r => u(`${PUB()}/@${r.handle}/`, r.updated) + (cityOf(r.handle)?.buildings ? u(`${PUB()}/@${r.handle}/city.html`, r.updated) : "")).join("")}</urlset>\n`);
       }
       if (req.method === "GET" && p === "/world/preview.png") { const png = await worldPreview(); res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=600" }); return res.end(png); }
       const m0 = p.match(/^\/watch\/@([a-z0-9-]+)\/?$/);
