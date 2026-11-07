@@ -224,7 +224,10 @@ export function landJob(c: LandJobCtx) {
       for (let pg = pages, k = 0; pg >= 1 && k < 3; pg--, k++) {
         await sleep(wait / 3);
         const st = await gh(token, `/repos/${r.full_name}/stargazers?per_page=100&page=${pg}`, "application/vnd.github.star+json");
-        if (st.status !== 200 || !Array.isArray(st.body)) break;
+        if (st.status !== 200 || !Array.isArray(st.body)) {   // the dated list needs a token: a repo born in the last 12 months gained every star it has
+          if (k === 0 && Date.parse(r.created_at) >= since.getTime()) s += r.stargazers_count || 0;
+          break;
+        }
         const recent = st.body.filter((x: any) => Date.parse(x.starred_at) >= since.getTime()).length; s += recent;
         if (recent < st.body.length) break;   // this page reaches back past 12 months: done with this repo
       }

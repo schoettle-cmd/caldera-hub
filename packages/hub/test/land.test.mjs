@@ -111,9 +111,10 @@ test("the World serves the Expansion view: toggle on the page, land JSON from th
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "caldera-land-")); dirs.push(d);
   const calls = [];
   const githubFetch = async (u) => { calls.push(String(u)); const url = new URL(String(u));
-    const body = url.pathname === "/search/issues" ? { total_count: 7 } : url.pathname === "/users/rae/repos" ? [{ name: "app", full_name: "rae/app", fork: false, private: false, archived: false, stargazers_count: 3 }, { name: "gone", full_name: "rae/gone", fork: false, private: false, archived: true, stargazers_count: 0 }]
+    const body = url.pathname === "/search/issues" ? { total_count: 7 } : url.pathname === "/users/rae/repos" ? [{ name: "app", full_name: "rae/app", fork: false, private: false, archived: false, stargazers_count: 3 }, { name: "gone", full_name: "rae/gone", fork: false, private: false, archived: true, stargazers_count: 0 }, { name: "new", full_name: "rae/new", fork: false, private: false, archived: false, stargazers_count: 2, created_at: new Date(Date.now() - 30 * DAY).toISOString() }, { name: "oldie", full_name: "rae/oldie", fork: false, private: false, archived: false, stargazers_count: 9, created_at: "2020-01-01T00:00:00Z" }]
+      : /\/repos\/rae\/(new|oldie)\/stargazers/.test(url.pathname) ? null
       : url.pathname === "/repos/rae/app/stargazers" ? [{ starred_at: new Date(Date.now() - 400 * DAY).toISOString() }, { starred_at: new Date(Date.now() - 20 * DAY).toISOString() }, { starred_at: new Date().toISOString() }] : {};
-    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } }); };
+    return new Response(JSON.stringify(body ?? { message: "Requires authentication" }), { status: body === null ? 401 : 200, headers: { "content-type": "application/json" } }); };
   const h = createHub({ dataDir: d, publicUrl: "http://hub.test", githubFetch });
   const base = "http://127.0.0.1:" + await h.listen(0);
   try {
@@ -144,7 +145,7 @@ test("the World serves the Expansion view: toggle on the page, land JSON from th
     land = await (await fetch(base + "/v1/world/land")).json();
     const m2 = land.members.find(x => x.h === "rae");
     assert.equal(m2.p, 7, "merged PRs stored by the nightly job");
-    assert.equal(m2.s, 2, "stars gained in 12 months only");
+    assert.equal(m2.s, 4, "stars gained in 12 months: dated stars, plus every star of a repo born this year when the dated list needs a token");
     assert.ok(m2.sc > m.sc);
     assert.equal(h.db.prepare("SELECT COUNT(*) n FROM land_hist").get().n, 1, "tonight's side and state are stored");
     assert.equal(h.db.prepare("SELECT side FROM land_side").get().side, m2.k, "and the ratchet holds today's side");
