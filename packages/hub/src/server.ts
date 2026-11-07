@@ -44,6 +44,7 @@ import { emailer, type Mail, type You } from "./email";
 export { tagLinks } from "./email";
 import { weatherService, dayStats, ownerSetup, extrasScript } from "./cityextra";
 import { closenessOrder, buildWorld, foldLive, worldPage, type World, type WorldMemberIn } from "./world";
+import { buildLand, landJob, landStore, type LandIn, type LandWorld } from "./land";
 import { citySnapshot, applyPrivateMode, rewriteCityPage, upgradeCityScript, type CityData } from "../../../../caldera/packages/plugin/src/city";
 import { mentionSearch } from "./mentions.js";
 import { privateModes, scrubPrivateLive } from "./privatemode";
@@ -60,7 +61,7 @@ export interface HubOptions { dataDir: string; port?: number; publicUrl?: string
   /** Private owner address (e.g. behind `tailscale serve`): a second listener on 127.0.0.1:privatePort that serves the
    *  owner's private view only when the proxy-set Tailscale-User-Login header maps to that profile's handle. */
   privatePort?: number; privateUrl?: string;
-  /** Handle of the founder: every new profile starts out as their friend (MySpace's Tom). */ founder?: string; tailnetOwners?: Record<string, string>; githubFetch?: typeof fetch; /** tests: stand-ins for DNS and fetching listed apps and websites */ listingsLookup?: Lookup; listingsGet?: typeof safeGet; /** run the shared-repo friendship job every 6 hours (the server binary turns it on; tests call it directly) */ repoJob?: boolean; /** read members' public GitHub signals into "what they're building" tags every 12 hours */ tagJob?: boolean; /** OpenRouter key for the tag normalising pass (rules only without it) */ llmKey?: string; onEvent?: (e: { type: "signup" | "delete"; handle?: string; name?: string; kind?: string; total: number }) => void; limits?: { perMinute?: number; writesPerMinute?: number; newProfilesPerDay?: number; newProfilesPerMinute?: number };
+  /** Handle of the founder: every new profile starts out as their friend (MySpace's Tom). */ founder?: string; tailnetOwners?: Record<string, string>; githubFetch?: typeof fetch; /** tests: stand-ins for DNS and fetching listed apps and websites */ listingsLookup?: Lookup; listingsGet?: typeof safeGet; /** run the shared-repo friendship job every 6 hours (the server binary turns it on; tests call it directly) */ repoJob?: boolean; /** read members' public GitHub signals into "what they're building" tags every 12 hours */ tagJob?: boolean; /** the World's Expansion view: nightly public-GitHub numbers (merged PRs, stars gained) */ landJob?: boolean; /** OpenRouter key for the tag normalising pass (rules only without it) */ llmKey?: string; onEvent?: (e: { type: "signup" | "delete"; handle?: string; name?: string; kind?: string; total: number }) => void; limits?: { perMinute?: number; writesPerMinute?: number; newProfilesPerDay?: number; newProfilesPerMinute?: number };
   /** daily summary emails: Resend key (production) or a send hook (tests); schedule starts the daily job */
   email?: { resendKey?: string; send?: (m: Mail) => Promise<void>; schedule?: boolean; reconnect?: boolean;
     /** Growth Engine's learning API (arms, clicks, goals). Default: LEARN_URL or 127.0.0.1:4835 when mail really goes out (Resend);
@@ -877,6 +878,42 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     const w = buildWorld(members, pairs, opts.founder ? opts.founder.toLowerCase() : null, opts.publicUrl || "https://caldera.social", Date.now(), hint);
     worldCache = { at: Date.now(), w }; return w;
   }
+  // ---------------------------------------------------------------- the World's Expansion view (land.ts)
+  // Built from the same public cities as the World, plus the nightly public-GitHub numbers (merged PRs, stars gained).
+  // Never calls GitHub: page loads read what the nightly job stored. Rebuilt whenever the World is (a minute at most).
+  const LAND = landStore(q);
+  let landCache: { w: World; v: LandWorld } | null = null;
+  function landNow(persist = false): LandWorld {
+    const w = worldNow();
+    if (!persist && landCache && landCache.w === w) return landCache.v;
+    const byH = new Map(w.members.map(m => [m.handle, m] as [string, typeof w.members[number]]));
+    const prs = (q("SELECT * FROM profiles WHERE handle IS NOT NULL ORDER BY created").all() as any[]).filter(pr => byH.has(pr.handle));
+    const acts = (sql: string, id: string) => { try { return (q(sql).all(id) as any[]).map(r => Date.parse(r.ts)).filter(Number.isFinite); } catch { return [] as number[]; } };
+    const ins: LandIn[] = prs.map(pr => {
+      const city = publicCityOf(pr.handle), wm = byH.get(pr.handle)!;
+      // public, named GitHub repos only: no padlocked or named-private repos, no storefronts
+      const repos = (city?.districts || []).flatMap((d: any) => d.repos || []).filter((r: any) => r && r.public === true && r.name && !r.locked && !r.priv && !r.kind);
+      const created = Date.parse(pr.created || pr.updated || now()) || Date.now();
+      return { handle: pr.handle, name: pr.name || "@" + pr.handle, created, city: wm.city, repos, at: Date.parse(city?.generated || "") || Date.parse(pr.updated || "") || Date.now(),
+        gh: LAND.gh(pr.id), sideMax: LAND.sideMax(pr.id), hist: LAND.hist(pr.id),
+        caldera: [created, Date.parse(pr.updated || ""), ...acts("SELECT ts FROM posts WHERE author=? AND (status IS NULL OR status NOT IN ('hidden','deleted')) ORDER BY ts DESC LIMIT 60", pr.id),
+          ...acts("SELECT ts FROM post_comments WHERE author=? AND (status IS NULL OR status NOT IN ('hidden','deleted')) ORDER BY ts DESC LIMIT 60", pr.id)] };
+    });
+    const v = buildLand(ins, { founder: opts.founder ? opts.founder.toLowerCase() : null, now: Date.now(), links: w.links });
+    if (persist) { const ids = new Map(prs.map(pr => [pr.handle, pr.id] as [string, string])); for (const m of v.members) { const id = ids.get(m.h); if (id) LAND.save(id, m.k, m.st, Date.now()); } }
+    landCache = { w, v }; return v;
+  }
+  const LANDJOB = landJob({ q, fetch: opts.githubFetch || fetch, pause: opts.githubFetch ? 0 : undefined,
+    members: () => (q("SELECT * FROM profiles WHERE handle IS NOT NULL ORDER BY created").all() as any[]).filter(listed).map(pr => {
+      let login: string | null = loginsOf(pr)[0] || null;
+      if (!login) {   // an Obsidian member: the owner of most of the public GitHub repos on their public city
+        const n = new Map<string, number>();
+        for (const r of (publicCityOf(pr.handle)?.districts || []).flatMap((d: any) => d.repos || [])) { const m = typeof r.url === "string" && r.public === true ? r.url.match(/^https:\/\/github\.com\/([A-Za-z0-9-]{1,39})\//) : null; if (m) n.set(m[1].toLowerCase(), (n.get(m[1].toLowerCase()) || 0) + 1); }
+        login = [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+      }
+      return { id: pr.id as string, handle: pr.handle as string, login };
+    }),
+    token: async id => (await GH.tokenOf(id)) || (await GH.anyToken()), persist: () => { landCache = null; landNow(true); } });
   function worldLive(since: string | null) {
     const per = (q("SELECT * FROM profiles WHERE handle IS NOT NULL").all() as any[]).filter(listed)
       .filter(pr => sitesOf(pr.id).length || q("SELECT 1 FROM agents WHERE owner=? LIMIT 1").get(pr.id))
@@ -961,6 +998,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     del("DELETE FROM intros WHERE a=? OR b=?", id, id);
     try { for (const g of q("SELECT gh_id FROM gh_accounts WHERE profile_id=?").all(id) as any[]) del("DELETE FROM gh_sessions WHERE gh_id=?", g.gh_id); } catch { /* no GitHub sign-in */ }
     del("DELETE FROM gh_accounts WHERE profile_id=?", id); del("DELETE FROM gh_links WHERE profile_id=?", id);
+    for (const t of ["land_gh", "land_side", "land_hist"]) del(`DELETE FROM ${t} WHERE profile=?`, id);   // the World's Expansion view
   }
 
   // ---------------------------------------------------------------- one person, one profile: merging duplicates
@@ -1709,6 +1747,8 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
     circleHooks.joined = (id: string) => { j0?.(id); B.tagSoon(id, !!opts.tagJob); };
     circleHooks.signedIn = (id: string) => { s0?.(id); B.tagSoon(id, !!opts.tagJob); }; }
   (admin as any).tags = (o: { dry?: boolean; only?: string } = {}) => B.job.run(o);
+  (admin as any).land = (o: { dry?: boolean; only?: string } = {}) => LANDJOB.run(o);
+  if (opts.landJob) LANDJOB.schedule();
   if (opts.tagJob) B.schedule();
 
   // ---------------------------------------------------------------- the owner, signed in on their own browser
@@ -2356,6 +2396,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           return res.end(navify(groupPage({ slug: g[1], hub: opts.publicUrl || "https://caldera.social", members: groupMembers(g[1]) })));
         } }
       if (req.method === "GET" && p === "/v1/world") { res.setHeader("cache-control", "public, max-age=60"); const w = worldNow(); return json(res, 200, { at: w.at, members: w.members, links: w.links, city: w.city }); }
+      if (req.method === "GET" && p === "/v1/world/land") { res.setHeader("cache-control", "public, max-age=120"); return json(res, 200, landNow()); }
       if (req.method === "GET" && p === "/v1/world/live") { res.setHeader("cache-control", "no-store"); return json(res, 200, worldLive(url.searchParams.get("since"))); }
       if (req.method === "GET" && (p === "/world" || p === "/world/")) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache",
@@ -3358,7 +3399,7 @@ if (import.meta.url === `file://${process.argv[1]}` && /server\.js$/.test(proces
   const onEvent: HubOptions["onEvent"] = alertLog || (tg && chat) || (resend && mailTo) ? (ev) => alerts.event(ev) : undefined;
   if (onEvent) setInterval(() => alerts.flush(), 3600_000).unref?.();
   const hub = createHub({ garden: process.env.CALDERA_GARDEN === "1", dataDir: process.env.CALDERA_DATA || "./data", port: Number(process.env.PORT || 8787), publicUrl: process.env.CALDERA_PUBLIC_URL || "",
-    siteDir: process.env.CALDERA_SITE || undefined, trustProxy: process.env.CALDERA_TRUST_PROXY === "1", onEvent, founder: process.env.CALDERA_FOUNDER || undefined, repoJob: process.env.CALDERA_REPO_JOB !== "0", tagJob: process.env.CALDERA_TAG_JOB !== "0", llmKey: process.env.CALDERA_OPENROUTER_KEY || undefined,
+    siteDir: process.env.CALDERA_SITE || undefined, trustProxy: process.env.CALDERA_TRUST_PROXY === "1", onEvent, founder: process.env.CALDERA_FOUNDER || undefined, repoJob: process.env.CALDERA_REPO_JOB !== "0", tagJob: process.env.CALDERA_TAG_JOB !== "0", landJob: process.env.CALDERA_LAND_JOB !== "0", llmKey: process.env.CALDERA_OPENROUTER_KEY || undefined,
     email: resend ? { resendKey: resend, schedule: true } : undefined,
     // CALDERA_TAILNET_OWNERS="you@example.com:handle,..."  (Tailscale login -> Caldera handle)
     privatePort: Number(process.env.CALDERA_PRIVATE_PORT) || undefined, privateUrl: process.env.CALDERA_PRIVATE_URL || undefined,

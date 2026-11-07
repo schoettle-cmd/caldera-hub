@@ -7,6 +7,7 @@
  * appear. Live activity is the same coarse public projection a member's own public city gets, folded per member.
  */
 import { mapPanel } from "./mapprompt";
+import { LAND_CSS, LAND_JS, LAND_HEAD_JS, landMarkup } from "./landclient";
 import { CITY_CSS, CITY_JS, cleanSites, scrubSignHosts, type CityData, type CityRepo } from "../../../../caldera/packages/plugin/src/city";
 
 export interface WorldMemberIn {
@@ -172,7 +173,8 @@ export function worldPage(w: World, o: { hub: string; nav: string; tools?: unkno
 <meta property="og:title" content="The Caldera world"><meta property="og:description" content="Every member's city on one live map."><meta property="og:image" content="${esc(hub)}/og.jpg"><meta property="og:url" content="${esc(hub)}/world">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="canonical" href="${esc(hub)}/world">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
-<link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css"><style>${CITY_CSS}
+<script>${LAND_HEAD_JS}</script>
+<link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css"><style>${CITY_CSS}${LAND_CSS}
 .w-main{max-width:none;margin:0;padding:10px 20px 32px}.w-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:flex-start;gap:2px 14px;margin:2px 0 10px}@media (max-width:600px){.w-main{padding:8px 16px 28px}.w-main .w-head{flex-direction:column;align-items:flex-start;gap:2px}.w-main .w-head p{flex:none;font-size:13px}}
 .w-head h1{font-family:'Source Serif 4',Georgia,serif;font-size:clamp(1.3rem,2.2vw,1.7rem);margin:0;color:var(--text-strong,#F7F7FA)}.w-head p{margin:0;color:var(--text-muted,#8A8A93);font-size:14px;flex:1 1 30ch;min-width:0}
 @media (max-width:600px){.w-main .c-tools{flex-wrap:wrap;justify-content:flex-end;left:8px;right:8px;gap:4px}.w-main .c-tools button{padding:5px 8px}}.w-main .c-stage{height:calc(100vh - 150px);height:calc(100svh - 150px);min-height:460px}@media (max-width:600px){.w-main .c-stage{height:calc(100svh - 190px);min-height:400px}}
@@ -180,15 +182,17 @@ export function worldPage(w: World, o: { hub: string; nav: string; tools?: unkno
 .w-legend i{display:inline-block;width:18px;height:4px;border-radius:2px;background:linear-gradient(90deg,#B98CFF,#FFC46B,#B98CFF);vertical-align:middle;margin-right:6px;box-shadow:0 0 6px rgba(200,160,255,.8)}.w-legend-stack i{background:repeating-linear-gradient(90deg,#FF7A96 0 4px,transparent 4px 7px);box-shadow:none}</style></head><body>
 ${o.nav}
 <main class="w-main">
-<div class="w-head"><h1>The world</h1><p>${n} neighborhood${n === 1 ? "" : "s"} &middot; ${b.toLocaleString("en-US")} building${b === 1 ? "" : "s"} &middot; rays of light are friendships, dashed coral lines are similar stacks &middot; click a name to fly there, again to walk in &middot; &#10022; light up a city you like (one gift a day)</p></div>
-<div class="c-stage" id="stage"><canvas id="city" aria-label="Isometric world map of ${n} member cities"></canvas>
+<div class="w-head"><h1>The world</h1><div class="w-view" role="group" aria-label="Map view"><button type="button" data-wview="current" aria-pressed="true">Current</button><button type="button" data-wview="expansion" aria-pressed="false">Expansion</button></div><p class="w-cur-only">${n} neighborhood${n === 1 ? "" : "s"} &middot; ${b.toLocaleString("en-US")} building${b === 1 ? "" : "s"} &middot; rays of light are friendships, dashed coral lines are similar stacks &middot; click a name to fly there, again to walk in &middot; &#10022; light up a city you like (one gift a day)</p><p class="w-exp-only">Land earned by code: plots grow with public GitHub activity (commits, merged PRs, repos, stars in the last 12 months) and weather when the code goes quiet. Replayed from the first day &middot; hover or tap a plot for its card.</p></div>
+<div class="w-maps"><div class="c-stage" id="stage"><canvas id="city" aria-label="Isometric world map of ${n} member cities"></canvas>
 <div class="c-tools"><button id="t-labels" aria-pressed="true">Labels</button><button id="t-fr" aria-pressed="true" aria-label="Friendships" title="Friendships between neighborhoods, drawn as rays of light">&#x2727;<span class="t-txt"> Friendships</span></button><button id="t-topics" aria-pressed="false" aria-label="Color by topic" title="Tint each neighborhood by what they're building"><span class="t-sw" aria-hidden="true"></span><span class="t-txt"> Topics</span></button><button id="t-sky">Auto</button><button id="t-wx" title="Weather">Weather</button><button id="t-snd" aria-pressed="false" title="Sound for arrivals (off)">&#x1F507;</button><button id="t-reset">Reset</button><button id="t-full" aria-label="Full screen">&#x26F6;<span class="t-txt"> Full screen</span></button></div>
 <div class="c-toasts" aria-live="polite"></div><div class="c-mininame" aria-hidden="true"><i></i>Caldera world</div>
 <div class="c-card" id="card" hidden></div><div class="c-hint">Drag to move &middot; scroll or pinch to zoom &middot; click a name to fly there</div></div>
+${landMarkup()}</div>
 <div class="w-foot"><span class="w-legend"><i></i>Friendships are rays of light</span><span class="w-legend w-legend-stack"><i></i>Dashed coral: builds with a similar stack</span><span>&#128274; Padlocked buildings are private repos: size only, never names.</span><span>Only people listed in <a href="/people">People</a> appear.</span><a href="/#start">Add your city &rarr;</a></div>
 ${mapPanel(hub)}
 </main><footer class="footer"><span>&copy; 2026 mjonesone, LLC</span><span><a href="/guide">Guide</a> &middot; <a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a></span></footer>
 <script>window.CALDERA_TOOLS=${safeJson(o.tools || [])};window.CALDERA_TOOLS_HUB=${safeJson(hub)};window.CALDERA_LIVE=${safeJson({ url: "/v1/world/live", mode: "public" })};window.CALDERA_EXTRAS=${safeJson({ weather: `${hub}/v1/weather` })};window.CALDERA_GIFTS=${safeJson({ url: "/v1/gifts" })}</script>
 <script type="application/json" id="city-data">${safeJson(data)}</script>
-<script>${CITY_JS}</script></body></html>`;
+<script>${CITY_JS}</script>
+<script>${LAND_JS}</script></body></html>`;
 }

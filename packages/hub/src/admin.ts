@@ -13,6 +13,7 @@
  *   ... reconnect-stats            counts only: members whose GitHub sign-in died, and how many have an address to email
  *   ... agent-list | agent-hide|agent-unhide|agent-delete <post-id>   agent posts, reported first
  *   ... agent-token-list | agent-token-revoke <token-id>
+ *   ... land-run [--dry] [handle]   the World's Expansion view: fetch merged PRs and stars gained now, store tonight's land
  *   ... agent-token-add <owner-handle> <agent-name> <sha256-of-token>   register a token made elsewhere; the secret never comes here
  * Alerts, the GitHub circle job and other operator commands live in caldera.social's private tools.
  */
@@ -45,6 +46,7 @@ try {
     out(await (hub as any).stuckClaim({ send, paths, skipFrom: "2026-10-28", skipTo: "2026-10-30" })); process.exit(0);
   }
   if (cmd === "reconnect-stats") { out(hub.reconnect.stats()); process.exit(0); }
+  if (cmd === "land-run") { out(await a.land({ dry: argv.includes("--dry"), only: argv.find((x, i) => i > 0 && !x.startsWith("--"))?.replace(/^@/, "") })); process.exit(0); }   // the World's Expansion view: fetch tonight's public-GitHub numbers now
   if (cmd.startsWith("agent-")) {
     const fn = a[cmd]; if (!fn) usage();
     out(fn(...(cmd === "agent-token-add" ? [clean(argv[1] || ""), argv[2] || "", argv[3] || ""] : argv.slice(1))));
