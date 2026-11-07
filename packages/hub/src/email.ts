@@ -230,7 +230,7 @@ export function emailer(ctx: EmailCtx) {
   let sendChain: Promise<void> = Promise.resolve(), lastSend = 0;
   // Shared mail guard (Growth Engine 2026-11-04): every Caldera email is checked on this box first. ok:false or regenerate
   // = not sent; no answer in 2 s = sign-in mail and the daily summary still go, the rest is held. MAILGUARD=off skips it.
-  const KIND: Record<string, string> = { "signup-email": "auth", "signin-code": "auth", "email-message": "transactional", "email-message-request": "transactional",
+  const KIND: Record<string, string> = { "signup-email": "auth", "signin-code": "auth", "signin-link": "auth", "publish-confirm": "auth", "email-message": "transactional", "email-message-request": "transactional",
     "email-invite": "transactional", "email-reconnect": "marketing", "email-update-nudge": "marketing", "stuck-claim": "marketing" };
   /** true, or the guard's check id = send it; false = don't */
   async function guardOk(m: Mail): Promise<boolean | number> {

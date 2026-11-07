@@ -469,7 +469,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       try {
         await c.note({ to: email, subject: ex ? "Your Caldera sign-in link" : "Confirm your email to publish your Caldera page", title: ex ? "Sign in to Caldera" : "One click and your page is live",
           html: `<p>${ex ? `Open this link to sign in as <b>@${esc(ex.handle)}</b> and update your page with what you pasted.` : `Open this link to confirm your email. Your page${pr.name ? ` for <b>${esc(pr.name)}</b>` : ""} goes live right away.`}</p><p><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">${ex ? "Sign in" : "Publish my page"}</a></p><p style="color:#777;font-size:13px">The link works once, for 48 hours. If you didn't ask for this, ignore this email.</p>`,
-          text: `${ex ? "Sign in to Caldera" : "Confirm your email and your Caldera page goes live"}: ${link}\n\nThe link works once, for 48 hours. If you didn't ask for this, ignore this email.` });
+          text: `${ex ? "Sign in to Caldera" : "Confirm your email and your Caldera page goes live"}: ${link}\n\nThe link works once, for 48 hours. If you didn't ask for this, ignore this email.`, src: ex ? "signin-link" : "publish-confirm" });
       } catch (e: any) { again("We couldn't send the email: " + e.message); return true; }
       sent(); return true;
     }
@@ -536,7 +536,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       try {
         await c.note({ to: o.email, subject: ex ? "Your Caldera sign-in link" : "Confirm your email to publish your Caldera page", title: ex ? "Sign in to Caldera" : "One click and your page is live",
           html: `<p>${ex ? `Open this link to sign in as <b>@${esc(ex.handle)}</b>.` : `Open this link to confirm your email. Your ${kind} page for <b>${esc(o.name)}</b> goes live right away, and you can add your ${kind === "developer" ? "GitHub" : kind === "designer" ? "work" : "companies"} next.`}</p><p><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">${ex ? "Sign in" : "Publish my page"}</a></p><p style="color:#777;font-size:13px">The link works once, for 48 hours. If you didn't ask for this, ignore this email.</p>`,
-          text: `${ex ? "Sign in to Caldera" : "Confirm your email and your Caldera page goes live"}: ${link}\n\nThe link works once, for 48 hours. If you didn't ask for this, ignore this email.` });
+          text: `${ex ? "Sign in to Caldera" : "Confirm your email and your Caldera page goes live"}: ${link}\n\nThe link works once, for 48 hours. If you didn't ask for this, ignore this email.`, src: ex ? "signin-link" : "publish-confirm" });
       } catch (e: any) { page(502, { ...o, msg: "We couldn't send the email: " + e.message }); return true; }
       c.track?.(req, "typed-sent", kind); sent(); return true;
     }
