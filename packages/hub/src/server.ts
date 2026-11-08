@@ -1646,7 +1646,8 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
       try { const a = q("SELECT email_sealed FROM email_accounts WHERE profile_id=?").get(id) as any; if (a?.email_sealed) return ok(unseal(a.email_sealed)); } catch { /* no email sign-in */ }
       return null;
     },
-    send: m => mail.sendRaw(m), emailOn: () => process.env.CALDERA_BATTLE_EMAIL === "1" });
+    send: m => mail.sendRaw(m), emailOn: () => process.env.CALDERA_BATTLE_EMAIL === "1",
+    systemPost: (k, t, l) => SYS.systemPost(k, t, l) });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
 
   const autoOff = (pr: any) => { const b = body(pr); return b.autoConnectGithub === false || b.autoConnectRepos === false; };
   const circleHooks: { joined?: (id: string) => void; signedIn?: (id: string) => void } = {};
