@@ -203,7 +203,7 @@ export function emailer(ctx: EmailCtx) {
   const dismissPrompt = (owner: string) => q("INSERT OR REPLACE INTO email_prompt VALUES (?,?)").run(owner, new Date().toISOString());
 
   async function send(m0: Mail) {
-    const m: Mail = m0.src ? { ...m0, html: tagLinks(m0.html, hub, m0.src, true, m0.utm), text: tagLinks(m0.text, hub, m0.src, false, m0.utm) } : m0;
+    const m: Mail = m0.src ? { ...m0, html: tagLinks(m0.html, hub, m0.src, true, m0.utm), text: tagLinks(m0.text, hub, m0.src, false, m0.utm) } : { ...m0 };
     if (ctx.send) return ctx.send(m);
     if (!ctx.resendKey) throw new Error("email is not set up on this hub");
     const g = await guardOk(m);
@@ -243,7 +243,12 @@ export function emailer(ctx: EmailCtx) {
         body: JSON.stringify({ product: "caldera", template, kind, to: m.to, subject: m.subject, text: m.text || "", html: m.html || "", generated: false, has_list_unsubscribe: unsub, test_mode: process.env.NODE_ENV === "test",
           ...(m.learn ? { learn: m.learn } : {}) }) });   // a passed check carrying "learn" is the one place a send counts on its arm
       const g: any = await r.json();
-      if (g && g.ok && !g.regenerate) return Number(g.id) > 0 ? Number(g.id) : true;
+      if (g && g.ok && !g.regenerate) {
+        // the guard's email link tags for the session tracer (es_src/es_p/es_s + utm on caldera.social links, href only;
+        // growth/linktags.py, Mike 11-08). The text part a reader sees stays as written.
+        if (typeof g.html === "string" && g.html && m.html) m.html = g.html;
+        return Number(g.id) > 0 ? Number(g.id) : true;
+      }
       console.log("[mailguard] blocked", template, kind, String(m.to || "").replace(/(.{2}).*@/, "$1…@"), ((g && g.reasons) || []).join("; ").slice(0, 200));
       return false;
     } catch (e) { const ok = kind === "auth" || kind === "daily"; if (!ok) console.log("[mailguard] held (no answer)", template, kind); return ok; }
