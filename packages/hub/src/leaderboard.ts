@@ -24,7 +24,7 @@ import type { GrowthMember } from "./growthhub";
 
 export type LbWindow = "day" | "week" | "month" | "all";
 export const LB_DAYS: Record<LbWindow, number> = { day: 1, week: 7, month: 30, all: 0 };
-export const LB_TOP = 25, POST_TOP = 10, POST_MIN = 3, POST_HOUR = 9;
+export const LB_TOP = 10, POST_TOP = 10, POST_MIN = 3, POST_HOUR = 9;
 
 // ---------------------------------------------------------------- Pacific days
 const PT = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -147,7 +147,8 @@ tr.lb-gap td{height:14px;border:0;background:var(--bg,#1C1C1F)}tr.lb-gap td span
 const TREND_HEAD: Record<LbWindow, string> = { day: "vs yesterday", week: "vs last week", month: "vs last month", all: "" };
 const TAB: [LbWindow, string][] = [["day", "Today"], ["week", "Week"], ["month", "Month"], ["all", "All-time"]];
 export function leaderboardPage(rows: LbRow[], o: { win: LbWindow; me: string | null; hub: string; nav: string; pToday: number; at: number }): string {
-  const hub = o.hub.replace(/\/$/, ""), shipped = rows.filter(r => r.metric > 0), list = shipped.slice(0, LB_TOP), me = o.me ? rows.find(r => r.id === o.me) || null : null;
+  const hub = o.hub.replace(/\/$/, ""), shipped = rows.filter(r => r.metric > 0), list = rows.slice(0, LB_TOP),   // always the top 10 (Mike 11-08): who shipped first, then the next members by rank at 0
+    me = o.me ? rows.find(r => r.id === o.me) || null : null;
   const total = Math.round(shipped.reduce((t, r) => t + r.metric, 0));
   const { d0, d1 } = windowOf(o.win, o.pToday);
   const when = o.win === "day" ? `${dayLabel(d1)} (Pacific), so far` : o.win === "all" ? "Since the first commit on record" : `${shortDay(d0)} to ${shortDay(d1)} (Pacific)`;

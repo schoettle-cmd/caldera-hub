@@ -113,7 +113,7 @@ test("the page: /leaderboard in the primary nav (desktop and phone tabs), tabs, 
     assert.match(page, /class="ch-bn"[\s\S]*?<a href="https:\/\/hub\.test\/leaderboard" aria-current="page"><span class="ch-bi">[\s\S]*?<span class="ch-bl">Leaders<\/span>/, "phone tab bar has it too");
     for (const t of ["Today", "Week", "Month", "All-time"]) assert.ok(page.includes(`>${t}</a>`), "tab " + t);
     const order = [...page.matchAll(/<span class="lb-h">@([a-z]+)<\/span>/g)].map(m => m[1]);
-    assert.deepEqual(order, ["mike", "rae", "sam"], "ranked by points; @pat shipped nothing and is off the list");
+    assert.deepEqual(order, ["mike", "rae", "sam", "pat"], "ranked by points; the board always fills to 10 (Mike 11-08), so @pat (0 points) comes after everyone who shipped");
     assert.ok(page.includes('href="https://hub.test/@mike/city.html"'), "a row opens the city");
     assert.ok(!page.includes("secretproject") && !page.includes("abc123") && !page.includes("sam/app"), "no repo names, public or private");
     assert.ok(page.includes("<b>3</b> member") && page.includes('class="lb-tabs"') && !/<tr class="[^"]*lb-me"/.test(page), "signed out: nobody is highlighted");
