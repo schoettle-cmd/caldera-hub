@@ -5,8 +5,8 @@
  * battle bar under the map (last night's numbers, the layer toggles Damage / Attacks / Shields / Replay, the member's own
  * panel: join or leave, tonight's arsenal, shield, optional manual fire, the report email), the season board, and the morning
  * card "What your city did last night". The map is drawn by the city renderer (citybattle.ts), driven through
- * window.CALDERA_BATTLE_API: launchers fire from noon to midnight local, crews rebuild from midnight to noon (Mike 11-07).
- * Replay plays today's launches so far again in 8 s. Shareable: /world?view=battle, &layers=damage,attacks,shields,replay.
+ * window.CALDERA_BATTLE_API: supply drop at noon local, one salvo at 20:00, cranes rebuild from midnight to noon (Mike 11-07).
+ * Replay plays the whole day in 26 s: drop, load, 3 2 1, salvo, hits, cranes. Shareable: /world?view=battle, &layers=damage,attacks,shields,replay.
  * Shipped as the source of battleClient() (self-contained).
  */
 export function battleClient() {
@@ -47,10 +47,11 @@ export function battleClient() {
   // ---------------------------------------------------------------- the view: shown and hidden by the switcher (growthclient.ts)
   var chip = null, chipT = 0, pollT = 0;
   function chipTick() {
-    if (!on || !api() || !api().phase) return; var ph = api().phase(), left = Math.max(0, ph.until - Date.now()), h = Math.floor(left / 3600000), m = Math.floor(left % 3600000 / 60000);
+    if (!on || !api() || !api().phase) return; var ph = api().phase(), left = Math.max(0, ph.until - Date.now()), h = Math.floor(left / 3600000), m = Math.floor(left % 3600000 / 60000), sec = Math.floor(left / 1000);
     if (!chip) { chip = document.createElement('div'); chip.className = 'b-chip'; chip.setAttribute('role', 'status'); chip.setAttribute('aria-live', 'polite'); chip.innerHTML = '<i></i><b></b><span></span>'; if (stage) stage.appendChild(chip); }
-    chip.classList.toggle('rebuild', !ph.fire); chip.querySelector('b').textContent = ph.fire ? 'Firing until midnight' : 'Rebuilding until noon';
-    chip.querySelector('span').textContent = h + 'h ' + (m < 10 ? '0' : '') + m + 'm' + (ph.fire && ph.total ? ' \u00b7 ' + ph.fired + ' of ' + ph.total + ' launched' : '');
+    var reb = ph.seg === 'rebuild', left2 = ph.replay ? sec + 's' : h + 'h ' + (m < 10 ? '0' : '') + m + 'm', L = { idle: 'Quiet', supply: 'Supply drop', loading: 'Loading', countdown: 'Salvo', salvo: 'Salvo', damage: 'Hit', rebuild: 'Rebuilding until noon' }[ph.seg] || 'Battle';
+    var tail = ph.seg === 'supply' || ph.seg === 'loading' ? 'salvo ' + (ph.replay ? 'in ' + left2 : 'at ' + hhmm(ph.salvoAt)) + ' \u00b7 ' + ph.landed + ' of ' + ph.total + ' stacked' : ph.seg === 'countdown' ? 'in ' + Math.max(1, Math.ceil(left / 1000)) : ph.seg === 'salvo' || ph.seg === 'damage' ? ph.fired + ' missile' + (ph.fired === 1 ? '' : 's') + ' \u00b7 cranes ' + (ph.replay ? 'in ' + left2 : 'at midnight') : reb ? left2 + ' \u00b7 ' + Math.round(ph.rebuilt * 100) + '% rebuilt' : ph.total + ' missile' + (ph.total === 1 ? '' : 's') + ' today';
+    chip.classList.toggle('rebuild', reb); chip.querySelector('b').textContent = L + (ph.replay ? ' (replay)' : ''); chip.querySelector('span').textContent = tail;
   }
   function show() {
     on = true; if (bar) bar.hidden = false; document.documentElement.classList.add('w-battle');
@@ -78,14 +79,14 @@ export function battleClient() {
   });
   // ---------------------------------------------------------------- replay: today's launches so far, again, in about 8 s
   var cap = q('[data-b="cap"]');
-  function stopPlay() { if (playing) { clearTimeout(playing); playing = null; } if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); layers.replay = false; }
+  function stopPlay() { if (playing) { clearTimeout(playing); playing = null; } if (api() && api().stop) api().stop(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); layers.replay = false; }
   function play() {
     if (playing) { clearTimeout(playing); playing = null; }
-    var n = on && api() && api().replay ? api().replay() : 0, ph = api() && api().phase ? api().phase() : null;
-    if (!n) { if (cap) cap.textContent = ph && !ph.fire ? 'Rebuilding until noon: the launches start again at 12:00.' : 'Nothing launched yet today.'; playing = setTimeout(stopPlay, 2500); return; }
+    var n = on && api() && api().replay ? api().replay() : 0;
+    if (!n) { if (cap) cap.textContent = 'No missiles today: nothing to replay.'; playing = setTimeout(stopPlay, 2500); return; }
     if (me && me.h && api()) api().fly(me.h);
-    if (cap) cap.textContent = 'Replaying ' + n + ' launch' + (n === 1 ? '' : 'es') + ' since noon';
-    playing = setTimeout(stopPlay, 9500);
+    if (cap) cap.textContent = 'Replay: supply drop, loading, 3 2 1, salvo, hits, cranes, back as it was (' + n + ' missile' + (n === 1 ? '' : 's') + ')';
+    playing = setTimeout(stopPlay, 27500);
   }
   // ---------------------------------------------------------------- the member's panel
   var panel = q('[data-b="me"]');
@@ -191,7 +192,7 @@ export const BATTLE_CSS = `
 export function battleMarkup(): string {
   return `<div class="b-bar" id="b-bar" hidden aria-label="Battles">
 <div class="b-row"><b class="b-date" data-b="date"></b><span class="b-stats"><span><b data-b="cities">0</b> <span data-b="cl">cities in the battles</span></span><span><b data-b="shots">0</b> shots</span><span><b data-b="landed">0</b> landed</span><span data-b="season"></span><span data-b="next"></span></span></div>
-<div class="b-row" role="group" aria-label="Layers"><button type="button" data-bl="damage" aria-pressed="true" title="Hits on the buildings: scorch, a tier down, rubble, smoke by day, crews by night">Damage</button><button type="button" data-bl="attacks" aria-pressed="true" title="Launchers, their missile counts and missiles in flight">Attacks</button><button type="button" data-bl="shields" aria-pressed="true" title="Each city's shield (white: beginner shield)">Shields</button><button type="button" data-bl="replay" aria-pressed="false" title="Play today's launches so far again (8 s)">&#9654; Replay</button><span class="b-cap" data-b="cap" aria-live="polite"></span></div>
+<div class="b-row" role="group" aria-label="Layers"><button type="button" data-bl="damage" aria-pressed="true" title="Hits on the repo towers: lost floors, scorch, rubble, smoke; the cranes that rebuild them">Damage</button><button type="button" data-bl="attacks" aria-pressed="true" title="Ammo pads, stacks, launch centers and missiles in flight">Attacks</button><button type="button" data-bl="shields" aria-pressed="true" title="Each city's shield (white: beginner shield)">Shields</button><button type="button" data-bl="replay" aria-pressed="false" title="Play the whole day in 26 s: drop, load, 3 2 1, salvo, hits, cranes">&#9654; Replay</button><span class="b-cap" data-b="cap" aria-live="polite"></span></div>
 <div class="b-me" data-b="me"></div><div class="b-msg" data-b="msg" role="alert"></div>
 <details class="b-board" id="season"><summary>Season leaderboard (per head: facades landed, plus half of what your shield held off)</summary><div data-b="board"></div></details>
 </div>`;
