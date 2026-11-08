@@ -59,7 +59,8 @@ export function battleHub(c: BattleHubCtx) {
     const sn = snapOf(sim, day), active = sim.stats.filter(s => s.d <= day && s.pts > 0).length;
     const ars = arsenal(x.evBy.get(m.id) || [], day, { ai: x.ai.get(m.id), streak: sn.streak, lots: sn.lots, reverted: x.reverted });
     const o = { streak: sn.streak, joinedDays: day + 1 - dayOf(m.created || now()), activeDays: active, waived: waive };
-    return { id: m.id, h: m.handle, ars, sh: shield(o), beg: isBeginner(o), lots: sn.lots, side: sn.side, out7: sim.stats.filter(s => s.d > day - 7 && s.d <= day).reduce((t, s) => t + s.pts, 0), heads: heads(m.id), idle: sn.idle };
+    const towers = (m.city?.districts || []).reduce((n: number, d: any) => n + (d.repos || []).filter((r: any) => r && !r.kind).length, 0);   // repo towers on the world map, the only targets
+    return { id: m.id, h: m.handle, ars, sh: shield(o), beg: isBeginner(o), lots: sn.lots, towers, side: sn.side, out7: sim.stats.filter(s => s.d > day - 7 && s.d <= day).reduce((t, s) => t + s.pts, 0), heads: heads(m.id), idle: sn.idle };
   }
   /** damage still showing per defender and lot at a time, from the last 4 nights (only for members still opted in) */
   function openDamage(x: Ctx, at: number, warOn: Set<string>): Map<string, Map<number, number>> {

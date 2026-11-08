@@ -92,7 +92,8 @@ export function rng(seed: string): () => number {
 }
 export interface Fighter {
   id: string; h: string; ars: Arsenal; sh: number; beg: boolean;
-  /** lot codes of the plot as it stands (only built lots, code 4+, can be hit) */ lots: string;
+  /** lot codes of the plot as it stands */ lots: string;
+  /** the city's buildings on the world map (repo towers): the only things a shot can hit; 0 = never a target (Mike 11-08: no green-space hits) */ towers: number;
   side: number; /** points over the last 7 days, for matchmaking */ out7: number;
   /** team size: strength and score are per head, so a big team can't bully a solo builder */ heads: number;
   idle: number | null;
@@ -107,7 +108,7 @@ export interface NightIn {
 }
 export const band = (side: number) => side <= 3 ? 0 : side <= 5 ? 1 : side <= 8 ? 2 : 3;
 export const builtLots = (lots: string) => { const out: number[] = []; for (let i = 0; i < lots.length; i++) if (Number(lots[i]) >= 4) out.push(i); return out; };
-export const targetable = (f: Fighter) => f.idle === null || f.idle < WAR.idleDays;
+export const targetable = (f: Fighter) => (f.idle === null || f.idle < WAR.idleDays) && (f.towers || 0) > 0;
 
 /** Resolve one night. Deterministic for the same input. Raiders stand in for a missing fair rival, with the night's median
  *  arsenal (at least a cannon's worth), and they fire back. */
@@ -132,13 +133,13 @@ export function resolveNight(o: NightIn): { shots: Shot[]; raiders: string[] } {
     const raw = cost * pc * (1 - d.sh) * roll / 6 / WAR.facade;
     const room = Math.max(0, Math.min(WAR.nightCap - (taken.get(d.id) || 0), weekCap(d) - (o.week?.get(d.id) || 0) - (taken.get(d.id) || 0)));
     const f = Math.round(Math.min(raw, room) * 100) / 100;
-    let lot = -1;
-    if (f > 0) {
-      const m = lotDmg.get(d.id) || new Map<number, number>(); lotDmg.set(d.id, m);
-      const lots = builtLots(d.lots).sort((x, y) => (m.get(x) || 0) - (m.get(y) || 0) || Number(d.lots[y]) - Number(d.lots[x]) || x - y);
-      lot = lots.length ? lots[Math.floor(R() * Math.min(3, lots.length))]! : Math.floor(R() * 3);   // no built plot lots: the map puts the hit on one of the city's repo towers
-      m.set(lot, (m.get(lot) || 0) + f); taken.set(d.id, (taken.get(d.id) || 0) + f);
-    }
+    // lot = which of the defender's buildings the shot is aimed at: an index into its repo towers, tallest first (the map
+    // sorts the same way); the least-hit of the top three, so hits spread and stack visibly. A shield-stopped shot (f = 0)
+    // still aims at a building, so the map can burst it on the dome over that tower, never over grass.
+    const m = lotDmg.get(d.id) || new Map<number, number>(); lotDmg.set(d.id, m);
+    const n = Math.max(1, d.towers || 0), cand = [0, 1, 2].filter(i => i < n).sort((x, y) => (m.get(x) || 0) - (m.get(y) || 0) || x - y);
+    const lot = cand[Math.floor(R() * cand.length)]!;
+    if (f > 0) { m.set(lot, (m.get(lot) || 0) + f); taken.set(d.id, (taken.get(d.id) || 0) + f); }
     shots.push({ k: shots.length, a: aId, d: d.id, w, ammo: cost, roll, f, lot, t, aim, blocked: d.sh >= 1 ? 1 : 0 });
   };
   const raided: string[] = [], rArs: number[] = F.map(f => f.ars.ammo).filter(x => x > 0).sort((a, b) => a - b), armed = rArs.length;

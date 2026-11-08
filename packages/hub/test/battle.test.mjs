@@ -65,7 +65,7 @@ test("shields: beginner 100% for 30 days and until 7 active days (waivable); 50%
 });
 
 // ---------------------------------------------------------------- 2. battle resolution
-const F = (id, o = {}) => ({ id, h: id, ars: { ammo: o.ammo ?? 60, shots: B.shotsFor(o.ammo ?? 60, o.best || "cannon"), best: o.best || "cannon" }, sh: o.sh ?? 0, beg: !!o.beg, lots: o.lots || "5555444400000000", side: o.side || 4, out7: o.out7 ?? 100, heads: o.heads || 1, idle: o.idle ?? 0 });
+const F = (id, o = {}) => ({ id, h: id, towers: o.towers ?? 3, ars: { ammo: o.ammo ?? 60, shots: B.shotsFor(o.ammo ?? 60, o.best || "cannon"), best: o.best || "cannon" }, sh: o.sh ?? 0, beg: !!o.beg, lots: o.lots || "5555444400000000", side: o.side || 4, out7: o.out7 ?? 100, heads: o.heads || 1, idle: o.idle ?? 0 });
 
 test("resolution: deterministic, dice in the damage, only opted-in fighters, caps of 2 facades a night", () => {
   const fs2 = [F("a"), F("b"), F("c", { ammo: 10 })];
@@ -74,8 +74,19 @@ test("resolution: deterministic, dice in the damage, only opted-in fighters, cap
   assert.ok(r1.shots.length > 0 && r1.shots.every(s => ["a", "b", "c"].includes(s.a) && ["a", "b", "c"].includes(s.d)), "nobody outside the fighters is ever in a shot");
   assert.ok(r1.shots.some(s => s.roll !== r1.shots[0].roll), "the dice vary");
   for (const d of ["a", "b", "c"]) assert.ok(r1.shots.filter(s => s.d === d).reduce((t, s) => t + s.f, 0) <= 2 + 1e-9, "at most 2 facades a night on " + d);
-  for (const s of r1.shots) { assert.ok(s.t >= B.battleAt(D) && s.t < B.battleAt(D) + 41 * 60_000, "shots between 02:00 and 02:40 Pacific"); if (s.f > 0) assert.ok(Number(fs2.find(f => f.id === s.d).lots[s.lot]) >= 4, "hits land on built lots"); }
+  for (const s of r1.shots) { assert.ok(s.t >= B.battleAt(D) && s.t < B.battleAt(D) + 41 * 60_000, "shots between 02:00 and 02:40 Pacific"); if (s.f > 0) assert.ok(s.lot >= 0 && s.lot < fs2.find(f => f.id === s.d).towers, "hits land on one of the defender's buildings") }
   assert.notDeepEqual(B.resolveNight({ night: D + 1, fighters: fs2 }).shots.map(s => s.roll), r1.shots.map(s => s.roll), "another night, other dice");
+});
+
+test("buildings only: every hit lands on one of the defender's repo towers (tallest first, least hit of the top three), a city with no buildings is never a target, for many cities and days", () => {
+  const towns = ["a", "b", "c", "d", "e", "f", "g"].map((id, i) => F(id, { towers: i === 6 ? 0 : 1 + (i % 4), ammo: 20 + i * 10 }));
+  for (let n = D; n < D + 12; n++) {
+    const r = B.resolveNight({ night: n, fighters: towns });
+    for (const s of r.shots) { const d = towns.find(t => t.id === s.d); assert.ok(d && d.towers > 0, "never a city without buildings: " + s.d); assert.ok(s.lot >= 0 && s.lot < d.towers, `aim index ${s.lot} is one of ${d.towers} buildings`); assert.notEqual(s.a, s.d); }
+    assert.ok(!r.shots.some(s => s.d === "g"), "g has no buildings and is never hit");
+  }
+  const lone = B.resolveNight({ night: D, fighters: [F("a"), F("g", { towers: 0 })] });
+  assert.ok(lone.shots.every(s => s.d !== "g"), "no green-space hits even when the only other city is empty");
 });
 
 test("city vs city: a city never targets itself, its shots spread over up to three rivals, raiders only when fewer than two cities are armed", () => {
