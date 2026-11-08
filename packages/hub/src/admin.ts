@@ -44,7 +44,7 @@ const usage = () => { console.log("usage: admin.js list | merges | aliases | hid
 const clean = (h: string) => h.toLowerCase().replace(/^@/, "");
 
 // the battle-report command needs the mail transport (CALDERA_RESEND_KEY from the env file), the others never send
-const hub = createHub({ dataDir: process.env.CALDERA_DATA || "./data", publicUrl: process.env.CALDERA_PUBLIC_URL || undefined, email: process.env.CALDERA_RESEND_KEY && process.argv.includes("battle-report") ? { resendKey: process.env.CALDERA_RESEND_KEY, schedule: false } : undefined });
+const hub = createHub({ dataDir: process.env.CALDERA_DATA || "./data", publicUrl: process.env.CALDERA_PUBLIC_URL || undefined, founder: process.env.CALDERA_FOUNDER || undefined, email: process.env.CALDERA_RESEND_KEY && process.argv.includes("battle-report") ? { resendKey: process.env.CALDERA_RESEND_KEY, schedule: false } : undefined });
 const a = hub.admin as any;
 try {
   if (cmd === "stuck-claim") {   // dry run by default; --send emails each person once; other args are sqlite backup files
