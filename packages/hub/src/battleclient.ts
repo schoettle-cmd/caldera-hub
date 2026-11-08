@@ -6,7 +6,10 @@
  * panel: join or leave, tonight's arsenal, shield, optional manual fire, the report email), the season board, and the morning
  * card "What your city did last night". The map is drawn by the city renderer (citybattle.ts), driven through
  * window.CALDERA_BATTLE_API: supply drop at noon local, one salvo at 20:00, cranes rebuild from midnight to noon (Mike 11-07).
- * Replay plays the whole day in 26 s: drop, load, 3 2 1, salvo, hits, cranes. Shareable: /world?view=battle, &layers=damage,attacks,shields,replay.
+ * Replay (Mike 11-08) is cinematic: one strike beat per city, the camera zooms to the pad, follows the missiles into the hit and
+ * resets to the next city, then the wide shot, the cranes, home; 20 to 40 s. Controls on the map: Strike n of m, Pause, Skip, End;
+ * a tap on the map skips. "Demo replay" plays a sample battle between the biggest cities (synthetic shots, labelled demo).
+ * Shareable: /world?view=battle, &layers=damage,attacks,shields,replay, &replay=1 or &replay=demo.
  * Shipped as the source of battleClient() (self-contained).
  */
 export function battleClient() {
@@ -18,7 +21,7 @@ export function battleClient() {
   try { var sv = JSON.parse(localStorage.getItem(LKEY) || 'null'); if (sv) LAYERS.forEach(function (k) { if (k in sv && k !== 'replay') layers[k] = !!sv[k]; }); } catch (e) {}
   var U = null; try { U = new URL(location.href); } catch (e) {}
   var qp = U && U.searchParams.get('layers'); if (qp !== null && qp !== undefined && U.searchParams.has('layers')) { var want = qp.split(','); LAYERS.forEach(function (k) { layers[k] = want.indexOf(k) >= 0; }); }
-  var replayNight = U && U.searchParams.has('replay'); if (replayNight) layers.replay = true;
+  var replayNight = U && U.searchParams.has('replay'), replayMode = U && U.searchParams.get('replay') === 'demo' ? 'demo' : undefined; if (replayNight) layers.replay = true;
   function api() { return window.CALDERA_BATTLE_API; }
   function q(sel) { return bar ? bar.querySelector(sel) : null; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -49,21 +52,39 @@ export function battleClient() {
   function chipTick() {
     if (!on || !api() || !api().phase) return; var ph = api().phase(), left = Math.max(0, ph.until - Date.now()), h = Math.floor(left / 3600000), m = Math.floor(left % 3600000 / 60000), sec = Math.floor(left / 1000);
     if (!chip) { chip = document.createElement('div'); chip.className = 'b-chip'; chip.setAttribute('role', 'status'); chip.setAttribute('aria-live', 'polite'); chip.innerHTML = '<i></i><b></b><span></span>'; if (stage) stage.appendChild(chip); }
-    var reb = ph.seg === 'rebuild', left2 = ph.replay ? sec + 's' : h + 'h ' + (m < 10 ? '0' : '') + m + 'm', L = { idle: 'Quiet', supply: 'Supply drop', loading: 'Loading', countdown: 'Salvo', salvo: 'Salvo', damage: 'Hit', rebuild: 'Rebuilding until noon' }[ph.seg] || 'Battle';
+    if (ph.replay) { chip.classList.toggle('rebuild', ph.stage === 'rebuild'); chip.querySelector('b').textContent = ph.demo ? 'Demo replay' : 'Replay'; chip.querySelector('span').textContent = (ph.stage === 'beat' || ph.stage === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats + (ph.label ? ' \u00b7 ' + ph.label : '') : ph.label || '') + (ph.paused ? ' \u00b7 paused' : ''); hud(ph); return; }
+    var reb = ph.seg === 'rebuild', left2 = h + 'h ' + (m < 10 ? '0' : '') + m + 'm', L = { idle: 'Quiet', supply: 'Supply drop', loading: 'Loading', countdown: 'Salvo', salvo: 'Salvo', damage: 'Hit', rebuild: 'Rebuilding until noon' }[ph.seg] || 'Battle';
     var tail = ph.seg === 'supply' || ph.seg === 'loading' ? 'salvo ' + (ph.replay ? 'in ' + left2 : 'at ' + hhmm(ph.salvoAt)) + ' \u00b7 ' + ph.landed + ' of ' + ph.total + ' stacked' : ph.seg === 'countdown' ? 'in ' + Math.max(1, Math.ceil(left / 1000)) : ph.seg === 'salvo' || ph.seg === 'damage' ? ph.fired + ' missile' + (ph.fired === 1 ? '' : 's') + ' \u00b7 cranes ' + (ph.replay ? 'in ' + left2 : 'at midnight') : reb ? left2 + ' \u00b7 ' + Math.round(ph.rebuilt * 100) + '% rebuilt' : ph.total + ' missile' + (ph.total === 1 ? '' : 's') + ' today';
-    chip.classList.toggle('rebuild', reb); chip.querySelector('b').textContent = L + (ph.replay ? ' (replay)' : ''); chip.querySelector('span').textContent = tail;
+    chip.classList.toggle('rebuild', reb); chip.querySelector('b').textContent = L; chip.querySelector('span').textContent = tail;
   }
+  // the replay controls on the map: Strike n of m with the city, Pause / Play, Skip (a tap on the map skips too), End
+  var hudEl = null;
+  function hud(ph) {
+    if (!stage) return;
+    if (!hudEl) { hudEl = document.createElement('div'); hudEl.className = 'b-play'; hudEl.setAttribute('role', 'group'); hudEl.setAttribute('aria-label', 'Replay controls');
+      hudEl.innerHTML = '<div class="b-pt"><b data-p="beat"></b><span data-p="label"></span></div><button type="button" data-p="pause" aria-pressed="false">Pause</button><button type="button" data-p="skip">Skip</button><button type="button" data-p="stop" aria-label="End the replay">End</button>';
+      hudEl.querySelector('[data-p="pause"]').onclick = function () { if (api() && api().pause) { var on = api().pause(); this.setAttribute('aria-pressed', String(on)); this.textContent = on ? 'Play' : 'Pause'; } };
+      hudEl.querySelector('[data-p="skip"]').onclick = function () { if (api() && api().skip) api().skip(); hud(api().phase()); };
+      hudEl.querySelector('[data-p="stop"]').onclick = function () { stopPlay(); };
+      stage.appendChild(hudEl); }
+    var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
+    hudEl.querySelector('[data-p="beat"]').textContent = (ph.demo ? 'Demo \u00b7 ' : '') + beat; hudEl.querySelector('[data-p="label"]').textContent = ph.label || '';
+    var pb = hudEl.querySelector('[data-p="pause"]'); pb.setAttribute('aria-pressed', String(!!ph.paused)); pb.textContent = ph.paused ? 'Play' : 'Pause';
+    var sk = hudEl.querySelector('[data-p="skip"]'); sk.textContent = st === 'rebuild' ? 'Finish' : st === 'wide' ? 'Cranes' : 'Skip';
+  }
+  function hudOff() { if (hudEl) { hudEl.remove(); hudEl = null; } }
   function show() {
     on = true; if (bar) bar.hidden = false; document.documentElement.classList.add('w-battle');
     if (api()) { api().layers(layers); api().view(true, data); }
     stats(); load(); mine(); chipTick(); clearInterval(chipT); chipT = setInterval(chipTick, 1000); clearInterval(pollT); pollT = setInterval(load, 600000);
-    if (layers.replay) play();
+    if (layers.replay) play(replayMode);
   }
   function hide() {
     on = false; stopPlay(); if (bar) bar.hidden = true; document.documentElement.classList.remove('w-battle'); if (api()) api().view(false); clearInterval(chipT); clearInterval(pollT); if (chip) { chip.remove(); chip = null; }
     try { var u = new URL(location.href); if (u.searchParams.has('layers') || u.searchParams.has('replay')) { u.searchParams.delete('layers'); u.searchParams.delete('replay'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); } } catch (e) {}
   }
-  window.CALDERA_BATTLE_UI = { show: show, hide: hide, play: function () { setLayer('replay', true); } };
+  window.CALDERA_BATTLE_UI = { show: show, hide: hide, play: function (mode) { if (mode === 'demo') play('demo'); else setLayer('replay', true); } };
+  var demoBtn = q('[data-bdemo]'); if (demoBtn) demoBtn.addEventListener('click', function () { play('demo'); });
   function saveLayers() {
     try { localStorage.setItem(LKEY, JSON.stringify(layers)); } catch (e) {}
     try { var u = new URL(location.href), def = layers.damage && layers.attacks && layers.shields && !layers.replay; if (def) u.searchParams.delete('layers'); else u.searchParams.set('layers', LAYERS.filter(function (k) { return layers[k]; }).join(',') || 'none'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); } catch (e) {}
@@ -77,16 +98,19 @@ export function battleClient() {
     var k = b.getAttribute('data-bl'); b.setAttribute('aria-pressed', String(!!layers[k]));
     b.addEventListener('click', function () { setLayer(k, b.getAttribute('aria-pressed') !== 'true'); });
   });
-  // ---------------------------------------------------------------- replay: today's launches so far, again, in about 8 s
-  var cap = q('[data-b="cap"]');
-  function stopPlay() { if (playing) { clearTimeout(playing); playing = null; } if (api() && api().stop) api().stop(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); layers.replay = false; }
-  function play() {
-    if (playing) { clearTimeout(playing); playing = null; }
-    var n = on && api() && api().replay ? api().replay() : 0;
-    if (!n) { if (cap) cap.textContent = 'No missiles today: nothing to replay.'; playing = setTimeout(stopPlay, 2500); return; }
-    if (me && me.h && api()) api().fly(me.h);
-    if (cap) cap.textContent = 'Replay: supply drop, loading, 3 2 1, salvo, hits, cranes, back as it was (' + n + ' missile' + (n === 1 ? '' : 's') + ')';
-    playing = setTimeout(stopPlay, 27500);
+  // ---------------------------------------------------------------- replay: the cinematic strike-by-strike replay (or the demo)
+  var cap = q('[data-b="cap"]'), hudT = 0;
+  function stopPlay() { if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); }
+  function play(mode) {
+    if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0;
+    var n = on && api() && api().replay ? api().replay(mode) : 0;
+    if (!n) { if (cap) cap.textContent = mode === 'demo' ? 'The demo needs two cities with repo towers on the map.' : 'No missiles today: nothing to replay. Try the demo replay.'; playing = setTimeout(stopPlay, 3500); return; }
+    var ph = api().phase(), b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', String(mode !== 'demo')); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', String(mode === 'demo')); layers.replay = mode !== 'demo';
+    if (cap) cap.textContent = (mode === 'demo' ? 'Demo: a sample battle between the biggest cities on the map, synthetic shots. ' : 'Replay: ') + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ', ' + n + ' missile' + (n === 1 ? '' : 's') + ', about ' + Math.round(ph.dur / 1000) + ' s. Tap the map to skip to the next strike.';
+    chipTick(); hud(ph); document.documentElement.classList.add('w-replay');
+    if (stage && window.innerWidth >= 700) { var r = stage.getBoundingClientRect(); if (r.top < 0 || r.bottom > window.innerHeight) { try { stage.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } catch (e) {} } }
+    hudT = setInterval(function () { var p2 = api() && api().phase ? api().phase() : null; if (!p2 || !p2.replay) { stopPlay(); return; } hud(p2); }, 200);
+    playing = setTimeout(stopPlay, 50000);
   }
   // ---------------------------------------------------------------- the member's panel
   var panel = q('[data-b="me"]');
@@ -183,16 +207,22 @@ export const BATTLE_CSS = `
 .b-share{font:500 13px/1 var(--font-sans,'IBM Plex Sans',sans-serif);background:transparent;color:#E8EEF8;border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:0 12px;min-height:36px;cursor:pointer}
 .b-recap .g-x{position:absolute;right:4px;top:4px;width:36px;height:36px;border:0;background:transparent;color:#C9D2E6;font-size:20px;cursor:pointer;border-radius:50%}
 .b-chip{position:absolute;left:10px;top:10px;z-index:6;display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(15,16,22,.92);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:6px 11px 6px 9px;font-variant-numeric:tabular-nums;pointer-events:none;max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.b-play{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;display:flex;align-items:center;gap:6px;max-width:calc(100% - 20px);padding:5px 6px 5px 12px;border-radius:14px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);font:500 12px/1.2 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;font-variant-numeric:tabular-nums}
+.b-play .b-pt{display:grid;gap:2px;min-width:0;margin-right:6px}.b-play .b-pt b{color:#fff;font-weight:600;white-space:nowrap}.b-play .b-pt span{color:#C9D2E6;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}.b-play .b-pt span:empty{display:none}
+.b-play button{font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.22);border-radius:9px;padding:0 10px;min-height:36px;min-width:44px;cursor:pointer;flex:none}
+.b-play button[aria-pressed="true"]{background:rgba(61,242,255,.18);border-color:#3DF2FF}.b-play button:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
 .b-chip i{width:7px;height:7px;border-radius:50%;background:#FFB347;box-shadow:0 0 8px #FFB347;flex:none}.b-chip.rebuild i{background:#4FD1C5;box-shadow:0 0 8px #4FD1C5}.b-chip b{font-weight:600;color:#fff}.b-chip span{color:#C9D2E6}
 @media (prefers-reduced-motion: reduce){.b-chip i{box-shadow:none}}
+html.w-replay #drRail,html.w-replay .cal-nb{display:none!important}
+.w-main .c-stage.c-full{height:100%;min-height:0}
 .w-battle-only{display:none}html.w-battle .w-battle-only{display:revert}html.w-battle .w-now-only,html.w-battle .w-grow-only{display:none}
-@media (max-width:600px){.b-bar{padding:8px 10px}.b-stats{gap:2px 10px;font-size:11.5px}.b-recap{top:auto;bottom:50px;right:10px}.b-chip{top:auto;bottom:10px}}
+@media (max-width:600px){.b-bar{padding:8px 10px}.b-stats{gap:2px 10px;font-size:11.5px}.b-recap{top:auto;bottom:50px;right:10px}.b-chip{top:auto;bottom:10px}.b-play{bottom:48px;left:10px;right:10px;transform:none;max-width:none;justify-content:space-between;padding:5px 5px 5px 10px}.b-play .b-pt span{max-width:40vw}.b-play button{padding:0 8px}.c-stage.c-full .b-play{bottom:calc(48px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
 `;
 
 export function battleMarkup(): string {
   return `<div class="b-bar" id="b-bar" hidden aria-label="Battles">
 <div class="b-row"><b class="b-date" data-b="date"></b><span class="b-stats"><span><b data-b="cities">0</b> <span data-b="cl">cities in the battles</span></span><span><b data-b="shots">0</b> shots</span><span><b data-b="landed">0</b> landed</span><span data-b="season"></span><span data-b="next"></span></span></div>
-<div class="b-row" role="group" aria-label="Layers"><button type="button" data-bl="damage" aria-pressed="true" title="Hits on the repo towers: lost floors, scorch, rubble, smoke; the cranes that rebuild them">Damage</button><button type="button" data-bl="attacks" aria-pressed="true" title="Ammo pads, stacks, launch centers and missiles in flight">Attacks</button><button type="button" data-bl="shields" aria-pressed="true" title="Each city's shield (white: beginner shield)">Shields</button><button type="button" data-bl="replay" aria-pressed="false" title="Play the whole day in 26 s: drop, load, 3 2 1, salvo, hits, cranes">&#9654; Replay</button><span class="b-cap" data-b="cap" aria-live="polite"></span></div>
+<div class="b-row" role="group" aria-label="Layers"><button type="button" data-bl="damage" aria-pressed="true" title="Hits on the repo towers: lost floors, scorch, rubble, smoke; the cranes that rebuild them">Damage</button><button type="button" data-bl="attacks" aria-pressed="true" title="Ammo pads, stacks, launch centers and missiles in flight">Attacks</button><button type="button" data-bl="shields" aria-pressed="true" title="Each city's shield (white: beginner shield)">Shields</button><button type="button" data-bl="replay" aria-pressed="false" title="Last night strike by strike: the camera zooms to each city, follows its missiles into the hit, then the cranes">&#9654; Replay</button><button type="button" data-bdemo aria-pressed="false" title="A sample battle between the biggest cities on the map (synthetic shots), to see the full choreography">Demo replay</button><span class="b-cap" data-b="cap" aria-live="polite"></span></div>
 <div class="b-me" data-b="me"></div><div class="b-msg" data-b="msg" role="alert"></div>
 <details class="b-board" id="season"><summary>Season leaderboard (per head: facades landed, plus half of what your shield held off)</summary><div data-b="board"></div></details>
 </div>`;
