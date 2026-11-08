@@ -74,6 +74,10 @@ export function funnel(c: { q: (sql: string) => any; ipOf: (req: http.IncomingMe
       const ua = String(req.headers["user-agent"] || ""); if (!ua || c.botUa.test(ua) || looksAutomated(req)) return;
       // page visits count people only (MasterBuilder 2026-11-03: bots read as traffic): a view without a browser's Sec-Fetch
       // navigation headers is kept as <step>_filtered, so the Growth tab can show people vs filtered
+      // sign-up doors and form loads (11-08, ops 20261108-1157): a proxy crawler following the /join/go links sent browser agents
+      // but no Referer and no Sec-Fetch headers (120-170 a day from 11-05, never loaded CSS/JS); a person clicking our link
+      // sends one or the other, so a door or form load with neither is not counted
+      if ((step.startsWith("door-") || step === "typed-form") && !req.headers["referer"] && req.headers["sec-fetch-mode"] !== "navigate") return;
       if ((step === "view" || step === "preview") && !(req.headers["sec-fetch-mode"] === "navigate" && (!req.headers["sec-fetch-dest"] || req.headers["sec-fetch-dest"] === "document"))) step = (step + "_filtered") as Step;
       const day = funnelDay(); maybePrune();
       q("INSERT OR IGNORE INTO funnel_events VALUES (?,?,?,?,?)").run(day, vidOf(req, day), step, String(detail).slice(0, 80), new Date().toISOString());

@@ -217,3 +217,16 @@ test("stuck-claim: a designer + business pair seconds apart is dropped as a bot 
   const r = await hub.stuckClaim({ send: true });
   assert.ok(r.bot_pair >= 2); assert.equal(mails.filter(m => /pair-/.test(m.to)).length, 0);
 });
+
+test("door clicks and form loads with neither a Referer nor Sec-Fetch navigation are not counted (proxy crawler, 11-08)", async () => {
+  const OLD = "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0 Mobile/15E148 Safari/604.1";
+  const n = (step) => hub.db.prepare("SELECT COUNT(*) n FROM funnel_events WHERE step=?").get(step).n;
+  const f0 = n("typed-form"), d0 = n("door-business");
+  await get("/join/go?door=business", { "user-agent": OLD });
+  await get("/join/business", { "user-agent": OLD + " bare" });
+  assert.equal(n("door-business"), d0); assert.equal(n("typed-form"), f0);
+  await get("/join/go?door=business", { "user-agent": OLD + " a", referer: ORIGIN + "/join" });
+  await get("/join/business", { "user-agent": OLD + " b", referer: ORIGIN + "/join" });
+  // (Node fetch always sends Sec-Fetch-Mode: cors, so the navigate path is checked live, not here)
+  assert.equal(n("door-business"), d0 + 1); assert.equal(n("typed-form"), f0 + 1);
+});
