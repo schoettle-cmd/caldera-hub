@@ -180,6 +180,10 @@ ${BT ? `<script>window.CALDERA_BATTLE_ON=1</script>` : ""}${G ? `<script>${GROWT
 .w-main{max-width:none;margin:0;padding:10px 20px 32px}.w-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:flex-start;gap:2px 14px;margin:2px 0 10px}@media (max-width:600px){.w-main{padding:8px 16px 28px}.w-main .w-head{flex-direction:column;align-items:flex-start;gap:2px}.w-main .w-head p{flex:none;font-size:13px}}
 .w-head h1{font-family:'Source Serif 4',Georgia,serif;font-size:clamp(1.3rem,2.2vw,1.7rem);margin:0;color:var(--text-strong,#F7F7FA)}.w-head p{margin:0;color:var(--text-muted,#8A8A93);font-size:14px;flex:1 1 30ch;min-width:0}
 @media (max-width:600px){.w-main .c-tools{flex-wrap:wrap;justify-content:flex-end;left:8px;right:8px;gap:4px}.w-main .c-tools button{padding:5px 8px}}.w-main .c-stage{height:calc(100vh - 150px);height:calc(100svh - 150px);min-height:460px}@media (max-width:600px){.w-main .c-stage{height:calc(100svh - 190px);min-height:400px}}
+.w-main .c-stage.c-full{height:100%;min-height:0}
+@media (max-width:600px){html.w-battle .w-main .c-live{display:none}.w-main .b-chip{font-size:11px;gap:6px;padding:6px 10px 6px 8px}}
+.w-main .b-chip b{flex:none}.w-main .b-chip span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.w-main .b-me .b-small{line-height:1.45}.w-main .b-me .b-link{min-height:0;padding:7px 0;margin:-7px 0;vertical-align:baseline}.w-main .b-board summary{line-height:1.35;padding:6px 0}
 .w-foot{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:13px;color:var(--text-muted,#8A8A93)}.w-foot a{color:var(--accent-text,#B9A6FF)}
 .w-legend i{display:inline-block;width:18px;height:4px;border-radius:2px;background:linear-gradient(90deg,#B98CFF,#FFC46B,#B98CFF);vertical-align:middle;margin-right:6px;box-shadow:0 0 6px rgba(200,160,255,.8)}.w-legend-stack i{background:repeating-linear-gradient(90deg,#FF7A96 0 4px,transparent 4px 7px);box-shadow:none}</style></head><body>
 ${o.nav}
