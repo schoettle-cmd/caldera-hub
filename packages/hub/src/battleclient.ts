@@ -119,9 +119,9 @@ export function battleClient() {
   }
   function render() {
     if (!panel) return;
-    if (!me) { panel.innerHTML = '<p>Battles are opt-in. Everyone else is a peaceful zone: no shots in or out. <a href="/signin?next=%2Fworld%3Fview%3Dbattle">Sign in</a> to join with your city.</p>'; return; }
+    if (!me) { panel.innerHTML = '<p>Every city is in the battles. Each one fights on its own overnight with that day\'s real code; damage shows only on this map and always rebuilds itself. <a href="/signin?next=%2Fworld%3Fview%3Dbattle">Sign in</a> to see your city\'s arsenal and shield.</p>'; return; }
     if (!me.war) {
-      panel.innerHTML = '<p><b>Your city is a peaceful zone.</b> No shots in or out. Join and your city fights on its own overnight with that day\'s real code: no one has to do anything, damage is only on this map, and it always rebuilds itself.</p><button type="button" class="b-join">Join the battles</button>' + reportHtml();
+      panel.innerHTML = '<p><b>Your city has left the battles.</b> No shots in or out while it is out. Rejoin and it fights on its own overnight with that day\'s real code: no one has to do anything, damage is only on this map, and it always rebuilds itself.</p><button type="button" class="b-join">Rejoin the battles</button>' + reportHtml();
       panel.querySelector('.b-join').onclick = function () { act('/v1/world/battle/opt', { war: true }); };
       wireReport(); return;
     }
