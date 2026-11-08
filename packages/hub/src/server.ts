@@ -47,6 +47,8 @@ import { closenessOrder, buildWorld, foldLive, worldPage, type World, type World
 import { buildLand, landJob, landStore, type LandIn, type LandWorld } from "./land";
 import { growthHub, type GrowthMember } from "./growthhub";
 import { battleHub } from "./battlehub";
+import { leaderboard as leaderboardHub } from "./leaderboard";
+import { sysPosts, SYSTEM_AGENT } from "./sysposts";
 import { citySnapshot, applyPrivateMode, rewriteCityPage, upgradeCityScript, type CityData } from "../../../../caldera/packages/plugin/src/city";
 import { mentionSearch } from "./mentions.js";
 import { privateModes, scrubPrivateLive } from "./privatemode";
@@ -2279,6 +2281,18 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
     suggest: (id, n) => suggestFor(id, n) });
   // the feed's matching and posting policy is an open-core hook (public: exact tag overlap)
   FEED!.setMatcher(ext.feedMatcher());
+  // ---------------------------------------------------------------- Caldera's own posts (sysposts.ts) and the Leaderboard (leaderboard.ts)
+  // System posts go out as the founder's MasterBuilder agent (the card the feed already has), once per key. The leaderboard
+  // ranks the growth log by the battle arsenal (the day's real code) over Pacific days; its daily post rides the growth tick.
+  const SYS = sysPosts({ q, now, changed: () => FEED?.invalidate(), author: () => {
+    const f = opts.founder ? byHandle(String(opts.founder).toLowerCase()) : null; if (!f) return null;
+    const t = q("SELECT id FROM agent_tokens WHERE owner=? AND lower(name)=lower(?) AND revoked IS NULL ORDER BY created LIMIT 1").get(f.id, SYSTEM_AGENT()) as any;
+    return { owner: f.id, agent: SYSTEM_AGENT(), token: t?.id || null }; } });
+  const LB = GROWTH ? leaderboardHub({ q, hub: PUB(), sim: () => GROWTH.sim(), members: growthMembers, systemPost: SYS.systemPost, memberOf: r => memberOf(r), json: (r, s, b) => json(r, s, b),
+    nav: () => siteHeader("/leaderboard") + `<script src="/assets/site.js" defer></script>`, postOn: () => process.env.CALDERA_LEADERBOARD_POST !== "0" && (opts as any).leaderboardPost !== false,
+    avatar: id => { const pr = profile(id); if (!pr?.handle) return null; const b = body(pr); return b.photos?.avatar ? `/@${pr.handle}/${String(b.photos.avatar).replace(/^\.?\//, "")}` : null; } }) : null;
+  if (LB && GROWTH) GROWTH.onTick(() => LB.tick());
+  (admin as any).leaderboard = LB; (admin as any).sysposts = SYS;
   MSG = messages({ q, now, hub: opts.publicUrl || "https://caldera.social", profile, byHandle, body, modOf, areFriends, memberOf, sameOrigin, readBody, json, navify, tooMany, coldCap: (id: string) => EMP?.kindOf(id) === "business" ? 5 : 10, seal, unseal,
     // brand-new, empty accounts message friends only for their first two days (a public basic rule; abuse heuristics stay in the private extensions)
     canRequest: (pr: any) => Date.parse(pr.created) < Date.now() - 2 * DAY || !!cityOf(pr.handle)?.buildings,
@@ -2431,6 +2445,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (req.method === "GET" && p === "/v1/world") { res.setHeader("cache-control", "public, max-age=60"); const w = worldNow(); return json(res, 200, { at: w.at, members: w.members, links: w.links, city: w.city }); }
       if (BATTLE && (p.startsWith("/v1/world/battle") || p === "/u/battle") && await BATTLE.route(req, res, p, url)) return;
       if (GROWTH && (p.startsWith("/v1/world/") || p === "/hooks/github") && await GROWTH.route(req, res, p, url)) return;
+      if (LB && (p === "/leaderboard" || p === "/leaderboard/" || p === "/v1/leaderboard/rows") && await LB.route(req, res, p, url)) return;
       if (req.method === "GET" && p === "/v1/world/land") { res.setHeader("cache-control", "public, max-age=120"); return json(res, 200, landNow()); }
       if (req.method === "GET" && p === "/v1/world/live") { res.setHeader("cache-control", "no-store"); return json(res, 200, worldLive(url.searchParams.get("since"))); }
       if (req.method === "GET" && (p === "/world" || p === "/world/")) {

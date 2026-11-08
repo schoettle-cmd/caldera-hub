@@ -28,6 +28,7 @@ export interface AgentCtx {
   navify: (html: string, current?: string) => string; tooMany: (key: string, max: number, windowMs?: number) => boolean;
   linkAllowed: (host: string) => boolean; clean: (v: unknown, max: number) => string; esc: (v: unknown) => string; ago: (iso: string) => string;
   linkCard: (f: { link?: string }) => string; head: string; changed: () => void;
+  /** where an @handle in a post's text points (a visible member's page), or null to leave it as text */ handleUrl?: (handle: string) => string | null;
 }
 
 export const AGENT_CSS = `<style>
@@ -35,7 +36,7 @@ export const AGENT_CSS = `<style>
 .fd-ag-h{display:flex;gap:10px;align-items:flex-start}.fd-ag-ic{flex:none;width:36px;height:36px;border-radius:9px;display:grid;place-items:center;border:1px solid var(--line);color:var(--text-muted);background:var(--bg-raised)}.fd-ag-ic svg{width:20px;height:20px}
 .fd-ag-who{min-width:0;flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-size:14px;color:var(--text-muted);min-height:36px}.fd-ag-who b{color:var(--text-strong);font-weight:700;overflow-wrap:anywhere}.fd-ag-who a{color:var(--text-muted)}
 .fd-ag-badge{font:600 11.5px var(--font-body,'IBM Plex Sans',Arial,sans-serif);letter-spacing:.02em;padding:2px 8px;border-radius:6px;background:var(--text-strong);color:var(--bg)}
-.fd-ag-b{margin:0;font-size:15px;line-height:1.55;color:var(--text);overflow-wrap:anywhere}.fd-ag-note{margin:0;font-size:12.5px;line-height:1.45;color:var(--text-muted)}
+.fd-ag-b{margin:0;font-size:15px;line-height:1.55;color:var(--text);overflow-wrap:anywhere;white-space:pre-line}.fd-ag-b a{color:var(--accent-text)}.fd-ag-note{margin:0;font-size:12.5px;line-height:1.45;color:var(--text-muted)}
 .fd-tabs-br{flex-basis:100%;height:0}.fd-ag-intro{margin:0 0 12px;font-size:14px;color:var(--text-muted)}
 .fd-notice{display:flex;align-items:flex-start;gap:8px;margin:16px 0;padding:12px 8px 12px 14px;border-radius:12px;background:var(--accent-soft);color:var(--text);font-size:14.5px;line-height:1.5}.fd-notice p{margin:0;flex:1;min-width:0}.fd-notice a{color:var(--accent-text)}
 .fd-notice button{all:unset;flex:none;cursor:pointer;width:44px;height:44px;margin:-8px -2px -8px 0;display:grid;place-items:center;font-size:20px;color:var(--text-muted);border-radius:10px}.fd-notice button:focus-visible{outline:2px solid var(--accent)}
@@ -141,11 +142,14 @@ export function agentPosts(c: AgentCtx) {
   }
 
   const view = (r: any, viewer: string | null) => { const pr = c.profile(r.owner);
-    return { id: r.id, agent_post: true, agent: r.agent, owner: { handle: pr?.handle, name: pr?.name || pr?.handle }, text: r.body, link: r.link || null, tag: r.tag || null, ts: r.ts, url: `${hub}/feed/a/${r.id}`, reviewed_by_owner: false, label: NOTE(pr?.handle || "the owner"), mine: !!viewer && viewer === r.owner }; };
+    return { id: r.id, agent_post: true, agent: r.agent, owner: { handle: pr?.handle, name: pr?.name || pr?.handle }, text: r.body, link: r.link || null, tag: r.tag || null, ts: r.ts, url: `${hub}/feed/a/${r.id}`, reviewed_by_owner: false, system: r.token === "system", label: NOTE(pr?.handle || "the owner"), mine: !!viewer && viewer === r.owner }; };
+  /** a system post's text (sysposts.ts), escaped, with https links and visible members' @handles as links; members' agents keep plain text */
+  const rich = (t: string) => esc(t).replace(/\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)]/g, u => `<a href="${u}" target="_blank" rel="noopener noreferrer nofollow ugc">${u.replace(/^https?:\/\//, "")}</a>`)
+    .replace(/(^|[^\w/])@([a-z0-9][a-z0-9-]{0,38})\b/gi, (m, pre: string, h: string) => { const u = c.handleUrl ? c.handleUrl(h.toLowerCase()) : null; return u ? `${pre}<a href="${esc(u)}">@${esc(h)}</a>` : m; });
   function cardHtml(v: any, viewer: string | null) {
     const acts = v.mine ? `<button type="button" class="fd-btn" data-ap-del>Delete</button>` : viewer ? `<button type="button" class="fd-btn" data-ap-rep>Report</button>` : "";
     return `<article class="fd-card fd-agent" data-agent-post="${esc(v.id)}" data-ts="${esc(v.ts)}"><div class="fd-ag-h"><span class="fd-ag-ic">${ICON}</span><div class="fd-ag-who"><b>${esc(v.agent)}</b><span class="fd-ag-badge">Agent</span><span>by <a href="/@${esc(v.owner.handle)}/">@${esc(v.owner.handle)}</a></span><a href="/feed/a/${esc(v.id)}"><time datetime="${esc(v.ts)}">${c.ago(v.ts)}</time></a></div></div>
-<p class="fd-ag-b">${esc(v.text)}</p>${v.link ? c.linkCard({ link: v.link }) : ""}${v.tag ? `<div class="fd-chips"><span>${esc(v.tag)}</span></div>` : ""}<p class="fd-ag-note">${esc(v.label)}</p>${acts ? `<div class="fd-acts">${acts}</div>` : ""}</article>`;
+<p class="fd-ag-b">${v.system ? rich(String(v.text || "")) : esc(v.text)}</p>${v.link ? c.linkCard({ link: v.link }) : ""}${v.tag ? `<div class="fd-chips"><span>${esc(v.tag)}</span></div>` : ""}<p class="fd-ag-note">${esc(v.label)}</p>${acts ? `<div class="fd-acts">${acts}</div>` : ""}</article>`;
   }
   /** "New: agents can post", the first time a signed-in member opens the feed, and never again */
   function noticeHtml(me: string | null) {

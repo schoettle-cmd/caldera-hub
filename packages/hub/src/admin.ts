@@ -15,7 +15,9 @@
  *   ... agent-token-list | agent-token-revoke <token-id>
  *   ... growth-run [--polls N] [--backfills N] | growth-run @handle [--backfill]   the World's growth views: one tick now
  *   ... growth-drops                    today's daily drop manifest
- *   ... battle-state | battle-run [--force] [YYYY-MM-DD] | battle-optin @handle [--backdate] [--waive] | battle-optout @handle | battle-report [--dry] [--force] [@handle]
+ *   ... battle-state | battle-run [--force] [YYYY-MM-DD] | battle-optin @handle [--backdate] [--waive] | battle-optout @handle | battle-report [--dry] [--force] [@handle] | battle-summary [--dry]
+ *   ... leaderboard [day|week|month|all]            the Leaderboard's rows (top 25)
+ *   ... leaderboard-post [--dry] [--force] [YYYY-MM-DD]   yesterday's (or that Pacific day's) top 10 to the feed, once per day; --dry composes only; --force posts under 3 shippers
  *   ... land-run [--dry] [handle]   the World's Expansion view: fetch merged PRs and stars gained now, store tonight's land
  *   ... agent-token-add <owner-handle> <agent-name> <sha256-of-token>   register a token made elsewhere; the secret never comes here
  * Alerts, the GitHub circle job and other operator commands live in caldera.social's private tools.
@@ -41,7 +43,8 @@ const out = (v: unknown) => console.log(JSON.stringify(v, null, 2));
 const usage = () => { console.log("usage: admin.js list | merges | aliases | hide|unhide|remove|block <handle> [reason] | merge <from-handle> <into-handle> [reason]"); process.exit(1); };
 const clean = (h: string) => h.toLowerCase().replace(/^@/, "");
 
-const hub = createHub({ dataDir: process.env.CALDERA_DATA || "./data" });
+// the battle-report command needs the mail transport (CALDERA_RESEND_KEY from the env file), the others never send
+const hub = createHub({ dataDir: process.env.CALDERA_DATA || "./data", publicUrl: process.env.CALDERA_PUBLIC_URL || undefined, email: process.env.CALDERA_RESEND_KEY && process.argv.includes("battle-report") ? { resendKey: process.env.CALDERA_RESEND_KEY, schedule: false } : undefined });
 const a = hub.admin as any;
 try {
   if (cmd === "stuck-claim") {   // dry run by default; --send emails each person once; other args are sqlite backup files
@@ -66,8 +69,15 @@ try {
       out(b.resolve(n, { force: argv.includes("--force") })); process.exit(0); }
     if (cmd === "battle-optin" && mm) { b.optIn(mm.id, { since: argv.includes("--backdate") ? 0 : undefined, waive: argv.includes("--waive") ? true : undefined }); out(b.me(mm.id)); process.exit(0); }
     if (cmd === "battle-optout" && mm) { b.store.setWar(mm.id, false, Date.now()); out(b.me(mm.id)); process.exit(0); }
+    if (cmd === "battle-summary") { out(b.postSummary({ dry: argv.includes("--dry") })); process.exit(0); }
     if (cmd === "battle-report") { out(await b.sendReports({ dry: argv.includes("--dry"), force: argv.includes("--force"), only: mm?.id })); process.exit(0); }
     usage();
+  }
+  if (cmd === "leaderboard" || cmd === "leaderboard-post") {   // the Leaderboard (leaderboard.ts): rows, or yesterday's top 10 to the feed (idempotent per day)
+    const lb = a.leaderboard; if (!lb) { out({ error: "the leaderboard is off (CALDERA_GROWTH=0)" }); process.exit(1); }
+    if (cmd === "leaderboard") { const w = ["day", "week", "month", "all"].includes(argv[1] || "") ? argv[1] : "day"; out(lb.rankMembers(w).slice(0, 25)); process.exit(0); }
+    const d = argv.find(x => /^\d{4}-\d{2}-\d{2}$/.test(x)), day = d ? Math.floor(Date.parse(d + "T00:00:00Z") / 86_400_000) : undefined;
+    out(lb.dailyPost({ dry: argv.includes("--dry"), force: argv.includes("--force"), day })); process.exit(0);
   }
   if (cmd === "growth-drops") { const g = a.growth; out(g ? g.drops() : { error: "growth is off" }); process.exit(0); }
   if (cmd === "land-run") { out(await a.land({ dry: argv.includes("--dry"), only: argv.find((x, i) => i > 0 && !x.startsWith("--"))?.replace(/^@/, "") })); process.exit(0); }   // the World's Expansion view: fetch tonight's public-GitHub numbers now

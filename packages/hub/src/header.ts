@@ -3,8 +3,8 @@
  * address), signed out or signed in. Pages carry a marker (or an old header block); the hub swaps in this header at
  * response time for the viewer of that request, so every page shows the same bar whatever version built it.
  *
- * Signed out: logo · Feed · People · World · Guide | Sign in · Get started
- * Signed in:  logo · Feed · People · World | [Public | Private on your own profile] · items · bell · avatar menu
+ * Signed out: logo · Feed · People · World · Leaderboard · Downloads · Guide | Sign in · Get started
+ * Signed in:  logo · Feed · People · World · Leaderboard · Downloads | [Public | Private on your own profile] · items · bell · avatar menu
  *
  * Self-contained: inline styles scoped to .ch, line icons drawn inline, menus are <details> (work in sandboxed pages).
  */
@@ -33,7 +33,7 @@ export interface HeaderOwnView {
 
 export interface HeaderOpts {
   hub: string;
-  current?: "feed" | "people" | "world" | "downloads" | "guide" | "settings" | "alerts" | "messages" | "profile" | "";
+  current?: "feed" | "people" | "world" | "leaderboard" | "downloads" | "guide" | "settings" | "alerts" | "messages" | "profile" | "";
   viewer?: HeaderViewer | null;
   own?: HeaderOwnView | null;
   signinHref?: string;        // signed out: where Sign in goes (a profile's owner sign-in, or /signin)
@@ -53,6 +53,7 @@ export const ICON: Record<string, string> = {
   feed: `<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/>`,
   people: `<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
   world: `<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>`,
+  leaderboard: `<path d="M9 20V10h6v10"/><path d="M3 20v-6h6"/><path d="M15 20v-4h6v4"/><path d="M3 20h18"/>`,   // a podium
   guide: `<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>`,
   downloads: `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>`,
   bell: `<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>`,
@@ -214,15 +215,15 @@ export function appHeader(o: HeaderOpts): string {
   const hub = o.hub.replace(/\/$/, ""), v = o.viewer || null, cur = o.current || "";
   const link = (key: string, label: string, href: string) => `<a href="${e(href)}"${cur === key ? ' aria-current="page"' : ""}>${icon(key)}<span>${label}</span></a>`;
   const fn = v && cur !== "feed" ? v.feedNew || 0 : 0, fbadge = fn ? `<span class="ch-badge ch-new">${fn > 99 ? "99+" : fn}</span>` : "";
-  const navLinks = [link("feed", "Feed", `${hub}/feed`).replace("</span></a>", `</span>${fbadge}</a>`).replace("<a ", '<a class="ch-feed" '), link("people", "People", `${hub}/people`), link("world", "World", `${hub}/world`), link("downloads", "Downloads", `${hub}/downloads`)].concat(v ? [] : [link("guide", "Guide", `${hub}/guide`)]);
+  const navLinks = [link("feed", "Feed", `${hub}/feed`).replace("</span></a>", `</span>${fbadge}</a>`).replace("<a ", '<a class="ch-feed" '), link("people", "People", `${hub}/people`), link("world", "World", `${hub}/world`), link("leaderboard", "Leaderboard", `${hub}/leaderboard`), link("downloads", "Downloads", `${hub}/downloads`)].concat(v ? [] : [link("guide", "Guide", `${hub}/guide`)]);
   const brand = `<a class="ch-brand" href="${e(hub)}/" aria-label="Caldera home">${LOGO}<span>Caldera</span></a>`;
   const mobile = `<details class="ch-menu"><summary class="ch-icon" aria-label="Menu">${icon("menu")}</summary><div class="ch-pop" style="left:0;right:auto">`
-    + [["feed", "Feed", "/feed"], ["people", "People", "/people"], ["world", "World", "/world"], ["downloads", "Downloads", "/downloads"], ["guide", "Guide", "/guide"]].map(([k, l, h]) => `<a class="ch-mi" href="${e(hub + h)}"${cur === k ? ' aria-current="page"' : ""}>${icon(k)}${l}</a>`).join("")
+    + [["feed", "Feed", "/feed"], ["people", "People", "/people"], ["world", "World", "/world"], ["leaderboard", "Leaderboard", "/leaderboard"], ["downloads", "Downloads", "/downloads"], ["guide", "Guide", "/guide"]].map(([k, l, h]) => `<a class="ch-mi" href="${e(hub + h)}"${cur === k ? ' aria-current="page"' : ""}>${icon(k)}${l}</a>`).join("")
     + `</div></details>`;
   // phones: a bottom tab bar instead of the hamburger (thumb-reachable, big targets); hidden above 760px
   const tab = (key: string, label: string, href: string, inner: string, on: boolean, cls = "") => `<a${cls ? ` class="${cls}"` : ""} href="${e(href)}"${on ? ' aria-current="page"' : ""}><span class="ch-bi">${inner}</span><span class="ch-bl">${label}</span></a>`;
   const tabs = (list: string[]) => `${DUO_JS}<nav class="ch-bn" id="drRail" data-strip-rail aria-label="Main" style="grid-template-columns:repeat(${list.length},1fr)">${list.join("")}<a class="ch-fbk" id="chFbk" href="#feedback"><span class="ch-bi">${icon("feedback", 22)}</span><span class="ch-bl">Feedback</span></a></nav>`;
-  const base3 = [tab("feed", "Feed", `${hub}/feed`, icon("feed", 22) + fbadge, cur === "feed", "ch-bn-feed"), tab("people", "People", `${hub}/people`, icon("people", 22), cur === "people"), tab("world", "World", `${hub}/world`, icon("world", 22), cur === "world")];
+  const base3 = [tab("feed", "Feed", `${hub}/feed`, icon("feed", 22) + fbadge, cur === "feed", "ch-bn-feed"), tab("people", "People", `${hub}/people`, icon("people", 22), cur === "people"), tab("world", "World", `${hub}/world`, icon("world", 22), cur === "world"), tab("leaderboard", "Leaders", `${hub}/leaderboard`, icon("leaderboard", 22), cur === "leaderboard")];
   if (!v) {
     const signin = o.signinHref || `${hub}/signin`, join = o.joinHref || `${hub}/join?tp=header`;
     return `${HEADER_CSS}<header class="ch" id="caldera-bar" data-state="out">${mobile}${brand}<nav class="ch-nav" aria-label="Main">${navLinks.join("")}</nav>`
@@ -276,6 +277,7 @@ export function currentFor(pathname: string): HeaderOpts["current"] {
   if (/^\/feed(\/|$)/.test(pathname)) return "feed";
   if (/^\/people(\/|$)/.test(pathname)) return "people";
   if (/^\/(world|g\/)/.test(pathname)) return "world";
+  if (/^\/leaderboard(\/|$)/.test(pathname)) return "leaderboard";
   if (/^\/(downloads|tools)(\/|$)/.test(pathname)) return "downloads";
   if (/^\/(guide|learn|changelog)/.test(pathname)) return "guide";
   if (/^\/(settings|me)(\/|$)/.test(pathname)) return "settings";

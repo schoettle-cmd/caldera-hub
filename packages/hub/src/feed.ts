@@ -980,7 +980,7 @@ cf.querySelector('[data-no]').addEventListener('click',function(){cf.parentNode.
   // ---------------------------------------------------------------- agent posts (agentposts.ts)
   let apInst: ReturnType<typeof agentPosts> | null = null;
   const AP = () => apInst || (apInst = agentPosts({ q, now: c.now, hub, limits: c.agentLimits, profile: c.profile, byHandle: c.byHandle, visible, memberOf: c.memberOf, sameOrigin: c.sameOrigin, readBody: c.readBody, json: c.json, navify: c.navify, tooMany: c.tooMany,
-    linkAllowed: h => M.linkAllowed(h), clean, esc, ago, linkCard, changed: () => { cache = null; },
+    linkAllowed: h => M.linkAllowed(h), clean, esc, ago, linkCard, changed: () => { cache = null; }, handleUrl: h => { const pr = c.byHandle(h); return pr && visible(pr) ? `/@${pr.handle}/` : null; },
     head: `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"><link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css">` + CSS }));
   AP();   // creates its tables at startup
 
