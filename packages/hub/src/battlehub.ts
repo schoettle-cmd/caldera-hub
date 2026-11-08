@@ -13,7 +13,7 @@
 import crypto from "node:crypto";
 import type http from "node:http";
 import { DAY, dayOf, dayKey, type GEvent, type SimOut } from "./growth";
-import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, isBeginner, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, worldLines, battleStore, targetable,
+import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, isBeginner, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
   type Fighter, type Shot, type Report, type ReportFreq } from "./battle";
 import type { GrowthMember } from "./growthhub";
 
@@ -29,6 +29,7 @@ export interface BattleHubCtx {
   /** a member's confirmed, unsuppressed address (null: no address we may use) */ emailOf: (profileId: string) => string | null;
   send: (m: BattleMail) => Promise<unknown>;
   /** CALDERA_BATTLE_EMAIL=1: the report email may actually go out */ emailOn: () => boolean;
+  /** the feed's system voice (sysposts.ts): idempotent by key; absent until the feed plumbing is wired */ systemPost?: (key: string, text: string, links?: string[]) => { posted: boolean; id?: string };
   /** team size, for per-capita strength and scoring (1 for a person) */ heads?: (profileId: string) => number;
   now?: () => number;
 }
@@ -91,7 +92,11 @@ export function battleHub(c: BattleHubCtx) {
   async function tick() {
     const n = lastNight(now());
     if (!S.hasNight(n) && now() - battleAt(n) < 20 * 3600_000) { try { resolve(n); } catch (e: any) { console.error("[battle] resolve", e?.message); } }
-    if (c.emailOn() && now() >= battleAt(n) + 7 * 3600_000) { try { await sendReports(); } catch (e: any) { console.error("[battle] email", e?.message); } }
+    // 20:30 Pacific, after the day's salvo on the map (12:00 drop, 20:00 salvo, local): the report email and the feed summary
+    if (now() >= battleAt(n) + 18.5 * 3600_000) {
+      if (c.emailOn()) { try { await sendReports(); } catch (e: any) { console.error("[battle] email", e?.message); } }
+      if (c.systemPost) { try { postSummary(); } catch (e: any) { console.error("[battle] summary", e?.message); } }
+    }
   }
   c.growth.onTick(tick);
 
@@ -179,6 +184,14 @@ export function battleHub(c: BattleHubCtx) {
     return { sent: out.filter(y => y.sent).length, out };
   }
 
+  /** the daily feed post, once per battle day (sysposts key battle:<night>); dry: the text only */
+  function postSummary(o: { dry?: boolean } = {}) {
+    const n = lastNight(now()), x = ctxFor(); if (!S.hasNight(n)) return { skip: "no battle yet" };
+    const text = battleSummary(S.shots(n), { night: dayKey(n), handle: x.handle, hub: c.hub }); if (!text) return { skip: "no missiles today", night: dayKey(n) };
+    if (o.dry || !c.systemPost) return { dry: true, night: dayKey(n), text };
+    return { night: dayKey(n), ...c.systemPost("battle:" + dayKey(n), text, [c.hub.replace(/\/$/, "") + "/world?view=battle&replay=1"]) };
+  }
+
   // ---------------------------------------------------------------- routes
   async function route(req: http.IncomingMessage, res: http.ServerResponse, p: string, url: URL): Promise<boolean> {
     if (req.method === "GET" && p === "/v1/world/battle") { res.setHeader("cache-control", "public, max-age=60"); c.json(res, 200, state()); return true; }
@@ -217,7 +230,7 @@ export function battleHub(c: BattleHubCtx) {
     }
     return false;
   }
-  return { route, tick, resolve, state, me, sendReports, store: S, erase: (id: string) => { S.erase(id); cache = null; },
+  return { route, tick, resolve, state, me, postSummary, sendReports, store: S, erase: (id: string) => { S.erase(id); cache = null; },
     /** operator: opt a member in; since (ms) backdates it so a seed night can include them */
     optIn: (id: string, o: { waive?: boolean; since?: number } = {}) => { S.setWar(id, true, o.since ?? now()); if (o.waive !== undefined) S.setWaive(id, o.waive); cache = null; } };
 }

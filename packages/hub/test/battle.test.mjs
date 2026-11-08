@@ -128,15 +128,19 @@ test("report and email: what my city did last night; subject formula; ASCII; pea
   const r = B.reportFor("n", "nadia", shots, { night: D, now: at + 7 * 3600_000, peace: false, pts: () => 0, handle, mvp: { repo: "build-bot", bricks: 38 }, shield: 0.92, streak: 14, built: 2, ammo: 20 });
   assert.equal(r.raids.length, 1); assert.equal(r.raids[0].from, "@oscar"); near(r.taken, 1.2); assert.equal(r.tiers, 1); assert.equal(r.fired, 2); assert.equal(r.landed, 1); assert.deepEqual(r.on, ["@quinn"]);
   assert.ok(r.rebuilt > 0 && r.rebuilt < 100, "partly rebuilt by 9am: " + r.rebuilt);
-  assert.equal(B.battleSubject(r), `Your city last night: hit by @oscar, ${r.rebuilt}% rebuilt`);
-  assert.equal(B.battleSubject({ ...r, taken: 0 }), `Your city last night: held off @oscar, ${r.rebuilt}% rebuilt`);
-  assert.equal(B.battleSubject({ ...r, raids: [], built: 3 }), "Your city last night: no raids, 3 lots built");
+  assert.equal(B.battleSubject(r), "Your city today: hit by @oscar, cranes rebuild tonight");
+  assert.equal(B.battleSubject({ ...r, taken: 0 }), "Your city today: @oscar stopped by your shield");
+  assert.equal(B.battleSubject({ ...r, raids: [] }), "Your city today: 2 missiles stacked, no hits on your towers");
+  assert.equal(B.battleSubject({ ...r, peace: true, built: 3 }), "Your city today: peaceful zone, 3 lots built");
   const w = B.worldLines(shots, { handle, built: [["@mike", 11]], rebuilt: [["@nadia", 61]], pairsByNight: [], season: { n: 1, week: 1 } });
   const m = B.battleEmail(r, w, { name: "Nadia K", hub: "https://caldera.social", unsub: "https://caldera.social/u/battle?t=x", postal: "mjonesone, LLC, 450 S Melrose Dr, Vista, CA 92081" });
   assert.ok(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(m.text) && /^[\x20-\x7e]*$/.test(m.subject), "plain ASCII");
-  for (const s of ["Hey Nadia,", "YOUR CITY", "Raided once (@oscar,", "MVP: build-bot, 38 bricks laid.", "Watch the replay: https://caldera.social/world?view=battle&replay=", "LAST NIGHT IN THE WORLD", "Built the most: @mike 11 lots", "Top attackers: @nadia 1 hit", "Season 1, week 1", "Daily / Weekly / Off:", "Unsubscribe: https://caldera.social/u/battle?t=x", "Vista, CA"]) assert.ok(m.text.includes(s), "email has: " + s);
+  for (const s of ["Hey Nadia,", "YOUR CITY", "Stacked at noon: 2 missiles from 20 ammo", "Salvo at 20:00: 2 fired, 1 landed on @quinn.", "Hits on your towers: 1.2 facades from @oscar (1 tower lost the top floors). Cranes rebuild overnight, whole by noon.", "MVP: build-bot, 38 bricks laid.", "Watch the replay: https://caldera.social/world?view=battle&replay=1", "TODAY IN THE WORLD", "Most ammo stacked: @nadia 2 missiles, @oscar 1 missile", "Built the most: @mike 11 lots", "Most hits landed: @nadia 1 hit", "Leaderboard: https://caldera.social/leaderboard", "Season 1, week 1", "Daily / Weekly / Off:", "Unsubscribe: https://caldera.social/u/battle?t=x", "Vista, CA"]) assert.ok(m.text.includes(s), "email has: " + s);
   const peace = B.battleEmail({ ...r, peace: true, raids: [] }, w, { name: "Nadia", hub: "https://caldera.social", unsub: "u", postal: "P" });
-  assert.ok(!/attack|raid|hit|facade/i.test(peace.text.replace(/Hey Nadia[\s\S]*?YOUR CITY/, "").replace(/no raids in or out/, "")), "a peaceful zone never reads about attacks");
+  assert.ok(!/attack|raid|hit|facade|salvo/i.test(peace.text.replace(/Hey Nadia[\s\S]*?YOUR CITY/, "")), "a peaceful zone never reads about attacks");
+  const sum = B.battleSummary(shots, { night: "2026-11-08", handle, hub: "https://caldera.social/" });
+  for (const t of ["Battle day, Nov 8.", "Most ammo stacked: @nadia 2 missiles, @oscar 1 missile.", "The 20:00 salvo: 3 missiles, 2 landed.", "Towers hit: @nadia (1 tower, 1.2 facades); @quinn (1 tower, 0.6 facades).", "Cranes rebuild overnight", "Replay: https://caldera.social/world?view=battle&replay=1", "Leaderboard: https://caldera.social/leaderboard"]) assert.ok(sum.includes(t), "summary: " + t);
+  assert.equal(B.battleSummary([], { night: "2026-11-08", handle, hub: "h" }), null, "no battle, no post");
   assert.equal(B.mvpOf([ev("commit", D, { repo: "me/build-bot" }), ev("commit", D, { repo: "me/build-bot" }), ev("private", D, { repo: "private:ab", n: 1 })], D).repo, "build-bot");
   assert.equal(B.mvpOf([ev("private", D, { repo: "private:ab", n: 9 })], D).repo, "a private repo", "private repos stay nameless");
 });
@@ -255,7 +259,7 @@ test("email on (CALDERA_BATTLE_EMAIL=1): a member with the report on and a confi
     const mine = sent.filter(m => m.src === "battle-report");
     {
       assert.equal(mine.length, 1, JSON.stringify(r));
-      assert.equal(mine[0].to, "ana@x.io"); assert.ok(/^Your city last night: /.test(mine[0].subject));
+      assert.equal(mine[0].to, "ana@x.io"); assert.ok(/^Your city today: /.test(mine[0].subject));
       assert.ok(mine[0].headers["List-Unsubscribe"].includes("/u/battle?t=") && mine[0].headers["List-Unsubscribe-Post"] === "List-Unsubscribe=One-Click");
       assert.ok(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(mine[0].text));
       await B2.sendReports(); assert.equal(sent.filter(m => m.src === "battle-report").length, 1, "one send per member per day");

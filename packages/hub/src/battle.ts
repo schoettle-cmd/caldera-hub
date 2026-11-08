@@ -209,52 +209,70 @@ export function mvpOf(events: GEvent[], day: number): { repo: string; bricks: nu
 }
 
 // ---------------------------------------------------------------- 7. the battle-report email (opt-in; sending stays off until Mike says go)
-export interface WorldLines { built: [string, number][]; hit: [string, number][]; attackers: [string, number][]; rebuilds: [string, number][]; rivalry: [string, string, number] | null; season: { n: number; week: number } }
+export interface WorldLines { built: [string, number][]; hit: [string, number][]; attackers: [string, number][]; rebuilds: [string, number][]; stacked?: [string, number][]; rivalry: [string, string, number] | null; season: { n: number; week: number } }
 const fmtF = (f: number) => { const r = Math.round(f * 10) / 10; return r === 1 ? "1 facade" : `${r} facades`; };
 const hhmm = (t: number) => new Date(t).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Los_Angeles" });
 export function battleSubject(r: Report): string {
-  if (r.peace || !r.raids.length) return `Your city last night: no raids, ${r.built} lot${r.built === 1 ? "" : "s"} built`;
+  if (r.peace) return `Your city today: peaceful zone, ${r.built} lot${r.built === 1 ? "" : "s"} built`;
+  if (!r.raids.length) return `Your city today: ${r.fired} missile${r.fired === 1 ? "" : "s"} stacked, no hits on your towers`;
   const who = r.raids.map(x => x.from).slice(0, 2).join(" and ");
-  return r.taken > 0 ? `Your city last night: hit by ${who}, ${r.rebuilt}% rebuilt` : `Your city last night: held off ${who}, ${r.rebuilt}% rebuilt`;
+  return r.taken > 0 ? `Your city today: hit by ${who}, cranes rebuild tonight` : `Your city today: ${who} stopped by your shield`;
 }
-/** Plain, short, ASCII, one link to the replay (plus the controls). Peaceful zones get the build and rebuild lines only. */
+/** Plain, short, ASCII, in the day's vocabulary (stacked at noon, the 20:00 salvo, towers hit, cranes overnight), one link
+ *  to the replay (plus the controls). Peaceful zones get the build lines only. */
 export function battleEmail(r: Report, w: WorldLines, o: { name: string; hub: string; unsub: string; postal: string; weekly?: boolean }): { subject: string; text: string; html: string } {
-  const first = (o.name || r.h).replace(/^@/, "").trim().split(/\s+/)[0] || r.h, hub = o.hub.replace(/\/$/, "");
+  const first = (o.name || r.h).replace(/^@/, "").trim().split(/\s+/)[0] || r.h, hub = o.hub.replace(/\/$/, ""), n1 = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const L: string[] = [`Hey ${first},`, "", "YOUR CITY"];
-  if (r.peace) { L.push(`Peaceful zone: no raids in or out.`, r.built ? `${r.built} lot${r.built === 1 ? "" : "s"} built yesterday.` : "No new lots yesterday."); }
+  if (r.peace) { L.push(`Peaceful zone: no missiles in or out.`, r.built ? `${n1(r.built, "lot")} built yesterday.` : "No new lots yesterday."); }
   else {
-    if (!r.raids.length) L.push("No raids on your city.");
-    else L.push(`Raided ${r.raids.length === 1 ? "once" : r.raids.length + " times"} (${r.raids.map(x => `${x.from}, ${hhmm(x.t)}`).join("; ")}). ${r.taken > 0 ? `${fmtF(r.taken)} hit${r.tiers ? `, ${r.tiers} tier${r.tiers === 1 ? "" : "s"} down` : ""}.` : "Your shield held."}`);
-    if (r.taken > 0) L.push(`Rebuilt ${r.rebuilt}% by 9am. Shield ${Math.round(r.shield * 100)}%${r.streak ? ` (${r.streak}-day streak)` : ""}.`);
-    else L.push(`Shield ${Math.round(r.shield * 100)}%${r.streak ? ` (${r.streak}-day streak)` : ""}.`);
-    if (r.fired) L.push(`Your towers fired ${r.fired}, landed ${r.landed}${r.on.length ? " on " + r.on.slice(0, 3).join(", ") : ""}.`);
-    if (r.mvp) L.push(`MVP: ${r.mvp.repo}, ${r.mvp.bricks} brick${r.mvp.bricks === 1 ? "" : "s"} laid.`);
+    L.push(r.fired ? `Stacked at noon: ${n1(r.fired, "missile")} from ${r.ammo} ammo (yesterday's code).` : "Nothing stacked at noon: no code counted yesterday.");
+    if (r.fired) L.push(`Salvo at 20:00: ${r.fired} fired, ${r.landed} landed${r.on.length ? " on " + r.on.slice(0, 3).join(", ") : ""}.`);
+    if (!r.raids.length) L.push("No missiles came your way.");
+    else L.push(r.taken > 0 ? `Hits on your towers: ${fmtF(r.taken)} from ${r.raids.map(x => x.from).join(", ")}${r.tiers ? ` (${n1(r.tiers, "tower")} lost the top floors)` : ""}. Cranes rebuild overnight, whole by noon.` : `Your shield held: ${r.raids.map(x => x.from).join(", ")} fired at you, nothing landed.`);
+    L.push(`Shield ${Math.round(r.shield * 100)}%${r.streak ? ` (${r.streak}-day streak)` : ""}.`);
+    if (r.mvp) L.push(`MVP: ${r.mvp.repo}, ${n1(r.mvp.bricks, "brick")} laid.`);
   }
-  L.push(`Watch the replay: ${hub}/world?view=battle&replay=${r.night}`, "", "LAST NIGHT IN THE WORLD");
+  L.push(`Watch the replay: ${hub}/world?view=battle&replay=1`, "", "TODAY IN THE WORLD");
   const list = (xs: [string, number][], f: (n: number) => string) => xs.map(([h, n]) => `${h} ${f(n)}`).join(", ");
-  if (w.built.length) L.push(`Built the most: ${list(w.built, n => `${n} lot${n === 1 ? "" : "s"}`)}`);
+  if (w.stacked && w.stacked.length) L.push(`Most ammo stacked: ${list(w.stacked, n => n1(n, "missile"))}`);
+  if (w.built.length) L.push(`Built the most: ${list(w.built, n => n1(n, "lot"))}`);
   if (!r.peace) {
-    if (w.hit.length) L.push(`Hit the hardest: ${list(w.hit, n => `(${fmtF(n)})`)}`);
-    if (w.attackers.length) L.push(`Top attackers: ${list(w.attackers, n => `${n} hit${n === 1 ? "" : "s"}`)}`);
-    if (w.rebuilds.length) L.push(`Biggest rebuilds: ${list(w.rebuilds, n => `${n}%`)}`);
-    if (w.rivalry) L.push(`Rivalry of the night: ${w.rivalry[0]} vs ${w.rivalry[1]}${w.rivalry[2] > 1 ? `, ${w.rivalry[2]} nights running` : ""}`);
+    if (w.hit.length) L.push(`Towers hit the hardest: ${list(w.hit, n => `(${fmtF(n)})`)}`);
+    if (w.attackers.length) L.push(`Most hits landed: ${list(w.attackers, n => n1(n, "hit"))}`);
+    if (w.rivalry) L.push(`Rivalry of the day: ${w.rivalry[0]} vs ${w.rivalry[1]}${w.rivalry[2] > 1 ? `, ${w.rivalry[2]} days running` : ""}`);
+    L.push("Cranes rebuild every tower overnight; by noon the world stands as it did.");
   }
-  L.push(`Season ${w.season.n}, week ${w.season.week}. Leaderboard: ${hub}/world?view=battle#season`, `Daily / Weekly / Off: ${hub}/world?view=battle#reports`, `Unsubscribe: ${o.unsub}`, "", o.postal);
+  L.push(`Season ${w.season.n}, week ${w.season.week}. Leaderboard: ${hub}/leaderboard`, `Daily / Weekly / Off: ${hub}/world?view=battle#reports`, `Unsubscribe: ${o.unsub}`, "", o.postal);
   const text = L.join("\n").replace(/[^\x09\x0a\x0d\x20-\x7e]/g, "");
   const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
   const html = `<!doctype html><html><body style="margin:0;padding:20px 14px;background:#fff;color:#24222B;font:15px/1.55 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif"><div style="max-width:560px;margin:0 auto;white-space:pre-wrap">${esc(text).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#6E4FE0">$1</a>')}</div></body></html>`;
   return { subject: battleSubject(r).replace(/[^\x20-\x7e]/g, ""), text, html };
 }
+/** The daily feed post, in Caldera's own voice (no sign-off): who stacked the most, the salvo, the towers hit, the cranes,
+ *  the replay and the leaderboard. null when there was no battle that day. */
+export function battleSummary(shots: Shot[], o: { night: string; handle: (id: string) => string; hub: string }): string | null {
+  if (!shots.length) return null;
+  const hub = o.hub.replace(/\/$/, ""), n1 = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`, d = new Date(o.night + "T12:00:00Z"), MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const stacked = new Map<string, number>(), hit = new Map<string, { f: number; towers: Set<number> }>();
+  for (const s of shots) { if (s.a !== RAIDERS) stacked.set(s.a, (stacked.get(s.a) || 0) + 1); if (s.f > 0 && s.d !== RAIDERS) { const h = hit.get(s.d) || { f: 0, towers: new Set<number>() }; h.f += s.f; if (s.lot >= 0) h.towers.add(s.lot); hit.set(s.d, h); } }
+  const top = [...stacked.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 3), landed = shots.filter(s => s.f > 0).length, raiders = shots.filter(s => s.a === RAIDERS).length;
+  const L = [`Battle day, ${MON[d.getUTCMonth()]} ${d.getUTCDate()}.`];
+  L.push(top.length ? `Most ammo stacked: ${top.map(([id, n]) => `${o.handle(id)} ${n1(n, "missile")}`).join(", ")}${raiders ? `; raiders from the sea brought ${raiders}` : ""}.` : `Only raiders from the sea fired today (${n1(raiders, "missile")}).`);
+  L.push(`The 20:00 salvo: ${n1(shots.length, "missile")}, ${landed} landed.`);
+  L.push(hit.size ? `Towers hit: ${[...hit.entries()].sort((a, b) => b[1].f - a[1].f).slice(0, 4).map(([id, h]) => `${o.handle(id)} (${n1(h.towers.size, "tower")}, ${fmtF(h.f)})`).join("; ")}.` : "No towers hit: every shield held.");
+  L.push("Cranes rebuild overnight; by noon every tower stands as it did.", `Replay: ${hub}/world?view=battle&replay=1`, `Leaderboard: ${hub}/leaderboard`);
+  return L.join("\n").replace(/[^\x09\x0a\x0d\x20-\x7e]/g, "");
+}
 /** The world section of the email, from the night's shots and yesterday's growth stats */
 export function worldLines(shots: Shot[], o: { handle: (id: string) => string; built: [string, number][]; rebuilt: [string, number][]; pairsByNight: Set<string>[]; season: { n: number; week: number } }): WorldLines {
-  const hit = new Map<string, number>(), att = new Map<string, number>(), pair = new Map<string, number>();
-  for (const s of shots) { if (s.d !== RAIDERS && s.f > 0) hit.set(s.d, (hit.get(s.d) || 0) + s.f); if (s.a !== RAIDERS && s.f > 0) att.set(s.a, (att.get(s.a) || 0) + 1);
+  const hit = new Map<string, number>(), att = new Map<string, number>(), pair = new Map<string, number>(), stk = new Map<string, number>();
+  for (const s of shots) { if (s.a !== RAIDERS) stk.set(s.a, (stk.get(s.a) || 0) + 1); if (s.d !== RAIDERS && s.f > 0) hit.set(s.d, (hit.get(s.d) || 0) + s.f); if (s.a !== RAIDERS && s.f > 0) att.set(s.a, (att.get(s.a) || 0) + 1);
     if (s.a !== RAIDERS && s.d !== RAIDERS) { const k = [s.a, s.d].sort().join("|"); pair.set(k, (pair.get(k) || 0) + 1); } }
   const top = (m: Map<string, number>): [string, number][] => [...m.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 3).map(([k, v]) => [o.handle(k), Math.round(v * 10) / 10]);
   let rivalry: [string, string, number] | null = null;
   const best = [...pair.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0];
   if (best) { const [a, b] = best[0].split("|"); let n = 1; for (const s of o.pairsByNight) { if (s.has(best[0])) n++; else break; } rivalry = [o.handle(a!), o.handle(b!), n]; }
-  return { built: o.built.slice(0, 3), hit: top(hit), attackers: top(att), rebuilds: o.rebuilt.slice(0, 3), rivalry, season: o.season };
+  return { built: o.built.slice(0, 3), hit: top(hit), attackers: top(att), rebuilds: o.rebuilt.slice(0, 3), stacked: top(stk), rivalry, season: o.season };
 }
 
 // ---------------------------------------------------------------- storage
