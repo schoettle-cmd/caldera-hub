@@ -7,6 +7,8 @@
 - Example city: https://caldera.social/@mike/city.html
 - Example profile: https://caldera.social/@mike/
 - Directory of people: https://caldera.social/people
+- World map, every listed member's city on one map: https://caldera.social/world
+- Leaderboard, who shipped the most code today, this week, this month and all time: https://caldera.social/leaderboard
 - Member profiles and cities (indexable ones): https://caldera.social/sitemap-profiles.xml
 - See any public GitHub account as a city: https://caldera.social/gh/<github-username>
 - Source (MIT plugin, AGPL hub): https://github.com/schoettle-cmd/caldera
