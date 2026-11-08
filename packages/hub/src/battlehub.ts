@@ -113,10 +113,11 @@ export function battleHub(c: BattleHubCtx) {
       const h = "@" + m.handle, last = S.shots(n).filter(s => s.d === m.id && s.f > 0), taken = last.reduce((t, s) => t + s.f, 0), left = last.reduce((t, s) => t + remaining(s.f, s.t, at, x.pts(m.id)), 0);
       members[h] = { sh: f.sh, beg: f.beg ? 1 : 0, ammo: f.ars.ammo, best: f.ars.best, shots: f.ars.shots.length, hits: open.get(h) || [], reb: taken > 0 ? Math.round(100 * (1 - left / taken)) : 100, tgt: targetable(f) ? 1 : 0 };
     }
-    const shots = S.shots(n).map(s => [x.handle(s.a), x.handle(s.d), s.w, s.f, s.t, s.lot, s.blocked, s.aim]);
+    const row = (s: any) => [x.handle(s.a), x.handle(s.d), s.w, s.f, s.t, s.lot, s.blocked, s.aim], shots = S.shots(n).map(row), prevShots = S.shots(n - 1).filter(s => s.night === n - 1).map(row);
     const se = season(n, launch()), sc = scoreOf(S.shots(se.from, n), heads);
     const board = [...sc.entries()].filter(([id]) => on.has(id)).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 10).map(([id, v]) => [x.handle(id), v]);
-    const v = { at: new Date(at).toISOString(), night: dayKey(n), t0: battleAt(n), next: battleAt(n + 1), season: { n: se.n, week: se.week }, members, shots, board, raiders: (S.night(n)?.raiders || []).map((id: string) => x.handle(id)), cities: Object.keys(members).length };
+    // the renderer fires the night resolved before each local noon from 12:00 to 24:00 and repairs it the next morning, so it also needs the night before (citybattle.ts)
+    const v = { at: new Date(at).toISOString(), night: dayKey(n), t0: battleAt(n), next: battleAt(n + 1), prev: { night: dayKey(n - 1), t0: battleAt(n - 1), shots: prevShots }, season: { n: se.n, week: se.week }, members, shots, board, raiders: (S.night(n)?.raiders || []).map((id: string) => x.handle(id)), cities: Object.keys(members).length };
     cache = { at, v }; return v;
   }
 

@@ -1,11 +1,13 @@
 // @ts-nocheck
 /**
  * The World page's Battle view in the browser (Mike 2026-11-07): the Battle button in the Now | Day | Week | Month switcher,
- * the battle bar under the map (last night's numbers, the layer toggles Damage / Attacks / Shields / Replay, the member's own
+ * the legend chip on the map ("Firing until midnight" / "Rebuilding until noon" with a countdown on the viewer's clock), the
+ * battle bar under the map (last night's numbers, the layer toggles Damage / Attacks / Shields / Replay, the member's own
  * panel: join or leave, tonight's arsenal, shield, optional manual fire, the report email), the season board, and the morning
- * card "What your city did last night" with its 12-second replay. The map is drawn by the city renderer (citybattle.ts),
- * driven through window.CALDERA_BATTLE_API. Shareable: /world?view=battle, &layers=damage,attacks,shields,replay,
- * &replay=YYYY-MM-DD plays that night. Shipped as the source of battleClient() (self-contained).
+ * card "What your city did last night". The map is drawn by the city renderer (citybattle.ts), driven through
+ * window.CALDERA_BATTLE_API: launchers fire from noon to midnight local, crews rebuild from midnight to noon (Mike 11-07).
+ * Replay plays today's launches so far again in 8 s. Shareable: /world?view=battle, &layers=damage,attacks,shields,replay.
+ * Shipped as the source of battleClient() (self-contained).
  */
 export function battleClient() {
   'use strict';
@@ -16,7 +18,7 @@ export function battleClient() {
   try { var sv = JSON.parse(localStorage.getItem(LKEY) || 'null'); if (sv) LAYERS.forEach(function (k) { if (k in sv && k !== 'replay') layers[k] = !!sv[k]; }); } catch (e) {}
   var U = null; try { U = new URL(location.href); } catch (e) {}
   var qp = U && U.searchParams.get('layers'); if (qp !== null && qp !== undefined && U.searchParams.has('layers')) { var want = qp.split(','); LAYERS.forEach(function (k) { layers[k] = want.indexOf(k) >= 0; }); }
-  var replayNight = U && U.searchParams.get('replay'); if (replayNight) layers.replay = true;
+  var replayNight = U && U.searchParams.has('replay'); if (replayNight) layers.replay = true;
   function api() { return window.CALDERA_BATTLE_API; }
   function q(sel) { return bar ? bar.querySelector(sel) : null; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -37,20 +39,27 @@ export function battleClient() {
     setText('cities', String(data.cities || 0)); setText('cl', data.cities === 1 ? 'city in the battles' : 'cities in the battles');
     setText('shots', String(s.length)); setText('landed', String(landed));
     setText('season', 'Season ' + data.season.n + ', week ' + data.season.week);
-    setText('next', 'Next battle ' + hhmm(data.next) + ' (in ' + until(data.next) + ')');
+    setText('next', 'Next night resolves ' + hhmm(data.next) + ' (in ' + until(data.next) + '), fires from noon');
     var bd = q('[data-b="board"]');
     if (bd) bd.innerHTML = (data.board || []).length ? '<ol>' + data.board.map(function (r) { return '<li><button type="button" data-fly="' + esc(r[0]) + '">' + esc(r[0]) + '</button> <b>' + r[1] + '</b></li>'; }).join('') + '</ol>' : '<p>No scores yet. The first battle sets the board.</p>';
     Array.prototype.slice.call(bar.querySelectorAll('[data-fly]')).forEach(function (b) { b.onclick = function () { if (api()) api().fly(b.getAttribute('data-fly')); }; });
   }
   // ---------------------------------------------------------------- the view: shown and hidden by the switcher (growthclient.ts)
+  var chip = null, chipT = 0, pollT = 0;
+  function chipTick() {
+    if (!on || !api() || !api().phase) return; var ph = api().phase(), left = Math.max(0, ph.until - Date.now()), h = Math.floor(left / 3600000), m = Math.floor(left % 3600000 / 60000);
+    if (!chip) { chip = document.createElement('div'); chip.className = 'b-chip'; chip.setAttribute('role', 'status'); chip.setAttribute('aria-live', 'polite'); chip.innerHTML = '<i></i><b></b><span></span>'; if (stage) stage.appendChild(chip); }
+    chip.classList.toggle('rebuild', !ph.fire); chip.querySelector('b').textContent = ph.fire ? 'Firing until midnight' : 'Rebuilding until noon';
+    chip.querySelector('span').textContent = h + 'h ' + (m < 10 ? '0' : '') + m + 'm' + (ph.fire && ph.total ? ' \u00b7 ' + ph.fired + ' of ' + ph.total + ' launched' : '');
+  }
   function show() {
     on = true; if (bar) bar.hidden = false; document.documentElement.classList.add('w-battle');
     if (api()) { api().layers(layers); api().view(true, data); }
-    stats(); load(); mine();
-    if (layers.replay) play(true);
+    stats(); load(); mine(); chipTick(); clearInterval(chipT); chipT = setInterval(chipTick, 1000); clearInterval(pollT); pollT = setInterval(load, 600000);
+    if (layers.replay) play();
   }
   function hide() {
-    on = false; stopPlay(); if (bar) bar.hidden = true; document.documentElement.classList.remove('w-battle'); if (api()) api().view(false);
+    on = false; stopPlay(); if (bar) bar.hidden = true; document.documentElement.classList.remove('w-battle'); if (api()) api().view(false); clearInterval(chipT); clearInterval(pollT); if (chip) { chip.remove(); chip = null; }
     try { var u = new URL(location.href); if (u.searchParams.has('layers') || u.searchParams.has('replay')) { u.searchParams.delete('layers'); u.searchParams.delete('replay'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); } } catch (e) {}
   }
   window.CALDERA_BATTLE_UI = { show: show, hide: hide, play: function () { setLayer('replay', true); } };
@@ -60,32 +69,23 @@ export function battleClient() {
   }
   function setLayer(k, v) {
     layers[k] = v; var b = q('[data-bl="' + k + '"]'); if (b) b.setAttribute('aria-pressed', String(v));
-    if (k === 'replay') { if (v) play(true); else stopPlay(); } else if (api()) api().layers(layers);
+    if (k === 'replay') { if (v) play(); else stopPlay(); } else if (api()) api().layers(layers);
     saveLayers();
   }
   Array.prototype.slice.call(bar ? bar.querySelectorAll('[data-bl]') : []).forEach(function (b) {
     var k = b.getAttribute('data-bl'); b.setAttribute('aria-pressed', String(!!layers[k]));
     b.addEventListener('click', function () { setLayer(k, b.getAttribute('aria-pressed') !== 'true'); });
   });
-  // ---------------------------------------------------------------- the replay: 5 s raid, 4 s rebuild, 3 s all clear, looping while Replay is on
+  // ---------------------------------------------------------------- replay: today's launches so far, again, in about 8 s
   var cap = q('[data-b="cap"]');
-  function stopPlay() { if (playing) { cancelAnimationFrame(playing.raf); playing = null; } if (api()) api().replay(null); if (cap) cap.textContent = ''; }
-  function play(loop) {
-    stopPlay(); if (!on || !(data.shots || []).length) { if (cap) cap.textContent = (data.shots || []).length ? '' : 'No shots last night: nothing to replay yet.'; return; }
-    var t0 = data.t0, t1 = t0 + 42 * 60000, s0 = performance.now(), mine = me && me.h;
-    var hits = (data.shots || []).filter(function (s) { return mine && s[1] === mine && s[3] > 0; }), fired = (data.shots || []).filter(function (s) { return mine && s[0] === mine; });
-    if (mine && api()) api().fly(mine);
-    playing = { raf: 0 };
-    (function step() {
-      if (!playing) return;
-      var el = (performance.now() - s0) / 1000, r, msg;
-      if (el < 5) { r = { t: t0 + (t1 - t0) * el / 5, reb: 0 }; msg = hhmm(r.t) + ' raid' + (mine ? ': ' + hits.length + ' hit' + (hits.length === 1 ? '' : 's') + ' on you, your towers fired ' + fired.length : ''); }
-      else if (el < 9) { r = { t: t1, reb: (el - 5) / 4 }; msg = 'Rebuilding on its own' + (mine && data.members[mine] ? ': ' + Math.round(data.members[mine].reb * r.reb) + '% by now' : ''); }
-      else { r = null; msg = 'All clear: shields up'; }
-      if (api()) api().replay(r); if (cap) cap.textContent = msg;
-      if (el >= 12) { if (loop && layers.replay) { s0 = performance.now(); } else { stopPlay(); return; } }
-      playing.raf = requestAnimationFrame(step);
-    })();
+  function stopPlay() { if (playing) { clearTimeout(playing); playing = null; } if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); layers.replay = false; }
+  function play() {
+    if (playing) { clearTimeout(playing); playing = null; }
+    var n = on && api() && api().replay ? api().replay() : 0, ph = api() && api().phase ? api().phase() : null;
+    if (!n) { if (cap) cap.textContent = ph && !ph.fire ? 'Rebuilding until noon: the launches start again at 12:00.' : 'Nothing launched yet today.'; playing = setTimeout(stopPlay, 2500); return; }
+    if (me && me.h && api()) api().fly(me.h);
+    if (cap) cap.textContent = 'Replaying ' + n + ' launch' + (n === 1 ? '' : 'es') + ' since noon';
+    playing = setTimeout(stopPlay, 9500);
   }
   // ---------------------------------------------------------------- the member's panel
   var panel = q('[data-b="me"]');
@@ -148,7 +148,7 @@ export function battleClient() {
     var done = function () { card.remove(); try { localStorage.setItem('caldera.world.recap', L.night); } catch (e) {} };
     card.querySelector('.g-x').onclick = done;
     card.querySelector('.g-go').onclick = function () { done(); var b = document.querySelector('[data-gview="battle"]'); if (!on && b) b.click(); setLayer('replay', true); };
-    card.querySelector('.b-share').onclick = function () { var u = location.origin + '/world?view=battle&replay=' + L.night; try { navigator.clipboard.writeText(u); card.querySelector('.b-share').textContent = 'Copied'; } catch (e) { prompt('Link to last night', u); } };
+    card.querySelector('.b-share').onclick = function () { var u = location.origin + '/world?view=battle&replay=1'; try { navigator.clipboard.writeText(u); card.querySelector('.b-share').textContent = 'Copied'; } catch (e) { prompt('Link to last night', u); } };
   }
   mine();
   if (bar) { var hash = location.hash; if (hash === '#season') { var d = bar.querySelector('.b-board'); if (d) d.open = true; } }
@@ -181,14 +181,17 @@ export const BATTLE_CSS = `
 .b-rbtn{display:flex;flex-wrap:wrap;gap:6px}.b-recap .g-go{font:600 13px/1 var(--font-sans,'IBM Plex Sans',sans-serif);background:#8B6CF6;color:#fff;border:0;border-radius:999px;padding:0 14px;min-height:36px;cursor:pointer}
 .b-share{font:500 13px/1 var(--font-sans,'IBM Plex Sans',sans-serif);background:transparent;color:#E8EEF8;border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:0 12px;min-height:36px;cursor:pointer}
 .b-recap .g-x{position:absolute;right:4px;top:4px;width:36px;height:36px;border:0;background:transparent;color:#C9D2E6;font-size:20px;cursor:pointer;border-radius:50%}
+.b-chip{position:absolute;left:10px;top:10px;z-index:6;display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(15,16,22,.92);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:6px 11px 6px 9px;font-variant-numeric:tabular-nums;pointer-events:none;max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.b-chip i{width:7px;height:7px;border-radius:50%;background:#FFB347;box-shadow:0 0 8px #FFB347;flex:none}.b-chip.rebuild i{background:#4FD1C5;box-shadow:0 0 8px #4FD1C5}.b-chip b{font-weight:600;color:#fff}.b-chip span{color:#C9D2E6}
+@media (prefers-reduced-motion: reduce){.b-chip i{box-shadow:none}}
 .w-battle-only{display:none}html.w-battle .w-battle-only{display:revert}html.w-battle .w-now-only,html.w-battle .w-grow-only{display:none}
-@media (max-width:600px){.b-bar{padding:8px 10px}.b-stats{gap:2px 10px;font-size:11.5px}.b-recap{top:auto;bottom:10px;right:10px}}
+@media (max-width:600px){.b-bar{padding:8px 10px}.b-stats{gap:2px 10px;font-size:11.5px}.b-recap{top:auto;bottom:50px;right:10px}.b-chip{top:auto;bottom:10px}}
 `;
 
 export function battleMarkup(): string {
   return `<div class="b-bar" id="b-bar" hidden aria-label="Battles">
 <div class="b-row"><b class="b-date" data-b="date"></b><span class="b-stats"><span><b data-b="cities">0</b> <span data-b="cl">cities in the battles</span></span><span><b data-b="shots">0</b> shots</span><span><b data-b="landed">0</b> landed</span><span data-b="season"></span><span data-b="next"></span></span></div>
-<div class="b-row" role="group" aria-label="Layers"><button type="button" data-bl="damage" aria-pressed="true" title="Scorch marks, fallen tiers, smoke and fire crews on hit lots">Damage</button><button type="button" data-bl="attacks" aria-pressed="true" title="Last night's shots between cities">Attacks</button><button type="button" data-bl="shields" aria-pressed="true" title="Each city's shield (white: beginner shield)">Shields</button><button type="button" data-bl="replay" aria-pressed="false" title="Play last night: the raid, the rebuild, the all clear">&#9654; Replay</button><span class="b-cap" data-b="cap" aria-live="polite"></span></div>
+<div class="b-row" role="group" aria-label="Layers"><button type="button" data-bl="damage" aria-pressed="true" title="Hits on the buildings: scorch, a tier down, rubble, smoke by day, crews by night">Damage</button><button type="button" data-bl="attacks" aria-pressed="true" title="Launchers, their missile counts and missiles in flight">Attacks</button><button type="button" data-bl="shields" aria-pressed="true" title="Each city's shield (white: beginner shield)">Shields</button><button type="button" data-bl="replay" aria-pressed="false" title="Play today's launches so far again (8 s)">&#9654; Replay</button><span class="b-cap" data-b="cap" aria-live="polite"></span></div>
 <div class="b-me" data-b="me"></div><div class="b-msg" data-b="msg" role="alert"></div>
 <details class="b-board" id="season"><summary>Season leaderboard (per head: facades landed, plus half of what your shield held off)</summary><div data-b="board"></div></details>
 </div>`;
