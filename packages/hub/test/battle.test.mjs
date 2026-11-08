@@ -78,6 +78,19 @@ test("resolution: deterministic, dice in the damage, only opted-in fighters, cap
   assert.notDeepEqual(B.resolveNight({ night: D + 1, fighters: fs2 }).shots.map(s => s.roll), r1.shots.map(s => s.roll), "another night, other dice");
 });
 
+test("city vs city: a city never targets itself, its shots spread over up to three rivals, raiders only when fewer than two cities are armed", () => {
+  const fs = [F("a"), F("b"), F("c"), F("d"), F("e", { ammo: 0 })];
+  const r = B.resolveNight({ night: D, fighters: fs });
+  assert.ok(r.shots.length > 0 && r.shots.every(s => s.a !== s.d), "no self-hits");
+  for (const a of ["a", "b", "c", "d"]) { const ts = new Set(r.shots.filter(s => s.a === a).map(s => s.d)); assert.ok(ts.size >= 2 && ts.size <= 3 && !ts.has(a), a + " spreads over rivals: " + [...ts]); }
+  assert.ok(r.shots.every(s => s.a !== B.RAIDERS && s.d !== B.RAIDERS) && r.raiders.length === 0, "no raiders when cities can fight each other");
+  assert.equal(r.shots.filter(s => s.a === "e").length, 0, "a city with 0 ammo does not fire");
+  assert.ok(r.shots.some(s => s.d === "e"), "a city with 0 ammo can still be hit");
+  const lone = B.resolveNight({ night: D, fighters: [F("a"), F("b", { ammo: 0, idle: 30 })] });
+  assert.ok(lone.shots.some(s => s.a === B.RAIDERS && s.d === "a"), "a lone armed city gets raiders from the sea, and they target the city");
+  assert.deepEqual(B.resolveNight({ night: D, fighters: fs }), r, "deterministic per day");
+});
+
 test("fairness: weekly 30% cap, never the same rival two nights running, quiet plots untargetable, beginner shield holds, per-capita strength", () => {
   // weekly cap: 8 built lots -> 2.4 facades a week; 2.0 already taken -> 0.4 left tonight
   const r = B.resolveNight({ night: D, fighters: [F("a"), F("b", { lots: "4444444400000000" })], week: new Map([["b", 2.0]]) });
@@ -178,7 +191,7 @@ function work(h, ids) {
   h.admin.growth.recompute();
 }
 
-test("live: Battle is one more view (Now stays the default); opt-in only; peaceful zones; nights; opt-out rebuilds instantly; report email built but off; unsubscribe", async () => {
+test("live: Battle is one more view (Now stays the default); every city is in unless it opts out; nights; opt-out rebuilds instantly; report email built but off; unsubscribe", async () => {
   delete process.env.CALDERA_BATTLE_EMAIL;
   const { h, base, ids, post, as, cookie, sent } = await hubWith(["rae", "sam", "pat"]);
   try {
@@ -189,15 +202,16 @@ test("live: Battle is one more view (Now stays the default); opt-in only; peacef
     assert.ok(page.includes("window.CALDERA_BATTLE=") && page.includes('id="b-bar"') && page.includes("window.CALDERA_BATTLE_API"), "battle state, bar and renderer layer");
     assert.ok(page.includes("'battle']") && page.includes("searchParams.get('view')"), "?view=battle is read (shareable)");
 
-    // nobody is in the battles until they opt in
+    // every city is in the battles (Mike 11-08: "this is a battle between cities"); leaving is the choice
     let s = await (await fetch(base + "/v1/world/battle")).json();
-    assert.equal(s.cities, 0); assert.deepEqual(s.members, {});
+    assert.equal(s.cities, 3); assert.deepEqual(Object.keys(s.members).sort(), ["@pat", "@rae", "@sam"]);
     assert.equal((await post("/v1/world/battle/opt", { war: true }, { origin: "https://hub.test" })).status, 401, "sign in first");
     assert.equal((await post("/v1/world/battle/opt", { war: true }, { cookie: await cookie("rae"), origin: "https://evil.test" })).status, 403, "cross-site refused");
     work(h, ids);
     for (const w of ["rae", "sam"]) { const r = await as(w, "/v1/world/battle/opt", { war: true, waive: true }); assert.equal(r.status, 200); assert.equal(r.body.war, 1); }
+    assert.equal((await as("pat", "/v1/world/battle/opt", { war: false })).body.war, 0, "@pat leaves");
     s = await (await fetch(base + "/v1/world/battle")).json();
-    assert.deepEqual(Object.keys(s.members).sort(), ["@rae", "@sam"], "only opted-in cities are in the battles; @pat is a peaceful zone");
+    assert.deepEqual(Object.keys(s.members).sort(), ["@rae", "@sam"], "a city that left is a peaceful zone; everyone else fights");
     const me = (await as("rae", "/v1/world/battle/opt", {})).body;
     assert.ok(me.arsenal && me.arsenal.ammo > 0 && me.arsenal.c === 20, "tonight's arsenal from today's real commits: " + JSON.stringify(me.arsenal));
     assert.deepEqual(me.rivals.map(r => r.h), ["@sam"]);

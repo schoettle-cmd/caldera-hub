@@ -107,7 +107,7 @@ export interface NightIn {
 }
 export const band = (side: number) => side <= 3 ? 0 : side <= 5 ? 1 : side <= 8 ? 2 : 3;
 export const builtLots = (lots: string) => { const out: number[] = []; for (let i = 0; i < lots.length; i++) if (Number(lots[i]) >= 4) out.push(i); return out; };
-export const targetable = (f: Fighter) => (f.idle === null || f.idle < WAR.idleDays) && builtLots(f.lots).length > 0;
+export const targetable = (f: Fighter) => f.idle === null || f.idle < WAR.idleDays;
 
 /** Resolve one night. Deterministic for the same input. Raiders stand in for a missing fair rival, with the night's median
  *  arsenal (at least a cannon's worth), and they fire back. */
@@ -119,11 +119,12 @@ export function resolveNight(o: NightIn): { shots: Shot[]; raiders: string[] } {
   const lotDmg = new Map<string, Map<number, number>>();
   for (const [d, m] of o.open || []) lotDmg.set(d, new Map(m));
   const score = (a: Fighter, t: Fighter) => Math.abs(band(a.side) - band(t.side)) * 3 + Math.abs(Math.log2(1 + a.out7) - Math.log2(1 + t.out7)) + (t.beg ? 4 : 0);
-  const rivalOf = (a: Fighter): Fighter | null => {
+  /** the night's rivals of a city: the three fairest other cities (never itself, never last night's victim), seeded per day */
+  const rivalsOf = (a: Fighter): Fighter[] => {
     const c = targets.filter(t => t.id !== a.id && !o.lastPairs?.has(a.id + ">" + t.id));
-    if (!c.length) return null;
+    if (!c.length) return [];
     const jitter = new Map(c.map(t => [t.id, rng(`m:${o.night}:${a.id}:${t.id}`)() * 0.5] as [string, number]));
-    return c.sort((x, y) => score(a, x) + jitter.get(x.id)! - (score(a, y) + jitter.get(y.id)!) || (x.id < y.id ? -1 : 1))[0]!;
+    return c.sort((x, y) => score(a, x) + jitter.get(x.id)! - (score(a, y) + jitter.get(y.id)!) || (x.id < y.id ? -1 : 1)).slice(0, 3);
   };
   const fire = (aId: string, pc: number, w: Weapon, d: Fighter | null, aim: 0 | 1) => {
     const roll = 1 + Math.floor(R() * 6), cost = costOf(w), t = T0 + Math.floor(R() * 40 * 60_000);
@@ -135,18 +136,19 @@ export function resolveNight(o: NightIn): { shots: Shot[]; raiders: string[] } {
     if (f > 0) {
       const m = lotDmg.get(d.id) || new Map<number, number>(); lotDmg.set(d.id, m);
       const lots = builtLots(d.lots).sort((x, y) => (m.get(x) || 0) - (m.get(y) || 0) || Number(d.lots[y]) - Number(d.lots[x]) || x - y);
-      lot = lots[Math.floor(R() * Math.min(3, lots.length))]!;
+      lot = lots.length ? lots[Math.floor(R() * Math.min(3, lots.length))]! : Math.floor(R() * 3);   // no built plot lots: the map puts the hit on one of the city's repo towers
       m.set(lot, (m.get(lot) || 0) + f); taken.set(d.id, (taken.get(d.id) || 0) + f);
     }
     shots.push({ k: shots.length, a: aId, d: d.id, w, ammo: cost, roll, f, lot, t, aim, blocked: d.sh >= 1 ? 1 : 0 });
   };
-  const raided: string[] = [], rArs: number[] = F.map(f => f.ars.ammo).filter(x => x > 0).sort((a, b) => a - b);
+  const raided: string[] = [], rArs: number[] = F.map(f => f.ars.ammo).filter(x => x > 0).sort((a, b) => a - b), armed = rArs.length;
   const med = Math.max(10, rArs.length ? rArs[Math.floor(rArs.length / 2)]! : 10);
   for (const a of F) {
-    const pc = 1 / Math.max(1, a.heads), rival = rivalOf(a);
+    const pc = 1 / Math.max(1, a.heads), rivals = rivalsOf(a);
     const aimed = (o.aims?.get(a.id) || []).map(id => byId.get(id)).filter((t): t is Fighter => !!t && t.id !== a.id && targetable(t) && !o.lastPairs?.has(a.id + ">" + t.id)).slice(0, WAR.manualCap);
-    a.ars.shots.forEach((w, i) => fire(a.id, pc, w, i < aimed.length ? aimed[i]! : rival, i < aimed.length ? 1 : 0));
-    if (!rival && targetable(a)) {   // nobody fair to fight: raiders from the sea (they fire with the night's median arsenal)
+    // city vs city: every shot goes to another city, spread round-robin over the night's rivals (a city never targets itself)
+    a.ars.shots.forEach((w, i) => fire(a.id, pc, w, i < aimed.length ? aimed[i]! : rivals.length ? rivals[(i - aimed.length) % rivals.length]! : null, i < aimed.length ? 1 : 0));
+    if (!rivals.length && targetable(a) && armed < 2) {   // a lone armed city with nobody to fight: raiders from the sea (they fire with the night's median arsenal)
       raided.push(a.id);
       for (const w of shotsFor(med, "cannon")) fire(RAIDERS, 1, w, a, 0);
     }
@@ -278,22 +280,23 @@ export function worldLines(shots: Shot[], o: { handle: (id: string) => string; b
 // ---------------------------------------------------------------- storage
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
 export type ReportFreq = "off" | "daily" | "weekly";
-export interface OptRow { p: string; war: 0 | 1; since: number; waive: 0 | 1; report: ReportFreq; token: string; sent: string | null }
+export interface OptRow { p: string; war: 0 | 1; /** 1 = chose to leave the battles (every city is in unless it opts out) */ out: 0 | 1; since: number; waive: 0 | 1; report: ReportFreq; token: string; sent: string | null }
 export function battleStore(q: Q, newToken: () => string) {
   q(`CREATE TABLE IF NOT EXISTS battle_opt (profile TEXT PRIMARY KEY, war INTEGER, since INTEGER, waive INTEGER, report TEXT, token TEXT UNIQUE, sent TEXT, at INTEGER)`).run();
   q(`CREATE TABLE IF NOT EXISTS battle_aims (night INTEGER, attacker TEXT, target TEXT, ts INTEGER, PRIMARY KEY (night, attacker, target))`).run();
   q(`CREATE TABLE IF NOT EXISTS battle_nights (night INTEGER PRIMARY KEY, at INTEGER, json TEXT)`).run();
+  try { q("ALTER TABLE battle_opt ADD COLUMN out INTEGER").run(); } catch { /* already there */ }   // Mike 11-08: every city is a combatant; out = chose to leave
   q(`CREATE TABLE IF NOT EXISTS battle_shots (night INTEGER, k INTEGER, a TEXT, d TEXT, w TEXT, ammo REAL, roll INTEGER, f REAL, lot INTEGER, t INTEGER, aim INTEGER, blocked INTEGER, PRIMARY KEY (night, k))`).run();
   q(`CREATE INDEX IF NOT EXISTS battle_shots_d ON battle_shots (d, night)`).run();
   q(`CREATE TABLE IF NOT EXISTS battle_meta (k TEXT PRIMARY KEY, v TEXT)`).run();
-  const map = (r: any): OptRow => ({ p: r.profile, war: r.war ? 1 : 0, since: r.since || 0, waive: r.waive ? 1 : 0, report: (["daily", "weekly"].includes(r.report) ? r.report : "off") as ReportFreq, token: r.token, sent: r.sent || null });
+  const map = (r: any): OptRow => ({ p: r.profile, war: r.war ? 1 : 0, out: r.out ? 1 : 0, since: r.since || 0, waive: r.waive ? 1 : 0, report: (["daily", "weekly"].includes(r.report) ? r.report : "off") as ReportFreq, token: r.token, sent: r.sent || null });
   const opt = (p: string): OptRow | null => { const r = q("SELECT * FROM battle_opt WHERE profile=?").get(p); return r ? map(r) : null; };
-  const ensure = (p: string): OptRow => { if (!opt(p)) q("INSERT OR IGNORE INTO battle_opt VALUES (?,?,?,?,?,?,?,?)").run(p, 0, 0, 0, "off", newToken(), null, Date.now()); return opt(p)!; };
+  const ensure = (p: string): OptRow => { if (!opt(p)) q("INSERT OR IGNORE INTO battle_opt (profile, war, since, waive, report, token, sent, at, out) VALUES (?,?,?,?,?,?,?,?,?)").run(p, 1, 0, 0, "off", newToken(), null, Date.now(), 0); return opt(p)!; };
   const shotRow = (r: any): Shot => ({ k: r.k, a: r.a, d: r.d, w: r.w, ammo: r.ammo, roll: r.roll, f: r.f, lot: r.lot, t: r.t, aim: r.aim ? 1 : 0, blocked: r.blocked ? 1 : 0 });
   return {
     opt, ensure,
     opts: (): OptRow[] => (q("SELECT * FROM battle_opt").all() as any[]).map(map),
-    setWar: (p: string, on: boolean, at: number) => { ensure(p); q("UPDATE battle_opt SET war=?, since=?, at=? WHERE profile=?").run(on ? 1 : 0, on ? at : 0, at, p); },
+    setWar: (p: string, on: boolean, at: number) => { ensure(p); q("UPDATE battle_opt SET war=?, since=?, at=?, out=? WHERE profile=?").run(on ? 1 : 0, on ? at : 0, at, on ? 0 : 1, p); },
     setWaive: (p: string, on: boolean) => { ensure(p); q("UPDATE battle_opt SET waive=? WHERE profile=?").run(on ? 1 : 0, p); },
     setReport: (p: string, f: ReportFreq) => { ensure(p); q("UPDATE battle_opt SET report=? WHERE profile=?").run(f, p); },
     byToken: (t: string): OptRow | null => { const r = q("SELECT * FROM battle_opt WHERE token=?").get(t); return r ? map(r) : null; },

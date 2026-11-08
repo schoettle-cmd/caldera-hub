@@ -1,7 +1,7 @@
 /**
  * The battles, wired into the hub on top of the growth simulation (growthhub.ts): it rides the growth tick (no timer of its
  * own), reads the simulation's state and the event log, and keeps its own tables (battle.ts). Routes:
- *   GET  /v1/world/battle            the Battle view's public state (opted-in cities only; everyone else is a peaceful zone)
+ *   GET  /v1/world/battle            the Battle view's public state (every city is in the battles unless it opted out: Mike 11-08, "this is a battle between cities")
  *   GET  /v1/world/battle/me         the signed-in member: opt-in, shield, tonight's arsenal, rivals, last night's replay
  *   POST /v1/world/battle/opt        {war: true|false, waive?: bool}   join or leave (leaving rebuilds instantly)
  *   POST /v1/world/battle/aim        {target: "@h", off?: true}        manual fire, at most 3 shots tonight (optional bonus)
@@ -71,12 +71,13 @@ export function battleHub(c: BattleHubCtx) {
     }
     return out;
   }
-  const warSet = (at: number) => new Set(S.opts().filter(o => o.war && o.since < at).map(o => o.p));
+  /** the cities in the battles: every member, minus those who chose to leave (battle_opt.out). at: kept for the signature */
+  const warSet = (at: number, x: Ctx = ctxFor()) => { const outs = new Set(S.opts().filter(o => o.out).map(o => o.p)); return new Set(x.ms.map(m => m.id).filter(id => !outs.has(id))); };
 
   // ---------------------------------------------------------------- the night
   function resolve(night: number, o: { force?: boolean } = {}) {
     if (S.hasNight(night) && !o.force) return S.night(night);
-    const x = ctxFor(), T = battleAt(night), on = warSet(T), opts = new Map(S.opts().map(r => [r.p, r] as [string, any]));
+    const x = ctxFor(), T = battleAt(night), on = warSet(T, x), opts = new Map(S.opts().map(r => [r.p, r] as [string, any]));
     const fighters = x.ms.filter(m => on.has(m.id)).map(m => fighterOf(x, m, night - 1, !!opts.get(m.id)?.waive)).filter((f): f is Fighter => !!f);
     const prev = S.shots(night - 1), lastPairs = new Set(prev.filter(s => s.f > 0).map(s => s.a + ">" + s.d));
     const week = new Map<string, number>(); for (const s of S.shots(night - 6, night - 1)) if (s.f > 0) week.set(s.d, (week.get(s.d) || 0) + s.f);
@@ -103,7 +104,7 @@ export function battleHub(c: BattleHubCtx) {
   // ---------------------------------------------------------------- the public state for the Battle view
   function state() {
     if (cache && now() - cache.at < 60_000) return cache.v;
-    const x = ctxFor(), at = now(), n = lastNight(at), on = warSet(Infinity), opts = new Map(S.opts().map(r => [r.p, r] as [string, any])), today = dayOf(at);
+    const x = ctxFor(), at = now(), n = lastNight(at), on = warSet(Infinity, x), opts = new Map(S.opts().map(r => [r.p, r] as [string, any])), today = dayOf(at);
     const open = new Map<string, [number, number, number, number, string][]>();
     for (const s of S.shots(n - 4, n)) {
       if (s.f <= 0 || s.lot < 0 || !on.has(s.d)) continue;   // opting out rebuilds instantly
@@ -128,7 +129,7 @@ export function battleHub(c: BattleHubCtx) {
 
   // ---------------------------------------------------------------- one member
   function reportOf(x: Ctx, m: GrowthMember, night: number): Report {
-    const sim = x.sims.get(m.id), day = night - 1, sn = sim ? snapOf(sim, dayOf(now())) : null, opt = S.opt(m.id), peace = !(opt?.war && opt.since < battleAt(night));
+    const sim = x.sims.get(m.id), day = night - 1, sn = sim ? snapOf(sim, dayOf(now())) : null, opt = S.opt(m.id), peace = !!opt?.out;
     const st = sim?.stats.find(s => s.d === day), f = fighterOf(x, m, dayOf(now()), !!opt?.waive);
     const meta = S.night(night)?.fighters?.find((y: any) => y.id === m.id);
     return reportFor(m.id, m.handle, peace ? [] : S.shots(night), { night, now: now(), peace, pts: x.pts(m.id), handle: x.handle, mvp: mvpOf(x.evBy.get(m.id) || [], day),
@@ -137,10 +138,10 @@ export function battleHub(c: BattleHubCtx) {
   function me(id: string) {
     const x = ctxFor(), m = x.byId.get(id); if (!m) return null;
     const opt = S.ensure(id), n = lastNight(now()), today = dayOf(now()), f = fighterOf(x, m, today, !!opt.waive);
-    const on = warSet(Infinity), rivals = x.ms.filter(o => o.id !== id && on.has(o.id)).map(o => fighterOf(x, o, today, !!S.opt(o.id)?.waive)).filter((y): y is Fighter => !!y && targetable(y))
+    const on = warSet(Infinity, x), rivals = x.ms.filter(o => o.id !== id && on.has(o.id)).map(o => fighterOf(x, o, today, !!S.opt(o.id)?.waive)).filter((y): y is Fighter => !!y && targetable(y))
       .sort((a, b) => Math.abs(a.side - (f?.side || 2)) - Math.abs(b.side - (f?.side || 2)) || a.h.localeCompare(b.h)).slice(0, 12).map(y => ({ h: "@" + y.h, sh: y.sh, beg: y.beg ? 1 : 0 }));
     const nights = S.night(n) ? reportOf(x, m, n) : null;
-    return { h: "@" + m.handle, war: opt.war, waive: opt.waive, report: opt.report, email: !!c.emailOf(id), emailLive: c.emailOn(),
+    return { h: "@" + m.handle, war: on.has(id) ? 1 : 0, waive: opt.waive, report: opt.report, email: !!c.emailOf(id), emailLive: c.emailOn(),
       arsenal: f ? { ammo: f.ars.ammo, c: f.ars.c, pr: f.ars.pr, rel: f.ars.rel, ci: f.ars.ci, ai: f.ars.aiX, streak: f.ars.streakX, best: f.ars.best, shots: f.ars.shots.length } : null,
       shield: f?.sh ?? 0, beginner: f?.beg ? 1 : 0, next: battleAt(n + 1), aims: S.aimsOf(n + 1, id).map(t => x.handle(t)), aimCap: WAR.manualCap, rivals, last: nights };
   }
@@ -153,7 +154,7 @@ export function battleHub(c: BattleHubCtx) {
   // ---------------------------------------------------------------- the battle-report email (opt-in; sends only with CALDERA_BATTLE_EMAIL=1)
   const unsubUrl = (t: string) => `${c.hub.replace(/\/$/, "")}/u/battle?t=${t}`;
   function compose(x: Ctx, m: GrowthMember, night: number, weekly: boolean) {
-    const r = reportOf(x, m, night), opt = S.ensure(m.id), shots = S.shots(night), on = warSet(Infinity);
+    const r = reportOf(x, m, night), opt = S.ensure(m.id), shots = S.shots(night), on = warSet(Infinity, x);
     const built = x.ms.map(o => [x.handle(o.id), x.sims.get(o.id)?.stats.find(s => s.d === night - 1)?.top || 0] as [string, number]).filter(y => y[1] > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     const reb = x.ms.filter(o => on.has(o.id)).map(o => { const mine = shots.filter(s => s.d === o.id && s.f > 0), t = mine.reduce((a, s) => a + s.f, 0), l = mine.reduce((a, s) => a + remaining(s.f, s.t, now(), x.pts(o.id)), 0);
       return [x.handle(o.id), t > 0 ? Math.round(100 * (1 - l / t)) : -1] as [string, number]; }).filter(y => y[1] >= 0).sort((a, b) => b[1] - a[1]);
