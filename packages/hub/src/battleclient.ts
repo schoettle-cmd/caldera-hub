@@ -100,16 +100,16 @@ export function battleClient() {
   });
   // ---------------------------------------------------------------- replay: the cinematic strike-by-strike replay (or the demo)
   var cap = q('[data-b="cap"]'), hudT = 0;
-  function stopPlay() { if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); }
+  function stopPlay() { if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); document.documentElement.classList.remove('fb-hide'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); }
   function play(mode) {
     if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0;
     var n = on && api() && api().replay ? api().replay(mode) : 0;
     if (!n) { if (cap) cap.textContent = mode === 'demo' ? 'The demo needs two cities with repo towers on the map.' : 'No missiles today: nothing to replay. Try the demo replay.'; playing = setTimeout(stopPlay, 3500); return; }
     var ph = api().phase(), b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', String(mode !== 'demo')); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', String(mode === 'demo')); layers.replay = mode !== 'demo';
     if (cap) cap.textContent = (mode === 'demo' ? 'Demo: a sample battle between the biggest cities on the map, synthetic shots. ' : 'Replay: ') + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ', ' + n + ' missile' + (n === 1 ? '' : 's') + ', about ' + Math.round(ph.dur / 1000) + ' s. Tap the map to skip to the next strike.';
-    chipTick(); hud(ph); document.documentElement.classList.add('w-replay');
+    chipTick(); hud(ph); document.documentElement.classList.add('w-replay'); document.documentElement.classList.add('fb-hide');   // the feedback-hub widgets hide while the replay runs (html.fb-hide, any device)
     if (stage && window.innerWidth >= 700) { var r = stage.getBoundingClientRect(); if (r.top < 0 || r.bottom > window.innerHeight) { try { stage.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } catch (e) {} } }
-    hudT = setInterval(function () { var p2 = api() && api().phase ? api().phase() : null; if (!p2 || !p2.replay) { stopPlay(); return; } hud(p2); }, 200);
+    hudT = setInterval(function () { try { var p2 = api() && api().phase ? api().phase() : null; if (!p2 || !p2.replay) { stopPlay(); return; } hud(p2); } catch (e) { stopPlay(); } }, 200);
     playing = setTimeout(stopPlay, 50000);
   }
   // ---------------------------------------------------------------- the member's panel
