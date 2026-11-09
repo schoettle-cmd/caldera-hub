@@ -7,15 +7,31 @@
  * card "What your city did last night". The map is drawn by the city renderer (citybattle.ts), driven through
  * window.CALDERA_BATTLE_API: supply drop at noon local, one salvo at 20:00, cranes rebuild from midnight to noon (Mike 11-07).
  * Replay (Mike 11-08) is cinematic: one strike beat per city, the camera zooms to the pad, follows the missiles into the hit and
- * resets to the next city, then the wide shot, the cranes, home; 20 to 40 s. Controls on the map: Strike n of m, Pause, Skip, End;
- * a tap on the map skips. "Demo replay" plays a sample battle between the biggest cities (synthetic shots, labelled demo).
+ * resets to the next city, then the wide shot, the cranes, home. It runs 2.5x slower than the first cut (Mike 11-08: "moves too fast on
+ * battle and user needs to be able to zoom out and control camera"): about 60 s for the demo at 1x, 35 to 100 s in all. One compact control bar on the map: Strike n
+ * of m with the damage tier of the last hit, Prev, Pause / Play, Next, speed (0.5x / 1x / 2x, remembered per viewer in localStorage),
+ * Fit (the whole battlefield), Follow (shown once the viewer has panned or zoomed: gives the camera back to the auto camera), End.
+ * The viewer's camera: wheel, trackpad pinch (ctrl+wheel) or pinch to zoom, drag to pan (citybattle.ts and city.ts clamp both); a tap on
+ * the map still skips to the next strike. "Demo replay" plays a sample battle between the biggest cities (synthetic shots, labelled demo).
  * Shareable: /world?view=battle, &layers=damage,attacks,shields,replay, &replay=1 or &replay=demo.
  * Shipped as the source of battleClient() (self-contained).
  */
+/** The replay speed: 0.5x, 1x or 2x, remembered per viewer. Self-contained (shipped inside the page script ahead of battleClient) and
+ *  safe where storage is blocked or throws (private windows, cleared site data): every read and write is in try/catch. */
+export function battleSpeedLib() {
+  var SPEEDS = [0.5, 1, 2], KEY = 'caldera.world.battleSpeed';
+  function ok(v) { v = +v; return SPEEDS.indexOf(v) >= 0 ? v : 1; }
+  function next(v) { return SPEEDS[(SPEEDS.indexOf(ok(v)) + 1) % SPEEDS.length]; }
+  function label(v) { return ok(v) + 'x'; }
+  function load(store) { try { var raw = (store || localStorage).getItem(KEY); return raw == null ? 1 : ok(raw); } catch (e) { return 1; } }
+  function save(v, store) { try { (store || localStorage).setItem(KEY, String(ok(v))); return true; } catch (e) { return false; } }
+  return { SPEEDS: SPEEDS, KEY: KEY, ok: ok, next: next, label: label, load: load, save: save };
+}
+
 export function battleClient() {
   'use strict';
   var B0 = window.CALDERA_BATTLE; if (!B0) return;
-  var bar = document.getElementById('b-bar'), stage = document.getElementById('stage'), data = B0, me = null, on = false, playing = null;
+  var bar = document.getElementById('b-bar'), stage = document.getElementById('stage'), data = B0, me = null, on = false, playing = null, speed = BSPD.load();   // speed: this viewer's choice, 1x unless they changed it
   var LKEY = 'caldera.world.battleLayers', LAYERS = ['damage', 'attacks', 'shields', 'replay'];
   var layers = { damage: true, attacks: true, shields: true, replay: false };
   try { var sv = JSON.parse(localStorage.getItem(LKEY) || 'null'); if (sv) LAYERS.forEach(function (k) { if (k in sv && k !== 'replay') layers[k] = !!sv[k]; }); } catch (e) {}
@@ -57,20 +73,32 @@ export function battleClient() {
     var tail = ph.seg === 'supply' || ph.seg === 'loading' ? 'salvo ' + (ph.replay ? 'in ' + left2 : 'at ' + hhmm(ph.salvoAt)) + ' \u00b7 ' + ph.landed + ' of ' + ph.total + ' stacked' : ph.seg === 'countdown' ? 'in ' + Math.max(1, Math.ceil(left / 1000)) : ph.seg === 'salvo' || ph.seg === 'damage' ? ph.fired + ' missile' + (ph.fired === 1 ? '' : 's') + ' \u00b7 cranes ' + (ph.replay ? 'in ' + left2 : 'at midnight') : reb ? left2 + ' \u00b7 ' + Math.round(ph.rebuilt * 100) + '% rebuilt' : ph.total + ' missile' + (ph.total === 1 ? '' : 's') + ' today';
     chip.classList.toggle('rebuild', reb); chip.querySelector('b').textContent = L; chip.querySelector('span').textContent = tail;
   }
-  // the replay controls on the map: Strike n of m with the city, Pause / Play, Skip (a tap on the map skips too), End
+  // the replay controls on the map, one compact bar: Strike n of m + the last hit's damage tier, then Prev, Pause / Play, Next, speed, Fit, Follow (only after the viewer moved the camera), End. 44 px targets.
   var hudEl = null;
   function hud(ph) {
     if (!stage) return;
     if (!hudEl) { hudEl = document.createElement('div'); hudEl.className = 'b-play'; hudEl.setAttribute('role', 'group'); hudEl.setAttribute('aria-label', 'Replay controls');
-      hudEl.innerHTML = '<div class="b-pt"><b data-p="beat"></b><span data-p="label"></span></div><button type="button" data-p="pause" aria-pressed="false">Pause</button><button type="button" data-p="skip">Skip</button><button type="button" data-p="stop" aria-label="End the replay">End</button>';
-      hudEl.querySelector('[data-p="pause"]').onclick = function () { if (api() && api().pause) { var on = api().pause(); this.setAttribute('aria-pressed', String(on)); this.textContent = on ? 'Play' : 'Pause'; } };
-      hudEl.querySelector('[data-p="skip"]').onclick = function () { if (api() && api().skip) api().skip(); hud(api().phase()); };
+      hudEl.innerHTML = '<div class="b-pt"><div class="b-l1"><b data-p="beat"></b><span data-p="label"></span></div><span data-p="hit" aria-live="polite"></span></div><div class="b-pb">'
+        + '<button type="button" data-p="prev" aria-label="Previous strike">Prev</button><button type="button" data-p="pause" aria-pressed="false">Pause</button><button type="button" data-p="skip">Next</button>'
+        + '<button type="button" data-p="speed">1x</button><button type="button" data-p="fit" aria-label="Fit all: show the whole battlefield">Fit</button><button type="button" data-p="follow" aria-label="Follow the action again" hidden>Follow</button>'
+        + '<button type="button" data-p="stop" aria-label="End the replay">End</button></div>';
+      var A = function () { return api(); }, refresh = function () { var p = A() && A().phase ? A().phase() : null; if (p && p.replay) hud(p); };
+      hudEl.querySelector('[data-p="pause"]').onclick = function () { if (A() && A().pause) { var on = A().pause(); this.setAttribute('aria-pressed', String(on)); this.textContent = on ? 'Play' : 'Pause'; } };
+      hudEl.querySelector('[data-p="skip"]').onclick = function () { if (A() && A().skip) A().skip(); refresh(); };
+      hudEl.querySelector('[data-p="prev"]').onclick = function () { if (A() && A().prev) A().prev(); refresh(); };
+      hudEl.querySelector('[data-p="speed"]').onclick = function () { speed = BSPD.next(speed); BSPD.save(speed); if (A() && A().speed) A().speed(speed); refresh(); };
+      hudEl.querySelector('[data-p="fit"]').onclick = function () { if (A() && A().fit) A().fit(); refresh(); };
+      hudEl.querySelector('[data-p="follow"]').onclick = function () { if (A() && A().follow) A().follow(true); refresh(); };
       hudEl.querySelector('[data-p="stop"]').onclick = function () { stopPlay(); };
       stage.appendChild(hudEl); }
     var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
     hudEl.querySelector('[data-p="beat"]').textContent = (ph.demo ? 'Demo \u00b7 ' : '') + beat; hudEl.querySelector('[data-p="label"]').textContent = ph.label || '';
+    var ht = ph.hit ? ph.hit.shield ? ph.hit.d + ': shield held' : (ph.hit.d.charAt(0) === '@' ? ph.hit.d : 'The raiders') + ' tower tier ' + ph.hit.from + ' \u2192 ' + ph.hit.to + ' of ' + ph.hit.of : '';
+    hudEl.querySelector('[data-p="hit"]').textContent = ht;
     var pb = hudEl.querySelector('[data-p="pause"]'); pb.setAttribute('aria-pressed', String(!!ph.paused)); pb.textContent = ph.paused ? 'Play' : 'Pause';
-    var sk = hudEl.querySelector('[data-p="skip"]'); sk.textContent = st === 'rebuild' ? 'Finish' : st === 'wide' ? 'Cranes' : 'Skip';
+    var sk = hudEl.querySelector('[data-p="skip"]'); sk.textContent = st === 'rebuild' ? 'Finish' : st === 'wide' ? 'Cranes' : 'Next';
+    var sp = hudEl.querySelector('[data-p="speed"]'), cur = ph.speed || speed; sp.textContent = BSPD.label(cur); sp.setAttribute('aria-label', 'Speed ' + BSPD.label(cur) + '. Change speed: 0.5x, 1x or 2x.');
+    var fo = hudEl.querySelector('[data-p="follow"]'); fo.hidden = ph.follow !== false;
   }
   function hudOff() { if (hudEl) { hudEl.remove(); hudEl = null; } }
   function show() {
@@ -103,14 +131,14 @@ export function battleClient() {
   function stopPlay() { if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); document.documentElement.classList.remove('fb-hide'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); }
   function play(mode) {
     if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0;
-    var n = on && api() && api().replay ? api().replay(mode) : 0;
+    var n = on && api() && api().replay ? api().replay(mode, { speed: speed }) : 0;
     if (!n) { if (cap) cap.textContent = mode === 'demo' ? 'The demo needs two cities with repo towers on the map.' : 'No missiles today: nothing to replay. Try the demo replay.'; playing = setTimeout(stopPlay, 3500); return; }
     var ph = api().phase(), b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', String(mode !== 'demo')); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', String(mode === 'demo')); layers.replay = mode !== 'demo';
-    if (cap) cap.textContent = (mode === 'demo' ? 'Demo: a sample battle between the biggest cities on the map, synthetic shots. ' : 'Replay: ') + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ', ' + n + ' missile' + (n === 1 ? '' : 's') + ', about ' + Math.round(ph.dur / 1000) + ' s. Tap the map to skip to the next strike.';
+    if (cap) cap.textContent = (mode === 'demo' ? 'Demo: a sample battle between the biggest cities on the map, synthetic shots. ' : 'Replay: ') + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ', ' + n + ' missile' + (n === 1 ? '' : 's') + ', about ' + Math.round(ph.dur / 1000 / (ph.speed || 1)) + ' s at ' + BSPD.label(ph.speed || 1) + '. Scroll, pinch or drag to look around; Fit shows the whole map; tap the map for the next strike.';
     chipTick(); hud(ph); document.documentElement.classList.add('w-replay'); document.documentElement.classList.add('fb-hide');   // the feedback-hub widgets hide while the replay runs (html.fb-hide, any device)
     if (stage && window.innerWidth >= 700) { var r = stage.getBoundingClientRect(); if (r.top < 0 || r.bottom > window.innerHeight) { try { stage.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } catch (e) {} } }
     hudT = setInterval(function () { try { var p2 = api() && api().phase ? api().phase() : null; if (!p2 || !p2.replay) { stopPlay(); return; } hud(p2); } catch (e) { stopPlay(); } }, 200);
-    playing = setTimeout(stopPlay, 50000);
+    playing = setTimeout(stopPlay, 900000);   // a safety net: the poll above ends the replay when it ends, a paused one may wait
   }
   // ---------------------------------------------------------------- the member's panel
   var panel = q('[data-b="me"]');
@@ -178,7 +206,7 @@ export function battleClient() {
   mine();
   if (bar) { var hash = location.hash; if (hash === '#season') { var d = bar.querySelector('.b-board'); if (d) d.open = true; } }
 }
-export const BATTLE_CLIENT_JS = "(" + battleClient.toString() + ")();";
+export const BATTLE_CLIENT_JS = "(function(BSPD){return (" + battleClient.toString() + ")();})((" + battleSpeedLib.toString() + ")());";
 
 export const BATTLE_CSS = `
 .b-bar{display:grid;gap:8px;margin-top:8px;padding:8px 12px 10px;border-radius:var(--radius-md,10px);border:1px solid rgba(61,242,255,.28);background:#0F1016;color:#E8EEF8;min-width:0}
@@ -207,16 +235,18 @@ export const BATTLE_CSS = `
 .b-share{font:500 13px/1 var(--font-sans,'IBM Plex Sans',sans-serif);background:transparent;color:#E8EEF8;border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:0 12px;min-height:36px;cursor:pointer}
 .b-recap .g-x{position:absolute;right:4px;top:4px;width:36px;height:36px;border:0;background:transparent;color:#C9D2E6;font-size:20px;cursor:pointer;border-radius:50%}
 .b-chip{position:absolute;left:10px;top:10px;z-index:6;display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(15,16,22,.92);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:6px 11px 6px 9px;font-variant-numeric:tabular-nums;pointer-events:none;max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.b-play{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;display:flex;align-items:center;gap:6px;max-width:calc(100% - 20px);padding:5px 6px 5px 12px;border-radius:14px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);font:500 12px/1.2 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;font-variant-numeric:tabular-nums}
-.b-play .b-pt{display:grid;gap:2px;min-width:0;margin-right:6px}.b-play .b-pt b{color:#fff;font-weight:600;white-space:nowrap}.b-play .b-pt span{color:#C9D2E6;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}.b-play .b-pt span:empty{display:none}
-.b-play button{font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.22);border-radius:9px;padding:0 10px;min-height:36px;min-width:44px;cursor:pointer;flex:none}
+.b-play{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;display:grid;gap:4px;width:min(470px,calc(100% - 20px));padding:6px 6px 6px;border-radius:14px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);font:500 12px/1.2 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;font-variant-numeric:tabular-nums;box-sizing:border-box}
+.b-play .b-pt{display:grid;gap:1px;min-width:0;padding:0 4px}.b-play .b-l1{display:flex;gap:7px;min-width:0;align-items:baseline}.b-play .b-pt b{color:#fff;font-weight:600;white-space:nowrap;flex:none}.b-play .b-pt span{color:#C9D2E6;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.b-play .b-pt span:empty{display:none}.b-play .b-pt span[data-p="hit"]{color:#FFB347}
+.b-play .b-pb{display:flex;flex-wrap:wrap;gap:4px;justify-content:space-between}
+.b-play button{font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.22);border-radius:9px;padding:0 6px;min-height:44px;min-width:44px;cursor:pointer;flex:1 1 44px;white-space:nowrap;touch-action:manipulation}
+.b-play button[hidden]{display:none}.b-play button[data-p="follow"]{background:#8B6CF6;border-color:#8B6CF6;color:#fff;font-weight:600}
 .b-play button[aria-pressed="true"]{background:rgba(61,242,255,.18);border-color:#3DF2FF}.b-play button:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
 .b-chip i{width:7px;height:7px;border-radius:50%;background:#FFB347;box-shadow:0 0 8px #FFB347;flex:none}.b-chip.rebuild i{background:#4FD1C5;box-shadow:0 0 8px #4FD1C5}.b-chip b{font-weight:600;color:#fff}.b-chip span{color:#C9D2E6}
 @media (prefers-reduced-motion: reduce){.b-chip i{box-shadow:none}}
 html.w-replay #drRail,html.w-replay .cal-nb{display:none!important}
 .w-main .c-stage.c-full{height:100%;min-height:0}
 .w-battle-only{display:none}html.w-battle .w-battle-only{display:revert}html.w-battle .w-now-only,html.w-battle .w-grow-only{display:none}
-@media (max-width:600px){.b-bar{padding:8px 10px}.b-stats{gap:2px 10px;font-size:11.5px}.b-recap{top:auto;bottom:50px;right:10px}.b-chip{top:auto;bottom:10px}.b-play{bottom:48px;left:10px;right:10px;transform:none;max-width:none;justify-content:space-between;padding:5px 5px 5px 10px}.b-play .b-pt span{max-width:40vw}.b-play button{padding:0 8px}.c-stage.c-full .b-play{bottom:calc(48px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
+@media (max-width:600px){.b-bar{padding:8px 10px}.b-stats{gap:2px 10px;font-size:11.5px}.b-recap{top:auto;bottom:50px;right:10px}.b-chip{top:auto;bottom:10px}html.w-replay .b-chip{display:none}.b-play{bottom:10px;left:10px;right:10px;transform:none;width:auto;padding:5px 5px 5px}.b-play .b-pb{gap:3px}.b-play button{font-size:11px;padding:0 2px}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
 `;
 
 export function battleMarkup(): string {
