@@ -244,9 +244,10 @@ export const BATTLE_CSS = `
 .b-chip i{width:7px;height:7px;border-radius:50%;background:#FFB347;box-shadow:0 0 8px #FFB347;flex:none}.b-chip.rebuild i{background:#4FD1C5;box-shadow:0 0 8px #4FD1C5}.b-chip b{font-weight:600;color:#fff}.b-chip span{color:#C9D2E6}
 @media (prefers-reduced-motion: reduce){.b-chip i{box-shadow:none}}
 html.w-replay #drRail,html.w-replay .cal-nb{display:none!important}
+html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, cities, last hit) and the chip would sit on the Labels chip at the top left */
 .w-main .c-stage.c-full{height:100%;min-height:0}
 .w-battle-only{display:none}html.w-battle .w-battle-only{display:revert}html.w-battle .w-now-only,html.w-battle .w-grow-only{display:none}
-@media (max-width:600px){.b-bar{padding:8px 10px}.b-stats{gap:2px 10px;font-size:11.5px}.b-recap{top:auto;bottom:50px;right:10px}.b-chip{top:auto;bottom:10px}html.w-replay .b-chip{display:none}.b-play{bottom:10px;left:10px;right:10px;transform:none;width:auto;padding:5px 5px 5px}.b-play .b-pb{gap:3px}.b-play button{font-size:11px;padding:0 2px}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
+@media (max-width:600px){.b-bar{padding:8px 10px}.b-stats{gap:2px 10px;font-size:11.5px}.b-recap{top:auto;bottom:50px;right:10px}.b-chip{top:auto;bottom:10px}.b-play{bottom:10px;left:10px;right:10px;transform:none;width:auto;padding:5px 5px 5px}.b-play .b-pb{gap:3px}.b-play button{font-size:11px;padding:0 2px}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
 `;
 
 export function battleMarkup(): string {
