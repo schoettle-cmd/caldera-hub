@@ -55,9 +55,9 @@ function head(title, description, slug, extra = "") {
 
 const bySlug = Object.fromEntries(pages.map(p => [p.slug, p]));
 for (const p of pages) {
-  const url = `${SITE}/${p.slug}`;
+  const url = `${SITE}/${p.slug}`, upd = p.updated || UPDATED;   // a page carries its own date when its facts were checked on a later day
   const graph = { "@context": "https://schema.org", "@graph": [
-    { "@type": "TechArticle", headline: p.h1, description: p.description, url, dateModified: UPDATED, datePublished: "2026-10-11", author: { "@id": `${SITE}/#org` }, publisher: { "@id": `${SITE}/#org` }, about: { "@type": "SoftwareApplication", name: "Caldera", url: SITE }, image: `${SITE}/og.jpg` },
+    { "@type": "TechArticle", headline: p.h1, description: p.description, url, dateModified: upd, datePublished: p.published || "2026-10-11", author: { "@id": `${SITE}/#org` }, publisher: { "@id": `${SITE}/#org` }, about: { "@type": "SoftwareApplication", name: "Caldera", url: SITE }, image: `${SITE}/og.jpg` },
     { "@type": "FAQPage", mainEntity: p.faq.map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })) },
     { "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "Caldera", item: `${SITE}/` }, { "@type": "ListItem", position: 2, name: "Learn", item: `${SITE}/learn` }, { "@type": "ListItem", position: 3, name: p.h1, item: url }] },
     ORG ] };
@@ -65,7 +65,7 @@ for (const p of pages) {
   <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Caldera</a> / <a href="/learn">Learn</a></nav>
   <h1>${esc(p.h1)}</h1>
   <p class="answer">${esc(p.answer)}</p>
-  <p class="fine">Updated ${UPDATED} &middot; by mjonesone, LLC</p>
+  <p class="fine">Updated ${upd} &middot; by mjonesone, LLC</p>
 ${p.sections.map(s => `  <h2>${esc(s.h2)}</h2>\n  ${s.html}`).join("\n")}
   <div class="cta-box"><b>Try it free.</b> Sign up with GitHub in about 30 seconds, or install Caldera in Obsidian. <a class="btn small" href="/auth/github">Sign up with GitHub</a> <a class="btn small ghost" href="/#obsidian">Install for Obsidian</a></div>
   <h2>Questions</h2>
@@ -133,7 +133,7 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 const effective = f => { const m = read(f).match(/Effective (\w+) (\d{1,2}), (\d{4})/); const mo = m ? MONTHS.indexOf(m[1]) + 1 : 0;
   return mo ? `${m[3]}-${String(mo).padStart(2, "0")}-${m[2].padStart(2, "0")}` : gitDate(f); };
 const newestRelease = () => { try { const r = JSON.parse(read("releases.json")); return String((r.releases || r)[0]?.date || "").slice(0, 10) || gitDate("changelog.html"); } catch { return gitDate("changelog.html"); } };
-const urls = [["", "weekly", "1.0", gitDate("index.html")], ["learn", "weekly", "0.9", gitDate("learn.html")], ...pages.map(p => [p.slug, "monthly", "0.8", UPDATED]), ["people", "daily", "0.7", null], ["feed", "hourly", "0.7", null], ["world", "daily", "0.7", null], ["leaderboard", "daily", "0.7", null], ["guide", "monthly", "0.7", gitDate("guide.html")], ["changelog", "weekly", "0.6", newestRelease()], ["privacy", "yearly", "0.3", effective("privacy.html")], ["terms", "yearly", "0.3", effective("terms.html")], ["security", "yearly", "0.3", gitDate("security.html")]];
+const urls = [["", "weekly", "1.0", gitDate("index.html")], ["learn", "weekly", "0.9", gitDate("learn.html")], ...pages.map(p => [p.slug, "monthly", "0.8", p.updated || UPDATED]), ["people", "daily", "0.7", null], ["feed", "hourly", "0.7", null], ["world", "daily", "0.7", null], ["leaderboard", "daily", "0.7", null], ["guide", "monthly", "0.7", gitDate("guide.html")], ["changelog", "weekly", "0.6", newestRelease()], ["privacy", "yearly", "0.3", effective("privacy.html")], ["terms", "yearly", "0.3", effective("terms.html")], ["security", "yearly", "0.3", gitDate("security.html")]];
 write("sitemap.xml", `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(([u, f, pr, mod]) => `  <url><loc>${SITE}/${u}</loc>${mod ? `<lastmod>${mod}</lastmod>` : ""}<changefreq>${f}</changefreq><priority>${pr}</priority></url>`).join("\n")}\n</urlset>\n`);
 const bots = ["GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-SearchBot", "Claude-User", "anthropic-ai", "PerplexityBot", "Perplexity-User", "Google-Extended", "Googlebot", "Bingbot", "Applebot", "Applebot-Extended", "DuckAssistBot", "Meta-ExternalAgent", "MistralAI-User", "CCBot"];
 write("robots.txt", `# caldera.social - search engines and AI assistants are welcome to read and cite the public site.\n# Member pages are indexable only when the member allows it (Settings), otherwise noindex; the API is not for crawling.\n${bots.map(b => `User-agent: ${b}\nAllow: /\nDisallow: /v1/\nDisallow: /auth/\nDisallow: /signin\nDisallow: /messages\n`).join("\n")}\nUser-agent: *\nAllow: /\nDisallow: /v1/\nDisallow: /auth/\nDisallow: /signin\nDisallow: /messages\n\nSitemap: ${SITE}/sitemap.xml\nSitemap: ${SITE}/sitemap-profiles.xml\n`);

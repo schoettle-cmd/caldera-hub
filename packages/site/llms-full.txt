@@ -916,3 +916,85 @@ Q: Are messages end-to-end encrypted?
 A: No. They are encrypted at rest on Caldera's servers. Note sharing between Obsidian vaults is end-to-end encrypted.
 Q: Is it free?
 A: Yes.
+
+## Caldera vs Obsidian Publish
+URL: https://caldera.social/caldera-vs-obsidian-publish
+
+Caldera and Obsidian Publish do different jobs. Obsidian Publish is Obsidian's official paid service ($8 per site per month billed annually or $10 billed monthly, as listed on obsidian.md in November 2026) that turns the notes you choose into a full website with search, a graph view and your own domain. Caldera is a free, open-source Obsidian plugin that publishes a living profile about you and your work (journal, activity, projects and the notes you mark public) and adds follows, friends and end-to-end encrypted note sharing. If you want your notes to be a website, choose Publish. If you want a page about you that updates itself and a way to connect with other Obsidian users, choose Caldera.
+
+### Side by side
+Obsidian Publish Caldera What goes online The notes you pick, as a website A profile about you: journal, activity, projects, topics, and notes you mark caldera: public (title and first paragraph) Price $8 per site per month billed annually, $10 billed monthly (obsidian.md, November 2026) Free Refunds and discounts Full refund within 7 days; 40% off for students, faculty and nonprofit employees Nothing to refund Your own domain Yes (set up through Cloudflare or a proxy, per Obsidian Help) Not yet: pages live at caldera.social/@you; you can export your profile as a static folder and host it yourself Search and graph of your notes Full-text search and graph view of the site A small local graph of note names you choose; no full-text search of your notes Themes Customizable with CSS and JavaScript Caldera's own design; you add your own sections as Markdown notes Hosting Hosted by Obsidian, up to 4 GB per site Hosted free at caldera.social, or run your own hub (open source) People Readers visit your site Follow members, become friends, message, join groups, a People directory Private sharing Password-protected sites Send any note to one friend, end-to-end encrypted, into their own vault Source code Official Obsidian service MIT plugin, AGPL hub, open protocol Obsidian Publish facts as listed on obsidian.md/pricing, obsidian.md/publish and Obsidian Help, checked November 10, 2026.
+
+### Where Obsidian Publish is better
+A real notes website. Hundreds of full notes, linked and searchable, with a graph view. Caldera does not publish your notes as pages. Your own domain. Publish supports custom domains today. Caldera may offer them later as an optional paid feature. Polished docs and knowledge bases. Custom themes with CSS and JavaScript, and a team can maintain one site together. Official and built in. It is made by the Obsidian team, built into the app, and includes priority support.
+
+### Where Caldera is better
+Free and open source. No subscription, and you can self-host the hub. It updates itself. Your page is built on your device from your vault and republished automatically: journal, activity heatmap, projects and, if you code, a GitHub city . Private by default. Nothing leaves your vault unless you switch a section on, mark a note public or share it with a named friend. Other people. Follow and message other Obsidian users and share notes privately , end-to-end encrypted.
+
+### Use both
+Many people want both: a notes site and a page about themselves. Publish your notes with Obsidian Publish, then add the site to the links line in Caldera/profile.md so your Caldera profile points to it. For other free ways to put notes online, see free alternatives to Obsidian Publish ; for what the paid plans cost, see how much Obsidian Publish costs .
+
+### Questions
+Q: Is Caldera a replacement for Obsidian Publish?
+A: Not for a notes website. Caldera publishes a profile about you and lists only notes you mark caldera: public, showing their title and first paragraph. To publish many full notes as a website, Obsidian Publish or a static-site tool fits better.
+Q: How much does Obsidian Publish cost compared with Caldera?
+A: Obsidian Publish is $8 per site per month billed annually or $10 billed monthly, as listed on obsidian.md in November 2026. Caldera is free and open source.
+Q: Can I use my own domain with Caldera?
+A: Not yet. Profiles live at caldera.social/@yourhandle. You can export your profile to a static folder and host it wherever you like, or run your own hub. Obsidian Publish supports custom domains today.
+Q: Can I use Caldera and Obsidian Publish together?
+A: Yes. Publish your notes with Obsidian Publish and add the site to the links in Caldera/profile.md, so your Caldera profile links to it.
+
+## How much does Obsidian Publish cost, and is there a free option?
+URL: https://caldera.social/obsidian-publish-cost
+
+Obsidian Publish costs $8 per site per month billed annually ($96 a year) or $10 per site per month billed monthly ($120 a year), as listed on obsidian.md/pricing in November 2026. The Obsidian app itself is free. Free ways to put notes online include Quartz, an MIT-licensed static-site generator you host yourself, and Caldera, a free, open-source plugin that publishes a living profile from your vault rather than your notes as a website.
+
+### Obsidian Publish prices
+Billing Price per site Per year Annual $8 a month $96 Monthly $10 a month $120 Students, faculty, nonprofit employees 40% off either plan Apply through Obsidian Per site. Each Publish site is its own subscription. What is included: hosting up to 4 GB per site, a customizable theme and domain, graph view and full-text search, and priority support. Trial and refunds: the pricing page lists no free trial. Obsidian offers a full refund within 7 days of purchase for Sync and Publish. Sync is separate. Obsidian Sync is a different add-on, from $4 per user per month billed annually ($5 monthly). Prices in USD as listed on obsidian.md/pricing and obsidian.md/publish, checked November 10, 2026. Check there before you buy: prices can change.
+
+### Free options
+Option Cost What you get Trade-off Quartz Free, MIT license A full website of your notes You run a build and host the site yourself Caldera Free, open source A living profile: journal, activity, projects, topics and notes you mark public, plus friends and encrypted sharing Not a full notes website; no custom domain yet Compare more options in free alternatives to Obsidian Publish , or see Caldera vs Obsidian Publish side by side.
+
+### Is Caldera free?
+Yes. Your page, your GitHub city , the Obsidian plugin and friends are free. The plugin and core library are MIT-licensed and the hub is AGPL-3.0, so you can also run your own. Caldera says optional paid features, such as a hosted AI journal and custom domains, may come later; what is free today stays listed on What is Caldera?
+
+### When paying for Publish makes sense
+Pay for Obsidian Publish if you want many full notes online as a polished website on your own domain, with search and graph view, and no build step. The 7-day refund lets you try it. If what you want is a page that shows who you are and what you are working on, and your notes themselves stay private, a public profile from your vault does that for free.
+
+### Questions
+Q: How much is Obsidian Publish per month?
+A: $8 per site per month billed annually, or $10 per site per month billed monthly, as listed on obsidian.md in November 2026.
+Q: Is there a free trial of Obsidian Publish?
+A: The pricing page lists no free trial. Obsidian offers a full refund within 7 days of purchase for Publish and Sync.
+Q: Is there a discount on Obsidian Publish?
+A: Yes. Students, faculty members and nonprofit employees get 40% off Obsidian Sync and Publish, according to obsidian.md.
+Q: Is Caldera free?
+A: Yes. Your page, your city, the plugin and friends are free and open source. Optional paid features, like a hosted AI journal and custom domains, may come later.
+Q: Is Obsidian itself free?
+A: Yes. Obsidian describes the app as free without limits; Sync and Publish are optional paid add-ons.
+
+## Alternatives to Obsidian Sync for sharing notes with others
+URL: https://caldera.social/obsidian-sync-alternative-for-sharing
+
+Obsidian Sync shares a whole remote vault: every collaborator needs an active Sync subscription (from $4 per user per month billed annually, as listed on obsidian.md in November 2026), a vault takes up to 20 collaborators, and all of them get the same permissions. If you only want to share some notes with friends, Caldera is a free, open-source alternative: it sends one note at a time, end-to-end encrypted, into a friend's own vault as a normal Markdown note. For a team editing the same notes live, a shared Sync vault is still the better fit.
+
+### Ways to share Obsidian notes, compared
+Option What is shared Cost Best for Obsidian Sync shared vault A whole vault, edited live by up to 20 people Every collaborator subscribes: Standard $4 per user per month billed annually or $5 monthly; Plus $8 or $10 A team working in the same notes Obsidian Publish A website of notes you pick, public or password-protected $8 per site per month billed annually, $10 monthly Readers who only need a browser Caldera Single notes, sent to a friend as an encrypted copy in their own vault Free, open source Sending notes to friends without sharing a vault A shared folder or Git repository Files you both sync with a cloud drive or Git Depends on the service Technical users happy to handle conflicts Obsidian Sync and Publish facts as listed on obsidian.md/pricing, obsidian.md/sync and Obsidian Help (Collaborate on a shared vault), checked November 10, 2026.
+
+### Where Obsidian Sync is better
+Live co-editing. Notes in a shared vault update across everyone's devices. A note shared with Caldera is a copy, like an email. Syncing your own devices. Sync keeps your vault the same on every device, with version history (1 month on Standard, 12 months on Plus). Caldera does not sync your vault. Official and end-to-end encrypted. Made by the Obsidian team, with AES-256 end-to-end encryption.
+
+### How sharing works with Caldera
+You and your friend install Caldera from Obsidian's community plugins and follow each other. Follow each other and you are friends. Open a note and run Share this note with a friend from the command palette. The note is encrypted on your device with your friend's key. The server stores only ciphertext. It arrives in your friend's vault under Caldera/Inbox/ as a normal note. Step-by-step detail: how to share Obsidian notes privately and share Obsidian notes with friends . Caldera also gives you a profile and a way to meet other users: see a social network for Obsidian users .
+
+### Questions
+Q: Does everyone in a shared Obsidian Sync vault need a subscription?
+A: Yes. Obsidian Help says all collaborators must have an active Sync subscription to access a shared vault, and a shared vault can have up to 20 collaborators.
+Q: Does Caldera sync my vault between my own devices?
+A: No. Caldera shares notes with friends and publishes your profile. To keep your own devices in sync, use Obsidian Sync or another sync method.
+Q: Can my friend and I edit the same note at the same time?
+A: Not with Caldera. Your friend receives a copy in their own vault, like an email. For live co-editing, use a shared Obsidian Sync vault.
+Q: Can Caldera's server read the notes I share?
+A: No. Notes are encrypted on your device with your friend's public key, and the hub stores only ciphertext.
+Q: Is Caldera free?
+A: Yes. The plugin, your page and sharing with friends are free and open source.
