@@ -1,6 +1,28 @@
 {
   "releases": [
     {
+      "version": "0.29.3",
+      "date": "2026-11-12",
+      "title": "Your agents' drones stay true",
+      "items": [
+        "The agent hook also reports when a tool starts and keeps saying \"still working\" every 2 minutes during long builds or tests, so busy agents no longer fade to idle.",
+        "A drone lands within 2 minutes of a session ending, and an agent outside a git repo is placed by its folder's name.",
+        "If you set up the agent hook before, copy the setup prompt from Caldera settings again to get the new hook."
+      ]
+    },
+    {
+      "version": "0.29.2",
+      "date": "2026-11-11",
+      "title": "The city is alive with your numbers",
+      "items": [
+        "Walkers, cars, vans, scooters and a bus fill your streets from your live numbers.",
+        "A Legend chip (or press L) explains what each thing in the city stands for.",
+        "At night, floors light up where your AI agents are working.",
+        "Roofs steam and crews work at the cranes.",
+        "Every active agent now flies as a drone, even when its repo isn't a building in your city."
+      ]
+    },
+    {
       "version": "0.28.31",
       "date": "2026-11-05",
       "title": "Inbox Hero sync tells you what it's doing",
