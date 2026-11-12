@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 /** The SHA-256 of site/agent-hook.mjs. Setup prompts ask the AI to check it before installing, so a swapped hook file
  * is refused. A test keeps it in step with the file; the Obsidian plugin carries its own copy from its release. */
-export const AGENT_HOOK_SHA256 = "bfe8dbde26fdc5e8b2e33805cdd4cadb98020ecaf34fe3f7c2e491ed636aedae";
+export const AGENT_HOOK_SHA256 = "ed5b615f0c836dc5f3c3f3ae5efc6cc68ab98b99d9b3a1b7d2ea7af1ff943a06";
 export const hookCheck = `   Before using it, check its SHA-256 is ${AGENT_HOOK_SHA256} (shasum -a 256 ~/.caldera/agent-hook.mjs). If it doesn't match, delete it, stop and tell me.`;
 export const hookTasksNote = `\n\nIf I'd rather not send task titles at all, add "tasks": false to agent.json (drones still fly, without words).`;
 

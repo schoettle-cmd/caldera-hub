@@ -138,6 +138,10 @@ export function buildWorld(members: WorldMemberIn[], friendships: ([string, stri
   };
 }
 
+/** Agent state priority, most active first: the order agents are listed and cut in (hub live feed and the World). */
+export const AGENT_RANK: Record<string, number> = { working: 0, thinking: 1, waiting: 2, idle: 3 };
+export const agentRank = (state: unknown) => AGENT_RANK[String(state)] ?? 4;
+
 /** Public live activity folded per member: activity level, coarse arrivals, today's coarse counts, agents (no ids). */
 export function foldLive(per: { handle: string; live: any }[], at: string) {
   const out: any = { at, districts: {}, agents: [], arrivals: {}, today: {}, left: {} };
@@ -149,7 +153,10 @@ export function foldLive(per: { handle: string; live: any }[], at: string) {
     const st: Record<string, number> = {};
     for (const d of Object.values(live.districts || {}) as any[]) for (const [h, g] of Object.entries(d?.sites || {})) if (Object.keys(st).length < 24) st[h] = Math.max(st[h] || 0, Number(g) || 0);
     out.districts[k] = { level: lv, glow: gl, ...(Object.keys(st).length ? { sites: st } : {}) };
-    for (const a of Array.isArray(live.agents) ? live.agents.slice(0, 20) : []) out.agents.push({ id: String(a.id || "").slice(0, 10) + handle.slice(0, 4), d: k, state: a.state });
+    // the 20 shown per member are the most active ones (working first, then thinking, waiting, idle, done; newest first
+    // within a state, as the feed already lists them): the renderer's "+n parked" badge carries the rest
+    const ags = Array.isArray(live.agents) ? live.agents.map((a: any, i: number) => [a, i] as [any, number]).sort((x, y) => agentRank(x[0]?.state) - agentRank(y[0]?.state) || x[1] - y[1]).map(x => x[0]) : [];
+    for (const a of ags.slice(0, 20)) out.agents.push({ id: String(a.id || "").slice(0, 10) + handle.slice(0, 4), d: k, state: a.state });
     if (live.arrivals) { anyArr = true; const x = out.arrivals[k] = { v: 0, s: 0, b: 0 }; for (const v of Object.values(live.arrivals) as any[]) { x.v += +v.v || 0; x.s += +v.s || 0; x.b += +v.b || 0; } }
     for (const t of Object.values(live.today || {}) as any[]) {
       const y = out.today[k] ||= { v: 0, q: Array(96).fill(0), t0: t.t0 };

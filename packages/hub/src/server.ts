@@ -43,7 +43,7 @@ export { cleanText, renderText } from "./messages";
 import { emailer, POSTAL, type Mail, type You } from "./email";
 export { tagLinks } from "./email";
 import { weatherService, dayStats, ownerSetup, extrasScript } from "./cityextra";
-import { closenessOrder, buildWorld, foldLive, worldPage, type World, type WorldMemberIn } from "./world";
+import { closenessOrder, buildWorld, foldLive, agentRank, worldPage, type World, type WorldMemberIn } from "./world";
 import { buildLand, landJob, landStore, type LandIn, type LandWorld } from "./land";
 import { growthHub, type GrowthMember } from "./growthhub";
 import { battleHub } from "./battlehub";
@@ -354,7 +354,8 @@ export function createHub(opts: HubOptions) {
   `);
   // how two people became friends: request (accepted), invite (accepted request from an invitee), founder (the welcome
   // friendship every new profile gets), repo (both work on the same public GitHub repo; why = owner/repo)
-  try { db.exec("ALTER TABLE traffic ADD COLUMN host TEXT"); } catch { /* already there */ }   // which of the district's sites was visited
+  try { db.exec("ALTER TABLE traffic ADD COLUMN host TEXT"); } catch { /* already there */ }
+  try { db.exec("ALTER TABLE agents ADD COLUMN d TEXT"); } catch { /* already there */ }   // the agent's district, resolved when it reports   // which of the district's sites was visited
   for (const col of ["kind TEXT DEFAULT 'request'", "why TEXT"]) { try { db.exec(`ALTER TABLE friends ADD COLUMN ${col}`); } catch { /* already there */ } }
   if (!db.prepare("SELECT 1 FROM friend_meta WHERE k='kinds_v1'").get()) {   // one-time backfill of kinds for rows made before they existed
     const fh = opts.founder ? (db.prepare("SELECT id FROM profiles WHERE handle=?").get(opts.founder.toLowerCase()) as any)?.id : null;
@@ -1320,20 +1321,52 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
   const rekeyViews = () => { try { rekeyOld(q, "page_views", "visitor", "ts < ?", new Date(Date.now() - ID_KEEP_DAYS * DAY).toISOString().slice(0, 10)); } catch (e: any) { console.error("page_views rekey", e?.message); } };
   pruneTraffic(); rekeyViews(); { const t = setInterval(() => { pruneTraffic(); rekeyViews(); }, 3600_000); (t as any).unref?.(); }
   /** Per-district live numbers. full=false is the public projection: coarse activity levels only, unlisted projects merged. */
-  /** Agents working for the owner right now (reported in the last 15 minutes). Public: district + state only. */
-  const AGENT_TTL = 15 * 60_000;
+  /** Agents working for the owner right now. Public: district + state only (never the repo, machine or task).
+   *  Each row's district is resolved when the agent reports (resolveDistrict) and stored on the row. A working or thinking
+   *  agent that has gone quiet for 15 minutes reads idle; rows expire by state: done after 2 minutes (long enough to land
+   *  the drone), idle after 15, an active agent 15 quiet minutes after it went idle (30 in all). The query filters by the
+   *  row's time, so an expired row never shows even if no cleanup has run. Most active first, then newest, 200 at most. */
+  const AGENT_QUIET = 15 * 60_000, AGENT_TTL = { done: 2 * 60_000, idle: 15 * 60_000, active: AGENT_QUIET + 15 * 60_000 };
+  const AGENT_LIVE_MAX = 200;
+  const AGENT_ORDER = "CASE state WHEN 'working' THEN 0 WHEN 'thinking' THEN 1 WHEN 'waiting' THEN 2 WHEN 'idle' THEN 3 ELSE 4 END, ts DESC";
   const repoHash = (r: string) => crypto.createHash("sha256").update(String(r).toLowerCase()).digest("hex").slice(0, 16);
+  /** repo name (lower case) -> district, from the owner's own city page (cached per file change). The hub never shows
+   *  these names; only the district a name lands in is used. */
+  const cityNames = new Map<string, { mtime: number; map: Map<string, string> }>();
+  function cityRepoDistricts(handle: string): Map<string, string> {
+    const f = path.join(opts.dataDir, "profiles", handle, "city.html");
+    let mtime = 0; try { mtime = fs.statSync(f).mtimeMs; } catch { return new Map(); }
+    const c = cityNames.get(handle); if (c && c.mtime === mtime) return c.map;
+    const map = new Map<string, string>();
+    try { const m = fs.readFileSync(f, "utf8").match(/<script type="application\/json" id="city-data">([\s\S]{1,3000000}?)<\/script>/); const d = m ? JSON.parse(m[1]) : null;
+      for (const dist of Array.isArray(d?.districts) ? d.districts : []) for (const r of Array.isArray(dist?.repos) ? dist.repos : [])
+        if (r && typeof r.name === "string" && r.name && typeof dist.name === "string" && dist.name && !map.has(r.name.toLowerCase())) map.set(r.name.toLowerCase(), String(dist.name).slice(0, 80));
+    } catch { /* no city data */ }
+    cityNames.set(handle, { mtime, map }); if (cityNames.size > 5000) cityNames.delete(cityNames.keys().next().value!);
+    return map;
+  }
+  const agentRepoMap = (owner: string): Record<string, string> => { try { return JSON.parse((q("SELECT repos FROM agent_keys WHERE owner=?").get(owner) as any)?.repos || "{}"); } catch { return {}; } };
+  /** The district an agent's repo belongs to: the owner's hashed repo -> district map (from the plugin), else the repo's
+   *  name matched case-insensitively against the repos in the owner's own city. "" = this repo isn't in their city. */
+  function resolveDistrict(owner: string, repo: string, map = agentRepoMap(owner)): string {
+    if (!repo) return "";
+    const byHash = map[repoHash(repo)]; if (byHash) return byHash;
+    const h = profile(owner)?.handle; return h ? cityRepoDistricts(h).get(repo.toLowerCase()) || "" : "";
+  }
   function agentsOf(owner: string, full: boolean, pubProjects: Set<string>) {
-    const k = q("SELECT repos FROM agent_keys WHERE owner=?").get(owner) as any; let map: Record<string, string> = {};
-    try { map = JSON.parse(k?.repos || "{}"); } catch { /* none */ }
-    const rows = q("SELECT * FROM agents WHERE owner=? AND ts > ? ORDER BY ts DESC LIMIT 80").all(owner, new Date(Date.now() - AGENT_TTL).toISOString()) as any[];
+    const map = agentRepoMap(owner), t = Date.now(), iso = (ms: number) => new Date(t - ms).toISOString();
+    const rows = q(`SELECT * FROM agents WHERE owner=? AND ts > ? AND NOT (state='done' AND ts <= ?) AND NOT (state='idle' AND ts <= ?) ORDER BY ${AGENT_ORDER} LIMIT ${AGENT_LIVE_MAX}`)
+      .all(owner, iso(AGENT_TTL.active), iso(AGENT_TTL.done), iso(AGENT_TTL.idle)) as any[];
+    // districts already shown on the owner's public city are public; other projects show as "Private"
+    const h = full ? null : profile(owner)?.handle, pub = new Set(pubProjects);
+    if (h) for (const d of publicCityOf(h)?.districts || []) if (d && typeof d.name === "string") pub.add(d.name);
     return rows.map(r => {
-      const project = r.repo ? map[r.repo] || "" : "", ago = Math.round((Date.now() - Date.parse(r.ts)) / 1000);
-      const state = ago > 300 && (r.state === "working" || r.state === "thinking") ? "idle" : r.state;   // went quiet without saying so
-      if (!full) return { id: crypto.createHash("sha256").update(owner + r.id).digest("hex").slice(0, 10), d: pubProjects.has(project) ? project : project ? "Private" : "", state };
+      const project = r.d || (r.repo ? map[r.repo] || "" : ""), ago = Math.round((t - Date.parse(r.ts)) / 1000);
+      const state = ago * 1000 > AGENT_QUIET && (r.state === "working" || r.state === "thinking") ? "idle" : r.state;   // went quiet without saying so
+      if (!full) return { id: crypto.createHash("sha256").update(owner + r.id).digest("hex").slice(0, 10), d: pub.has(project) ? project : project ? "Private" : "", state, ago };
       let x: any = {}; try { x = JSON.parse(unseal(r.task)); } catch { /* unreadable */ }
       return { id: r.id, d: project, repo: x.repo || "", label: x.label || "", machine: x.machine || "", state, task: x.task || "", did: x.did || "", tokens: r.tokens, ago };
-    });
+    }).sort((a, b) => agentRank(a.state) - agentRank(b.state) || a.ago - b.ago).map(a => { if (!full) delete (a as any).ago; return a; });
   }
   // city extras: the viewer's weather, who came today and who just left (cityextra.ts)
   const WX = weatherService({ fetch: (opts as any).weatherFetch });
@@ -3145,14 +3178,16 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         const { agents } = await readBody(req) as { agents?: any[] };
         if (!Array.isArray(agents) || agents.length > 50) return json(res, 400, { error: "send up to 50 agents" });
         const STATES = ["working", "thinking", "waiting", "idle", "done"], cut = (v: unknown, n: number) => String(v ?? "").replace(/[\u0000-\u001f]/g, " ").slice(0, n);
-        let n = 0;
+        let n = 0; const rmap = agentRepoMap(ak.owner);
         for (const a of agents) {
           const id = cut(a?.id, 40); if (!/^[\w.:-]{4,40}$/.test(id)) continue;
           if (a.state === "gone") { q("DELETE FROM agents WHERE owner=? AND id=?").run(ak.owner, id); continue; }
           // details (label, machine, repo, task, last step) are sealed at rest; only the repo's hash stays readable, to place the drone
           const detail = seal(JSON.stringify({ label: cut(a.label, 60), machine: cut(a.machine, 40), repo: cut(a.repo, 80), task: cut(a.task, 90), did: cut(a.did, 90) }));
-          q("INSERT OR REPLACE INTO agents VALUES (?,?,?,?,?,?,?,?,?,?)").run(ak.owner, id, "", "", a.repo ? repoHash(cut(a.repo, 80)) : "", STATES.includes(a.state) ? a.state : "working",
-            detail, "", Math.max(0, Math.min(1e12, Number(a.tokens) || 0)), now()); n++;
+          // the district is resolved here, once, so both feeds can place the drone without ever holding the repo's name
+          const repo = cut(a.repo, 80).trim();
+          q("INSERT OR REPLACE INTO agents (owner, id, label, machine, repo, state, task, did, tokens, ts, d) VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(ak.owner, id, "", "", repo ? repoHash(repo) : "", STATES.includes(a.state) ? a.state : "working",
+            detail, "", Math.max(0, Math.min(1e12, Number(a.tokens) || 0)), now(), resolveDistrict(ak.owner, repo, rmap)); n++;
         }
         q("DELETE FROM agents WHERE ts < ?").run(new Date(Date.now() - DAY).toISOString());
         return json(res, 200, { ok: true, recorded: n });
@@ -3462,4 +3497,4 @@ if (import.meta.url === `file://${process.argv[1]}` && /server\.js$/.test(proces
 }
 export { guideSteps, welcomeText } from "./setupguide";
 export { newsToday } from "./news";
-export { closenessOrder } from "./world";
+export { closenessOrder, foldLive } from "./world";

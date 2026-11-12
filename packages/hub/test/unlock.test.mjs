@@ -31,7 +31,7 @@ test("unlock: the owner's activity reports live visitors, agents and the private
   const now = new Date().toISOString();
   hub.db.prepare("INSERT INTO traffic_sites VALUES (?,?,?,?,?,?)").run("k1aaaaaaaaaaaa", id.id, "Site", 1, "s", now);
   hub.db.prepare("INSERT INTO traffic (key, ts, kind, visitor) VALUES (?,?,?,?)").run("k1aaaaaaaaaaaa", now, "view", "v");
-  hub.db.prepare("INSERT INTO agents VALUES (?,?,?,?,?,?,?,?,?,?)").run(id.id, "a1", "", "", "", "working", "", "", 0, now);
+  hub.db.prepare("INSERT INTO agents (owner, id, label, machine, repo, state, task, did, tokens, ts) VALUES (?,?,?,?,?,?,?,?,?,?)").run(id.id, "a1", "", "", "", "working", "", "", 0, now);
   hub.db.prepare("INSERT INTO owner_private VALUES (?,?,?,?)").run(id.id, "x", now, now);
   u = (await activity()).unlock;
   assert.deepEqual(u, { live: true, agents: true, private: true });

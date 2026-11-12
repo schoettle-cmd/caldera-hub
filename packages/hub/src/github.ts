@@ -515,7 +515,7 @@ ${sug?.verified ? `<p class="mut" style="margin:6px 0 0;font-size:.85em">Your ve
 1. Download ${pub}/agent-hook.mjs to ~/.caldera/agent-hook.mjs (create the folder). Read it first: it reads the hook event from stdin, works out the repo (git remote name) and a short task title, and posts only that to my Caldera hub, with a 1.5 second timeout.
 ${hookCheck}
 2. Write ~/.caldera/agent.json (chmod 600): {"hub": "${pub}", "key": "${ak.key}", "secret": "${ak.secret}", "machine": "<a short name for this computer>"}
-3. In ~/.claude/settings.json, add hooks (keep existing ones) that run \`node ~/.caldera/agent-hook.mjs\` for UserPromptSubmit, PostToolUse, Stop, Notification and SessionEnd.
+3. In ~/.claude/settings.json, add hooks (keep existing ones) that run \`node ~/.caldera/agent-hook.mjs\` for UserPromptSubmit, PreToolUse, PostToolUse, Stop, Notification and SessionEnd.
 4. Test: echo '{"hook_event_name":"UserPromptSubmit","session_id":"caldera-test-1","cwd":"'$PWD'","prompt":"Testing the Caldera agent hook"}' | node ~/.caldera/agent-hook.mjs, then send SessionEnd for the same session.${hookTasksNote}` : "";
     const claim = a.claim_code && a.claim_expires > Date.now() ? a.claim_code : "";
     const invite = `${pub}/?invite=${encodeURIComponent(a.handle)}`, msg = `I'm on Caldera, a social network for GitHub and Obsidian (my repos are a little city). Join me: ${invite}`;
