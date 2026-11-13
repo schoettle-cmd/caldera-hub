@@ -46,7 +46,8 @@ export const HOME_ARMS: Record<string, [string, string][]> = {
         "Developers, designers and founders each get a page built from <b>their real work</b>. Find who you want to know, and <b>start a conversation</b>."),
 };
 // Live round (Mike Oct 31: a test per ~100 people, so few arms at once): 4 arms reach 100 each in about 2 days. Rest wait in HOME_ARMS.
-export const ARM_IDS = ["a", "c", "d", "g"];
+// c dropped 2026-11-13 (countloop DROP at 800/arm: 9 of 915 acted, 1.0%, P(best) 2%; product-strategy)
+export const ARM_IDS = ["a", "d", "g"];
 
 let warned = false;
 /** this visitor's arm today ("a".."j"); vid = the funnel's visitor hash */
