@@ -20,15 +20,17 @@
  * 3. Damage is blast physics: the miss distance is drawn from the weapon's CEP; peak overpressure falls with the scaled
  *    distance Z = R / W^(1/3) (Hopkinson-Cranz; Mills 1987 fit); the part of the building inside the radius where the blast
  *    still beats the structure's resistance (timber 35 kPa, masonry 50, steel frame 70, reinforced concrete 140) is destroyed,
- *    and is priced at the building's replacement value (floors x 400 m2 x $/m2 by construction). Every missile that lands does
- *    damage: a near miss still breaks glass and cladding. A shield scales the damage down (a 100% shield takes the hit on the
- *    dome), a wrecked tower has less left to wreck, and a city under heavy fire has its crews out (civil defence), so later
- *    hits do less, but never nothing: there are no caps that zero a shot.
+ *    and is priced at the building's replacement value (floors x 400 m2 x $/m2 by construction). Every missile does damage
+ *    (Mike 11-14: "every missile strike needs to create damage"): a near miss still breaks glass and cladding, and no hit does
+ *    less than 0.1% of the building before the shield. A shield REDUCES a hit, never cancels it: it takes its own share off
+ *    (the beginner dome 99%, streak shields 50% to 95%) and the rest lands as blast plus fire. A wrecked tower has less left
+ *    to wreck, and a city under heavy fire has its crews out (civil defence: every missile coming in counts, shielded or not),
+ *    so later hits do less, but never nothing: there are no caps that zero a shot.
  * 4. Every hit starts a fire. Some spread (by weapon). Fire adds damage for hours on an exponential burn-down (time constant
  *    1 hour: 63% of it in the first hour, out after about 4, embers and thin smoke until morning).
  * 5. Battles run on their own on the overnight tick (02:00 Pacific, 10:00 UTC). Cities always regenerate: 25% of each hit a
  *    day on its own, plus 1% per build point earned after it. Opting out rebuilds instantly. Real land and data are never touched.
- * 6. Fairness: every city is in unless it opts out; a beginner shield (100%) for 30 days after joining and until a member has
+ * 6. Fairness: every city is in unless it opts out; a beginner shield (99%) for 30 days after joining and until a member has
  *    7 active days; streak shields (50% at 7 days, 95% at 30); per-capita strength and scoring; never hit by the same rival
  *    two nights running; quiet plots (14 days idle) can't be targeted. Manual fire: aim up to 3 of tonight's shots.
  */
@@ -58,8 +60,10 @@ export const WAR = {
   /** a building: 20 m x 20 m, 3.5 m floors, one floor per 4 px of map height */ footprint: 400, half: 10, floorM: 3.5, pxPerFloor: 4,
   /** fire: burn-down time constant (hours), share of the blast damage a contained / a spreading fire adds (times the fire load) */
   fire: { tauH: 1, small: 0.15, spread: 0.8, outH: 4, emberH: 8 },
-  /** a near miss still breaks glass and cladding: up to this share of the building; and the least any landed hit does */ light: 0.005, floor: 0.001,
-  /** civil defence: damage scales by 1 / (1 + tonight / night + week / (week * towers)), in towers' worth */ soft: { night: 2, week: 0.3 },
+  /** a near miss still breaks glass and cladding: up to this share of the building; and the least any hit does before the shield */ light: 0.005, floor: 0.001,
+  /** the most any shield takes off a hit (the beginner dome): no shield is perfect, so every missile does damage (11-14) */ dome: 0.99,
+  /** civil defence: damage scales by 1 / (1 + tonight / night + week / (week * towers)), in towers' worth; tonight counts
+   *  every missile coming in before the shield (crews turn out for the sirens, not for what got through) */ soft: { night: 2, week: 0.3 },
   /** a tower can't lose more than this to stacked hits (what is rubble can't be wrecked again) */ stand: 0.95,
   /** guidance by streak days: the CEP multiplier */ guide: [{ streak: 30, x: 0.25, name: "Terminal seeker" }, { streak: 7, x: 0.5, name: "GPS" }, { streak: 0, x: 1, name: "Inertial" }],
   /** a release this recent moves the heaviest size up one */ relDays: 30, /** rivals within reach: 3, plus one per merged PR that day */ reach: 3, reachMax: 5,
@@ -162,10 +166,10 @@ export function arsenal(events: GEvent[], day: number, o: { ai?: Map<string, num
 }
 
 // ---------------------------------------------------------------- 4. shields
-/** 100% for beginners (30 days after joining, or fewer than 7 active days ever) unless waived; else 50% at a 7-day streak
- *  rising to 95% at 30; 0 below a week. */
+/** The share of each hit the shield takes off: the beginner dome (WAR.dome, 99%) for 30 days after joining, or fewer than 7
+ *  active days ever, unless waived; else 50% at a 7-day streak rising to 95% at 30; 0 below a week. Never 100% (11-14). */
 export function shield(o: { streak: number; joinedDays: number; activeDays: number; waived?: boolean }): number {
-  if (!o.waived && (o.joinedDays < WAR.beginnerDays || o.activeDays < WAR.beginnerActive)) return 1;
+  if (!o.waived && (o.joinedDays < WAR.beginnerDays || o.activeDays < WAR.beginnerActive)) return WAR.dome;
   const s = o.streak || 0; if (s < 7) return 0; if (s >= 30) return 0.95; return Math.round((0.5 + 0.45 * (s - 7) / 23) * 100) / 100;
 }
 export const isBeginner = (o: { joinedDays: number; activeDays: number; waived?: boolean }) => !o.waived && (o.joinedDays < WAR.beginnerDays || o.activeDays < WAR.beginnerActive);
@@ -188,10 +192,11 @@ export interface Fighter {
 }
 /** the working of one shot, kept with it so the page can show the sum: u $ of blast damage, fi the share of the tower the
  *  fire will take (fu in $), sp 1 = the fire spread, m metres off the aim point, cep the CEP it flew with, r the wreck radius
- *  (m), kpa the overpressure at the wall, c the construction class, fl floors, v the building's value ($), sh the shield, cd
- *  civil defence (x), st how much of the tower still stood (x), pc team share (x), raw the blast's share before those, pot the
- *  $ a 100% shield held off */
-export interface ShotX { u: number; fi: number; fu: number; sp: 0 | 1; m: number; cep: number; r: number; kpa: number; c: number; fl: number; v: number; sh: number; cd: number; st: number; pc: number; raw: number; pot?: number }
+ *  (m), kpa the overpressure at the wall, c the construction class, fl floors, v the building's value ($), sh the share the
+ *  shield took off, cd civil defence (x), st how much of the tower still stood (x), pc team share (x), raw the blast's share
+ *  before those. With a shield: pot the blast $ without it, held the blast $ it took off (pot - u). Nights before 11-15: a
+ *  blocked shot (100% shield) did nothing and pot was all of it. */
+export interface ShotX { u: number; fi: number; fu: number; sp: 0 | 1; m: number; cep: number; r: number; kpa: number; c: number; fl: number; v: number; sh: number; cd: number; st: number; pc: number; raw: number; pot?: number; held?: number }
 /** f = the share of the tower the blast destroyed (1 = the whole tower); ammo = the missile's price, $ (points before 11-14) */
 export interface Shot { k: number; a: string; d: string; w: Weapon; ammo: number; roll: number; f: number; lot: number; t: number; aim: 0 | 1; blocked: 0 | 1; x?: ShotX | null }
 export interface NightIn {
@@ -204,9 +209,36 @@ export interface NightIn {
 export const band = (side: number) => side <= 3 ? 0 : side <= 5 ? 1 : side <= 8 ? 2 : 3;
 export const builtLots = (lots: string) => { const out: number[] = []; for (let i = 0; i < lots.length; i++) if (Number(lots[i]) >= 4) out.push(i); return out; };
 export const targetable = (f: Fighter) => (f.idle === null || f.idle < WAR.idleDays) && (f.towers || 0) > 0;
-const r4 = (x: number) => Math.round(x * 1e4) / 1e4, r1 = (x: number) => Math.round(x * 10) / 10;
+const r4 = (x: number) => Math.round(x * 1e4) / 1e4, r6 = (x: number) => Math.round(x * 1e6) / 1e6, r1 = (x: number) => Math.round(x * 10) / 10;
+/** One detonation after the defences (11-14, Mike: "every missile strike needs to create damage"). The blast's share of the
+ *  building (raw), times what still stands (st), civil defence (cd) and team share (pc), is at least WAR.floor: that is what
+ *  the missile would do (pre). The shield takes its share off (ab = the shield, at most WAR.dome) and the rest lands:
+ *  f = pre x (1 - ab). The fire burns on what landed: fi = f x the building's fire load x (spread 80% or contained 15%).
+ *  Dollars: u = f x value (at least $1), fu = fi x value; with a shield, pot = pre x value and held = pot - u. f is never 0. */
+export function strike(o: { raw: number; st: number; cd: number; pc: number; sh: number; load: number; sp: 0 | 1; value: number }) {
+  const ab = Math.min(WAR.dome, Math.max(0, o.sh || 0)), pre = Math.max(WAR.floor, o.raw * o.st * o.cd * o.pc), fire = o.load * (o.sp ? WAR.fire.spread : WAR.fire.small);
+  const f = Math.max(1e-6, r6(pre * (1 - ab))), fi = r6(f * fire), u = Math.max(1, Math.round(f * o.value)), fu = Math.round(fi * o.value);
+  const pot = Math.round(pre * o.value);
+  return { ab, pre, f, fi, u, fu, pot, held: Math.max(0, pot - u), /** towers' worth coming in before the shield (civil defence) */ incoming: pre * (1 + fire) };
+}
 /** the raiders' ship, for shots fired out to sea: a masonry hull the size of a small block */
 const SHIP = towerOf(40);
+/** A night's stored shots run again through strike() with the same geometry and shields (operator dry run: what tonight's
+ *  rules would have made of them). Civil defence is rebuilt in the resolver's firing order (attackers by id, heaviest
+ *  first): each shot's stored cd gives the week's share, and tonight's share counts every missile coming in. */
+export function restrike(shots: Shot[]): Shot[] {
+  const rank = (w: string) => WAR.weapons.findIndex(x => x.k === weaponOf(w).k), order = shots.map((s, i) => i).sort((i, j) => { const a = shots[i]!, b = shots[j]!; return a.a < b.a ? -1 : a.a > b.a ? 1 : rank(a.w) - rank(b.w) || a.t - b.t; });
+  const oldT = new Map<string, number>(), newT = new Map<string, number>(), out: Shot[] = shots.map(s => ({ ...s }));
+  for (const i of order) {
+    const s = shots[i]!, x = s.x; if (!x) continue;
+    const week = Math.max(0, 1 / (x.cd || 1) - 1 - (oldT.get(s.d) || 0) / WAR.soft.night), cd = s.d === RAIDERS ? 1 : 1 / (1 + week + (newT.get(s.d) || 0) / WAR.soft.night);
+    const cls = WAR.classes[x.c] || WAR.classes[0]!, k = strike({ raw: x.raw, st: x.st, cd, pc: x.pc, sh: x.sh, load: cls.load, sp: x.sp, value: x.v });
+    oldT.set(s.d, (oldT.get(s.d) || 0) + s.f + x.fi); newT.set(s.d, (newT.get(s.d) || 0) + k.incoming);
+    const { pot: _p, held: _h, ...rest } = x;
+    out[i] = { ...s, f: k.f, blocked: 0, x: { ...rest, u: k.u, fi: k.fi, fu: k.fu, sh: k.ab, cd: Math.round(cd * 100) / 100, ...(k.ab > 0 ? { pot: k.pot, held: k.held } : {}) } };
+  }
+  return out;
+}
 /** the dollars a shot did: blast plus the whole fire; nights before 11-14 (no working kept) at the legacy rate */
 export const usdOf = (s: Shot) => s.x ? s.x.u + s.x.fu : Math.round(s.f * WAR.legacyFacade);
 /** the share of the tower a shot has taken by `now`: the blast, plus the fire so far */
@@ -234,8 +266,8 @@ export function resolveNight(o: NightIn): { shots: Shot[]; raiders: string[] } {
   const fire = (aId: string, pc: number, cepX: number, w: Weapon, d: Fighter | null, aim: 0 | 1) => {
     const wp = weaponOf(w), miss = missOf(wp.cep * cepX, R()), uFire = R(), t = T0 + Math.floor(R() * 40 * 60_000);
     // lot = which of the defender's buildings the shot is aimed at: an index into its repo towers, tallest first (the map
-    // sorts the same way); the least-hit of the top three, so hits spread and stack visibly. A shield-stopped shot still
-    // aims at a building, so the map can burst it on the dome over that tower, never over grass.
+    // sorts the same way); the least-hit of the top three, so hits spread and stack visibly. A shielded shot aims at a
+    // building too: the map flashes the dome over that tower and the part that gets through lands on it, never on grass.
     let lot = -1, tower = SHIP, st = 1, cd = 1, sh = 0; const m = d ? lotDmg.get(d.id) || new Map<number, number>() : null;
     if (d && m) {
       lotDmg.set(d.id, m);
@@ -244,12 +276,13 @@ export function resolveNight(o: NightIn): { shots: Shot[]; raiders: string[] } {
       st = 1 - Math.min(WAR.stand, m.get(lot) || 0);
       cd = 1 / (1 + (taken.get(d.id) || 0) / WAR.soft.night + (o.week?.get(d.id) || 0) / Math.max(1, WAR.soft.week * n));
     }
-    const b = blast(wp.tnt, tower, miss), cls = WAR.classes[tower.c]!, blocked = sh >= 1, pot = b.raw * st * cd * pc;
-    const f = blocked ? 0 : r4(Math.max(WAR.floor, pot * (1 - sh))), sp = uFire < wp.fire ? 1 : 0, fi = blocked ? 0 : r4(f * cls.load * (sp ? WAR.fire.spread : WAR.fire.small));
-    const x: ShotX = { u: Math.round(f * tower.value), fi, fu: Math.round(fi * tower.value), sp: blocked ? 0 : sp as 0 | 1, m: r1(miss), cep: r1(wp.cep * cepX), r: r1(b.r), kpa: Math.round(b.kpa), c: tower.c, fl: tower.floors, v: tower.value,
-      sh, cd: Math.round(cd * 100) / 100, st: Math.round(st * 100) / 100, pc: Math.round(pc * 100) / 100, raw: r4(b.raw), ...(blocked ? { pot: Math.round(Math.max(WAR.floor, pot) * tower.value) } : {}) };
-    if (d && m && f > 0) { m.set(lot, (m.get(lot) || 0) + f + fi); taken.set(d.id, (taken.get(d.id) || 0) + f + fi); }
-    shots.push({ k: shots.length, a: aId, d: d ? d.id : RAIDERS, w, ammo: wp.cost, roll: 0, f, lot, t, aim, blocked: blocked ? 1 : 0, x });
+    const b = blast(wp.tnt, tower, miss), cls = WAR.classes[tower.c]!, sp = (uFire < wp.fire ? 1 : 0) as 0 | 1;
+    const k = strike({ raw: b.raw, st, cd, pc, sh, load: cls.load, sp, value: tower.value });
+    const x: ShotX = { u: k.u, fi: k.fi, fu: k.fu, sp, m: r1(miss), cep: r1(wp.cep * cepX), r: r1(b.r), kpa: Math.round(b.kpa), c: tower.c, fl: tower.floors, v: tower.value,
+      sh: k.ab, cd: Math.round(cd * 100) / 100, st: Math.round(st * 100) / 100, pc: Math.round(pc * 100) / 100, raw: r4(b.raw), ...(k.ab > 0 ? { pot: k.pot, held: k.held } : {}) };
+    // what landed wrecks the tower; civil defence counts everything that came in (the sirens go off for a shielded hit too)
+    if (d && m) { m.set(lot, (m.get(lot) || 0) + k.f + k.fi); taken.set(d.id, (taken.get(d.id) || 0) + k.incoming); }
+    shots.push({ k: shots.length, a: aId, d: d ? d.id : RAIDERS, w, ammo: wp.cost, roll: 0, f: k.f, lot, t, aim, blocked: 0, x });
   };
   const raided: string[] = [], rArs: number[] = F.map(f => f.ars.usd).filter(x => x > 0).sort((a, b) => a - b), armed = rArs.length;
   const med = Math.max(500_000, rArs.length ? rArs[Math.floor(rArs.length / 2)]! : 500_000);
@@ -284,12 +317,14 @@ export const wholeAfterDays = () => 1 / WAR.autoRepair;
 export function season(night: number, launch: number) { const k = Math.max(0, night - launch); return { n: Math.floor(k / WAR.seasonDays) + 1, week: Math.floor((k % WAR.seasonDays) / 7) + 1, from: launch + Math.floor(k / WAR.seasonDays) * WAR.seasonDays }; }
 /** $1,234,567 -> "$1.2M" */
 export const fmtUsd = (n: number) => { const a = Math.abs(n); return a >= 1e9 ? `$${Math.round(n / 1e8) / 10}B` : a >= 1e6 ? `$${Math.round(n / 1e5) / 10}M` : a >= 1e4 ? `$${Math.round(n / 1e3)}k` : a >= 1e3 ? `$${Math.round(n / 100) / 10}k` : `$${Math.round(n)}`; };
-/** dollars of damage dealt (blast and fire), plus half of what a full shield held off, per head */
+/** the blast dollars a shield took off a shot: held (11-15 on), or all of pot on a blocked shot from before */
+export const heldOf = (s: Shot) => s.x ? s.x.held ?? (s.blocked ? s.x.pot || 0 : 0) : s.blocked ? s.ammo / 10 * WAR.legacyFacade : 0;
+/** dollars of damage dealt (blast and fire), plus half of what your shield held off, per head */
 export function scoreOf(shots: Shot[], heads: (id: string) => number): Map<string, number> {
   const s = new Map<string, number>();
   for (const x of shots) {
     if (x.a !== RAIDERS) s.set(x.a, (s.get(x.a) || 0) + usdOf(x) / Math.max(1, heads(x.a)));
-    if (x.d !== RAIDERS && x.blocked) s.set(x.d, (s.get(x.d) || 0) + 0.5 * (x.x ? x.x.pot || 0 : x.ammo / 10 * WAR.legacyFacade) / Math.max(1, heads(x.d)));
+    const h = x.d !== RAIDERS ? heldOf(x) : 0; if (h > 0) s.set(x.d, (s.get(x.d) || 0) + 0.5 * h / Math.max(1, heads(x.d)));
   }
   for (const [k, v] of s) s.set(k, Math.round(v));
   return s;
@@ -301,6 +336,7 @@ export interface Report {
   raids: { from: string; t: number; shots: number; landed: number; f: number }[];
   /** towers' worth taken (blast and fire) */ taken: number; /** towers hit */ tiers: number; rebuilt: number; fired: number; landed: number; on: string[]; /** towers' worth dealt */ dealt: number;
   /** dollars of damage taken and dealt, and how many of my towers caught a spreading fire */ takenUsd: number; dealtUsd: number; fires: number;
+  /** blast dollars my shield took off the hits on me */ heldUsd: number;
   mvp: { repo: string; bricks: number } | null; shield: number; streak: number; built: number; ammo: number; /** the night's munitions budget, $ */ usd: number;
 }
 /** handles: id -> handle (RAIDERS -> "raiders from the sea") */
@@ -314,7 +350,7 @@ export function reportFor(id: string, h: string, shots: Shot[], o: { night: numb
   return { night: dayKey(o.night), h, peace: o.peace, raids: [...raids.values()].map(r => ({ ...r, f: Math.round(r.f * 100) / 100 })).sort((a, b) => a.t - b.t),
     taken: Math.round(taken * 100) / 100, tiers: [...perLot.values()].filter(f => f > 0).length, rebuilt: sofar > 0 ? Math.round(100 * (1 - left / sofar)) : 100,
     fired: out.length, landed: out.filter(s => s.f > 0).length, on: [...new Set(out.filter(s => s.f > 0).map(s => o.handle(s.d)))], dealt: Math.round(out.reduce((t, s) => t + dmgAll(s), 0) * 100) / 100,
-    takenUsd: mine.reduce((t, s) => t + usdOf(s), 0), dealtUsd: out.reduce((t, s) => t + usdOf(s), 0), fires: burning.size,
+    takenUsd: mine.reduce((t, s) => t + usdOf(s), 0), dealtUsd: out.reduce((t, s) => t + usdOf(s), 0), fires: burning.size, heldUsd: mine.reduce((t, s) => t + heldOf(s), 0),
     mvp: o.mvp, shield: o.shield, streak: o.streak, built: o.built, ammo: o.ammo, usd: o.usd ?? Math.round(o.ammo * WAR.usd) };
 }
 /** the repo that laid the most bricks (counted commits) on a day; private repos stay nameless */
@@ -332,6 +368,7 @@ export function battleSubject(r: Report): string {
   if (r.peace) return `Your city today: peaceful zone, ${r.built} lot${r.built === 1 ? "" : "s"} built`;
   if (!r.raids.length) return `Your city today: ${r.fired} missile${r.fired === 1 ? "" : "s"} stacked, no hits on your towers`;
   const who = r.raids.map(x => x.from).slice(0, 2).join(" and ");
+  if (r.taken > 0 && r.heldUsd > r.takenUsd) return `Your city today: hit by ${who}, your shield cut it to ${fmtUsd(r.takenUsd)}`;
   return r.taken > 0 ? `Your city today: hit by ${who}, cranes rebuild tonight` : `Your city today: ${who} stopped by your shield`;
 }
 /** Plain, short, ASCII, in the day's vocabulary (stacked at noon, the 20:00 salvo, towers hit, cranes overnight), one link
@@ -344,7 +381,7 @@ export function battleEmail(r: Report, w: WorldLines, o: { name: string; hub: st
     L.push(r.fired ? `Stacked at noon: ${n1(r.fired, "missile")} bought with a ${fmtUsd(r.usd)} budget (yesterday's code).` : "Nothing stacked at noon: no code counted yesterday.");
     if (r.fired) L.push(`Salvo at 20:00: ${r.fired} fired, ${r.landed} landed${r.on.length ? " on " + r.on.slice(0, 3).join(", ") : ""}${r.dealtUsd > 0 ? `, ${fmtUsd(r.dealtUsd)} of damage` : ""}.`);
     if (!r.raids.length) L.push("No missiles came your way.");
-    else L.push(r.taken > 0 ? `Hits on your towers: ${fmtUsd(r.takenUsd)} of damage from ${r.raids.map(x => x.from).join(", ")}${r.tiers ? ` (${n1(r.tiers, "tower")} hit${r.fires ? `, ${r.fires} caught fire` : ""})` : ""}. Cranes rebuild overnight, whole by noon.` : `Your shield held: ${r.raids.map(x => x.from).join(", ")} fired at you, nothing landed.`);
+    else L.push(r.taken > 0 ? `Hits on your towers: ${fmtUsd(r.takenUsd)} of damage from ${r.raids.map(x => x.from).join(", ")}${r.tiers ? ` (${n1(r.tiers, "tower")} hit${r.fires ? `, ${r.fires} caught fire` : ""})` : ""}.${r.heldUsd > 0 ? ` Your shield took ${fmtUsd(r.heldUsd)} off.` : ""} Cranes rebuild overnight, whole by noon.` : `Your shield held: ${r.raids.map(x => x.from).join(", ")} fired at you, nothing landed.`);
     L.push(`Shield ${Math.round(r.shield * 100)}%${r.streak ? ` (${r.streak}-day streak)` : ""}.`);
     if (r.mvp) L.push(`MVP: ${r.mvp.repo}, ${n1(r.mvp.bricks, "brick")} laid.`);
   }
@@ -371,10 +408,10 @@ export function battleSummary(shots: Shot[], o: { night: string; handle: (id: st
   const hub = o.hub.replace(/\/$/, ""), n1 = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`, d = new Date(o.night + "T12:00:00Z"), MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const stacked = new Map<string, number>(), hit = new Map<string, { f: number; towers: Set<number> }>(), total = shots.reduce((t, s) => t + usdOf(s), 0);
   for (const s of shots) { if (s.a !== RAIDERS) stacked.set(s.a, (stacked.get(s.a) || 0) + 1); if (s.f > 0 && s.d !== RAIDERS) { const h = hit.get(s.d) || { f: 0, towers: new Set<number>() }; h.f += usdOf(s); if (s.lot >= 0) h.towers.add(s.lot); hit.set(s.d, h); } }
-  const top = [...stacked.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 3), landed = shots.filter(s => s.f > 0).length, raiders = shots.filter(s => s.a === RAIDERS).length;
+  const top = [...stacked.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 3), landed = shots.filter(s => s.f > 0).length, raiders = shots.filter(s => s.a === RAIDERS).length, held = shots.reduce((t, s) => t + heldOf(s), 0);
   const L = [`Battle day, ${MON[d.getUTCMonth()]} ${d.getUTCDate()}.`];
   L.push(top.length ? `Most ammo stacked: ${top.map(([id, n]) => `${o.handle(id)} ${n1(n, "missile")}`).join(", ")}${raiders ? `; raiders from the sea brought ${raiders}` : ""}.` : `Only raiders from the sea fired today (${n1(raiders, "missile")}).`);
-  L.push(`The 20:00 salvo: ${n1(shots.length, "missile")}, ${landed} landed${total > 0 ? `, ${fmtUsd(total)} of damage` : ""}.`);
+  L.push(`The 20:00 salvo: ${n1(shots.length, "missile")}, ${landed} landed${total > 0 ? `, ${fmtUsd(total)} of damage` : ""}${landed && held > 0 ? ` (shields took ${fmtUsd(held)} off)` : ""}.`);
   L.push(hit.size ? `Towers hit: ${[...hit.entries()].sort((a, b) => b[1].f - a[1].f).slice(0, 4).map(([id, h]) => `${o.handle(id)} (${n1(h.towers.size, "tower")}, ${fmtUsd(h.f)})`).join("; ")}.` : "No towers hit: every shield held.");
   L.push("Cranes rebuild overnight; by noon every tower stands as it did.", `Replay: ${hub}/world?view=battle&replay=1`, `Leaderboard: ${hub}/leaderboard`);
   return L.join("\n").replace(/[^\x09\x0a\x0d\x20-\x7e]/g, "");

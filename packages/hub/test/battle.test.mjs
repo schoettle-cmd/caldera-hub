@@ -77,8 +77,8 @@ test("weapon sizes: shell S, rocket M, tactical L, cruise XL; the budget buys th
 });
 
 test("shields: beginner 100% for 30 days and until 7 active days (waivable); 50% at a 7-day streak to 95% at 30", () => {
-  assert.equal(B.shield({ streak: 0, joinedDays: 3, activeDays: 50 }), 1);
-  assert.equal(B.shield({ streak: 20, joinedDays: 100, activeDays: 4 }), 1);
+  assert.equal(B.shield({ streak: 0, joinedDays: 3, activeDays: 50 }), 0.99, "the beginner dome takes 99% off: no shield is 100% (11-14)");
+  assert.equal(B.shield({ streak: 20, joinedDays: 100, activeDays: 4 }), B.WAR.dome);
   assert.equal(B.shield({ streak: 0, joinedDays: 3, activeDays: 2, waived: true }), 0);
   assert.equal(B.shield({ streak: 6, joinedDays: 100, activeDays: 40 }), 0);
   assert.equal(B.shield({ streak: 7, joinedDays: 100, activeDays: 40 }), 0.5);
@@ -198,7 +198,8 @@ test("fairness: never the same rival two nights running, quiet plots untargetabl
   assert.ok(!r3.shots.some(s => s.d === "q"), "the quiet plot is never targeted");
   assert.ok(r3.shots.some(s => s.a === "a" && s.d === B.RAIDERS) && r3.shots.some(s => s.a === B.RAIDERS && s.d === "a"), "a fights the raiders");
   const r4 = B.resolveNight({ night: D, fighters: [F("a"), F("n", { sh: 1, beg: true })] });
-  const onN = r4.shots.filter(s => s.d === "n"); assert.ok(onN.length > 0 && onN.every(s => s.f === 0 && s.blocked === 1 && s.lot >= 0 && s.x.pot > 0 && s.x.u === 0 && s.x.fi === 0), "the beginner shield holds, over a tower, and the shot knows what it would have done");
+  const onN = r4.shots.filter(s => s.d === "n"); assert.ok(onN.length > 0 && onN.every(s => s.f > 0 && s.blocked === 0 && s.lot >= 0 && s.x.sh === 0.99 && s.x.pot > 0 && s.x.u > 0 && s.x.fi > 0 && s.x.held === s.x.pot - s.x.u), "11-15: the beginner shield cuts every hit (99% off), over a tower, and the rest lands as blast and fire");
+  assert.ok(onN.every(s => Math.abs(s.x.u - s.x.pot * 0.01) <= Math.max(2, s.x.pot * 0.001)), "what lands is 1% of what the missile would have done");
   const one = heads => B.resolveNight({ night: D, fighters: [F("t", { heads, usd: 1_000_000 }), F("v", { usd: 0 })] }).shots.filter(s => s.a === "t").reduce((x, s) => x + s.f, 0);
   assert.ok(one(10) < one(1) / 4, "a 10-person team hits with a fraction of the strength per head");
   const X = (u, o = {}) => ({ u, fi: 0, fu: 0, ...o });
@@ -247,7 +248,7 @@ test("report and email: what my city did last night, in dollars; subject formula
   const peace = B.battleEmail({ ...r, peace: true, raids: [] }, w, { name: "Nadia", hub: "https://caldera.social", unsub: "u", postal: "P" });
   assert.ok(!/attack|raid|hit|damage|salvo/i.test(peace.text.replace(/Hey Nadia[\s\S]*?YOUR CITY/, "")), "a peaceful zone never reads about attacks");
   const sum = B.battleSummary(shots, { night: "2026-11-08", handle, hub: "https://caldera.social/" });
-  for (const t of ["Battle day, Nov 8.", "Most ammo stacked: @nadia 2 missiles, @oscar 1 missile.", "The 20:00 salvo: 3 missiles, 2 landed, $6.5M of damage.", "Towers hit: @quinn (1 tower, $5M); @nadia (1 tower, $1.5M).", "Cranes rebuild overnight", "Replay: https://caldera.social/world?view=battle&replay=1", "Leaderboard: https://caldera.social/leaderboard"]) assert.ok(sum.includes(t), "summary: " + t + "\n" + sum);
+  for (const t of ["Battle day, Nov 8.", "Most ammo stacked: @nadia 2 missiles, @oscar 1 missile.", "The 20:00 salvo: 3 missiles, 2 landed, $6.5M of damage (shields took $5M off).", "Towers hit: @quinn (1 tower, $5M); @nadia (1 tower, $1.5M).", "Cranes rebuild overnight", "Replay: https://caldera.social/world?view=battle&replay=1", "Leaderboard: https://caldera.social/leaderboard"]) assert.ok(sum.includes(t), "summary: " + t + "\n" + sum);
   assert.equal(B.battleSummary([], { night: "2026-11-08", handle, hub: "h" }), null, "no battle, no post");
   assert.deepEqual([999, 1500, 25_000, 340_000, 1_250_000, 2_000_000, 3.2e9].map(B.fmtUsd), ["$999", "$1.5k", "$25k", "$340k", "$1.3M", "$2M", "$3.2B"]);
   assert.equal(B.mvpOf([ev("commit", D, { repo: "me/build-bot" }), ev("commit", D, { repo: "me/build-bot" }), ev("private", D, { repo: "private:ab", n: 1 })], D).repo, "build-bot");
@@ -385,4 +386,62 @@ test("kill switch: battles off shows no Battle view and no battle API", async ()
     assert.ok(page.includes('data-gview="day"'), "the growth views stay");
     assert.equal((await fetch(base + "/v1/world/battle")).status, 404);
   } finally { h.server?.close?.(); }
+});
+
+// ---------------------------------------------------------------- 11-15: every missile strike does damage (Mike 11-14)
+test("strike: a shield takes its share off and the rest lands as blast plus fire; the dome is 99% at most; a hit is never $0", () => {
+  const k = B.strike({ raw: 0.5, st: 1, cd: 1, pc: 1, sh: 0.99, load: 0.5, sp: 1, value: 40e6 });
+  near(k.ab, 0.99); near(k.pre, 0.5); near(k.f, 0.005); assert.equal(k.u, 200_000); near(k.fi, 0.005 * 0.5 * 0.8); assert.equal(k.fu, 80_000);
+  assert.equal(k.pot, 20_000_000, "what it would have done"); assert.equal(k.held, 19_800_000, "what the shield held: pot - u");
+  near(k.incoming, 0.5 * (1 + 0.5 * 0.8), 1e-9, "civil defence counts the whole hit coming in");
+  const full = B.strike({ raw: 0.5, st: 1, cd: 1, pc: 1, sh: 1, load: 0.5, sp: 0, value: 40e6 });
+  near(full.ab, B.WAR.dome); assert.ok(full.f > 0 && full.u === 200_000, "a 100% shield level is capped at the 99% dome: 1% gets through");
+  const s56 = B.strike({ raw: 0.5, st: 1, cd: 1, pc: 1, sh: 0.56, load: 0.5, sp: 0, value: 40e6 });
+  near(s56.f, 0.5 * 0.44); assert.equal(s56.u, 8_800_000); assert.equal(s56.pot, 20_000_000);
+  const none = B.strike({ raw: 0.5, st: 1, cd: 1, pc: 1, sh: 0, load: 0.5, sp: 0, value: 40e6 });
+  near(none.f, 0.5); near(none.ab, 0); assert.equal(none.u, 20_000_000);
+  // the floor applies before the shield, so a shielded shot never does more than the same shot unshielded
+  const tiny = B.strike({ raw: 0, st: 0.05, cd: 0.1, pc: 0.1, sh: 0.99, load: 1, sp: 0, value: 1_600_000 });
+  near(tiny.pre, B.WAR.floor); near(tiny.f, B.WAR.floor * 0.01, 1e-9); assert.ok(tiny.u >= 1 && tiny.fi > 0, "the smallest hit through the dome still costs dollars and starts a fire");
+  const tinyBare = B.strike({ raw: 0, st: 0.05, cd: 0.1, pc: 0.1, sh: 0, load: 1, sp: 0, value: 1_600_000 }); assert.ok(tinyBare.u > tiny.u);
+  // a far miss: the blast still reaches the wall, glass and cladding break
+  const far = B.blast(5, B.towerOf(120), 200); assert.ok(far.raw > 0 && far.raw <= B.WAR.light, "a 200 m shell miss still does something");
+});
+
+test("every shot > $0: a whole night of beginners, streak shields, open cities, misses, teams, stacked hits and raiders; nothing resolves to $0", () => {
+  const fighters = [F("a", { usd: 9_000_000, best: "cruise" }), F("b", { sh: 0.99, beg: true, usd: 2_000_000, best: "tactical" }), F("c", { sh: 0.56, usd: 1_200_000 }), F("d", { sh: 0.95, side: 9, out7: 40, usd: 600_000, best: "shell" }),
+    F("e", { heads: 8, usd: 3_000_000 }), F("f", { sh: 0.99, beg: true, usd: 0 }), F("g", { sh: 0.99, beg: true, usd: 400_000, best: "shell" })];
+  const r = B.resolveNight({ night: D, fighters, open: new Map([["c", new Map([[0, 0.9], [1, 0.9], [2, 0.9]])]]), week: new Map([["b", 4]]) });
+  assert.ok(r.shots.length > 30, "a big night: " + r.shots.length);
+  for (const s of r.shots) {
+    assert.ok(s.f > 0 && s.x.u >= 1 && B.usdOf(s) > 0 && s.x.fi > 0 && s.blocked === 0, `shot ${s.k} ${s.a}>${s.d} ${s.w}: f ${s.f} u ${s.x.u}`);
+    if (s.x.sh > 0) assert.ok(s.x.pot >= s.x.u && s.x.held === s.x.pot - s.x.u, "a shielded shot carries what it would have done and what was held");
+  }
+  assert.ok(r.shots.some(s => s.x.m > 10), "some missed the wall, and still did damage");
+  // civil defence counts every missile coming in, shielded or not: later hits on the beginner city count less
+  const onB = r.shots.filter(s => s.d === "b"); assert.ok(onB.length > 2 && onB[onB.length - 1].x.cd <= onB[0].x.cd);
+  // a lone beginner with raiders: they hit it too, through the dome
+  const lone = B.resolveNight({ night: D, fighters: [F("n", { sh: 0.99, beg: true })] }); assert.ok(lone.shots.some(s => s.a === B.RAIDERS && s.d === "n") && lone.shots.every(s => s.f > 0 && s.x.u > 0), "raiders hit it through the dome, its shots hit their ship");
+});
+
+test("restrike: a stored night from before 11-15 (shields held, $0) runs again through the new math with every shot > $0, and scoring credits half of what shields held", () => {
+  const X = (o) => ({ u: 0, fi: 0, fu: 0, sp: 0, m: 4, cep: 6, r: 25.5, kpa: 64723, c: 2, fl: 19, v: 30_400_000, sh: 1, cd: 1, st: 1, pc: 1, raw: 1, pot: 30_400_000, ...o });
+  const at = B.battleAt(D), old = [
+    { k: 0, a: "m", d: "u", w: "cruise", ammo: 2e6, roll: 0, f: 0, lot: 0, t: at + 60000, aim: 0, blocked: 1, x: X({}) },
+    { k: 1, a: "m", d: "u", w: "cruise", ammo: 2e6, roll: 0, f: 0, lot: 1, t: at + 120000, aim: 0, blocked: 1, x: X({}) },
+    { k: 2, a: "z", d: "m", w: "rocket", ammo: 2e5, roll: 0, f: 0.0052, lot: 2, t: at + 180000, aim: 0, blocked: 0, x: X({ u: 386_880, fi: 0.0015, fu: 111_600, sp: 1, sh: 0.56, cd: 0.66, st: 0.95, raw: 0.0186, c: 3, fl: 31, v: 74_400_000, pot: undefined }) },
+    { k: 3, a: "q", d: "u", w: "shell", ammo: 1e5, roll: 0, f: 0, lot: 0, t: at + 240000, aim: 0, blocked: 1, x: X({ raw: 0.0008, pot: 30_400 }) }];
+  assert.equal(old.filter(s => B.usdOf(s) === 0).length, 3, "before: three shots at $0");
+  const now = B.restrike(old);
+  assert.ok(now.every(s => B.usdOf(s) > 0 && s.f > 0 && s.blocked === 0), "after: every shot does damage");
+  assert.equal(now[0].x.u, 304_000, "a cruise missile that would do $30.4M does $304k through the beginner dome");
+  assert.ok(now[1].x.cd < 1 && now[1].x.u < now[0].x.u, "the second hit on the same city counts less (civil defence counts what came in)");
+  assert.equal(now[3].x.u, 304, "the far shell: the 0.1% floor, then 1% through the dome");
+  const total = now.reduce((t, s) => t + B.usdOf(s), 0); assert.ok(total > 498_480 && total < 1_500_000, "sane: " + total);
+  const sc = B.scoreOf(now, () => 1); assert.ok(sc.get("u") > 0.5 * 0.99 * 30_400_000, "the defender scores half of what its shield held");
+  const r = B.reportFor("u", "u", now, { night: D, now: at + 7 * 3600_000, peace: false, pts: () => 0, handle: id => "@" + id, mvp: null, shield: 0.99, streak: 0, built: 0, ammo: 0, usd: 0 });
+  assert.ok(r.taken > 0 && r.heldUsd > r.takenUsd);
+  assert.equal(B.battleSubject(r), "Your city today: hit by @m and @q, your shield cut it to " + B.fmtUsd(r.takenUsd));
+  const m = B.battleEmail(r, { built: [], hit: [], attackers: [], rebuilds: [], rivalry: null, season: { n: 1, week: 1 } }, { name: "U", hub: "https://caldera.social", unsub: "x", postal: "P" });
+  assert.ok(m.text.includes(`Your shield took ${B.fmtUsd(r.heldUsd)} off.`) && !m.text.includes("nothing landed"), m.text);
 });

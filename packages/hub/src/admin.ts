@@ -15,7 +15,7 @@
  *   ... agent-token-list | agent-token-revoke <token-id>
  *   ... growth-run [--polls N] [--backfills N] | growth-run @handle [--backfill]   the World's growth views: one tick now
  *   ... growth-drops                    today's daily drop manifest
- *   ... battle-state | battle-run [--force] [YYYY-MM-DD] | battle-optin @handle [--backdate] [--waive] | battle-optout @handle | battle-report [--dry] [--force] [@handle] | battle-summary [--dry]
+ *   ... battle-state | battle-run [--force] [YYYY-MM-DD] | battle-dry [YYYY-MM-DD] | battle-optin @handle [--backdate] [--waive] | battle-optout @handle | battle-report [--dry] [--force] [@handle] | battle-summary [--dry]
  *   ... leaderboard [day|week|month|all]            the Leaderboard's rows (top 25)
  *   ... leaderboard-post [--dry] [--force] [YYYY-MM-DD]   yesterday's (or that Pacific day's) top 10 to the feed, once per day; --dry composes only; --force posts under 3 shippers
  *   ... land-run [--dry] [handle]   the World's Expansion view: fetch merged PRs and stars gained now, store tonight's land
@@ -60,11 +60,13 @@ try {
       out(await gm.poller.poll({ id: mm.id, login: mm.login }, { backfill: argv.includes("--backfill") })); gm.recompute(); process.exit(0); }
     await g.tick({ maxPolls: num("--polls"), maxBackfills: num("--backfills") }); const s = g.state("week"); out({ members: s.totals.members, week: s.totals }); process.exit(0);
   }
-  if (cmd.startsWith("battle-")) {   // the World's battles (battle.ts): battle-state | battle-run [--force] [YYYY-MM-DD] | battle-optin @handle [--backdate] [--waive] | battle-optout @handle | battle-report [--dry] [--force] [@handle]
+  if (cmd.startsWith("battle-")) {   // the World's battles (battle.ts): battle-state | battle-run [--force] [YYYY-MM-DD] | battle-dry [YYYY-MM-DD] | battle-optin @handle [--backdate] [--waive] | battle-optout @handle | battle-report [--dry] [--force] [@handle]
     const b = a.battle; if (!b) { out({ error: "battles are off (CALDERA_BATTLE=0 or CALDERA_GROWTH=0)" }); process.exit(1); }
     const who = argv.find((x, i) => i > 0 && x.startsWith("@"))?.slice(1), list = a.growthMembers?.() || [], mm = who ? list.find((x: any) => x.handle === who) : null;
     if (who && !mm) { out({ error: "no listed member @" + who }); process.exit(1); }
     if (cmd === "battle-state") { out(b.state()); process.exit(0); }
+    if (cmd === "battle-dry") { const d = argv.find(x => /^\d{4}-\d{2}-\d{2}$/.test(x)), n = d ? Math.floor(Date.parse(d + "T00:00:00Z") / 86_400_000) : Math.floor((Date.now() - 10 * 3600_000) / 86_400_000);   // nothing is saved: the stored night through today's strike math, and the night resolved again
+      out({ restrike: b.restrikeNight(n), resolve: b.resolve(n, { dry: true }) }); process.exit(0); }
     if (cmd === "battle-run") { const d = argv.find(x => /^\d{4}-\d{2}-\d{2}$/.test(x)), n = d ? Math.floor(Date.parse(d + "T00:00:00Z") / 86_400_000) : Math.floor((Date.now() - 10 * 3600_000) / 86_400_000);
       out(b.resolve(n, { force: argv.includes("--force") })); process.exit(0); }
     if (cmd === "battle-optin" && mm) { b.optIn(mm.id, { since: argv.includes("--backdate") ? 0 : undefined, waive: argv.includes("--waive") ? true : undefined }); out(b.me(mm.id)); process.exit(0); }

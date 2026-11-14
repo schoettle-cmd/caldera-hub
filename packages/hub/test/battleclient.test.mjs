@@ -58,3 +58,18 @@ test("11-13 pure city: the replay (and the demo) sets html.w-replay while it pla
   const { CITY_JS, CITY_CSS } = await import("data:text/javascript;base64," + Buffer.from(cb.outputFiles[0].text).toString("base64"));
   assert.ok(CITY_JS.includes("function LBL(){return labels&&!PURE}") && CITY_JS.includes("contains('w-replay')") && CITY_CSS.includes("html.w-replay .c-live"), "the city renderer hides labels, rays and map text while html.w-replay is set");
 });
+
+test("11-15 replay wording: a shielded hit reads 'shield cut it to $X' (never 'shield held'), an open hit '-$X', a night from before 11-15 keeps 'shield held'", () => {
+  const js = M.BATTLE_CLIENT_JS, grab = (name) => { const i = js.indexOf("function " + name + "("); assert.ok(i >= 0, name); let d = 0, j = js.indexOf("{", i); for (; j < js.length; j++) { if (js[j] === "{") d++; else if (js[j] === "}" && --d === 0) break; } return js.slice(i, j + 1); };
+  const hitLine = new Function(grab("usd") + "\n" + grab("hitLine") + "\nreturn hitLine;")();
+  assert.equal(hitLine({ d: "@jgeofil", sh: 0.99, usd: 27_014, to: 99.6, fire: false }), "@jgeofil: shield cut it to $27k, 100% standing");
+  assert.equal(hitLine({ d: "@mike", sh: 0.56, usd: 488_659, to: 99.2, fire: true }), "@mike: shield cut it to $489k, on fire, 99% standing");
+  assert.equal(hitLine({ d: "@orion", sh: 0, usd: 1_200_000, to: 87, fire: false }), "@orion -$1.2M, 87% standing");
+  assert.equal(hitLine({ d: "raiders from the sea", sh: 0, usd: 4_000, to: 100 }), "The raiders -$4k, 100% standing");
+  assert.equal(hitLine({ d: "@jgeofil", shield: true, pot: 2_667_675, usd: 0, to: 100 }), "@jgeofil: shield held, $2.7M stopped", "old nights read as they were");
+  assert.ok(!/shield held/.test(hitLine({ d: "@a", sh: 0.99, usd: 304, to: 100 })));
+  // the per-shot breakdown and the explainer say shields reduce damage, with the math
+  for (const t of ["Without a shield", "% off: ", " held", "that got through", "A shield cuts a hit down. It never stops it", "damage = what the missile would do x (1 - shield)", "no strike comes to $0"]) assert.ok(js.includes(t), "copy: " + t);
+  assert.ok(!js.includes("stops everything for your first 30 days"), "the old beginner-shield line is gone");
+  assert.ok(/hb\.classList\.toggle\(["']sh["']/.test(js), "a shielded hit line is styled as a shield cut");
+});
