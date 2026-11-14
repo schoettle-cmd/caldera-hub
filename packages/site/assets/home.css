@@ -100,3 +100,46 @@
 .fc-card img{display:block;width:100%;height:auto;aspect-ratio:1200/630;object-fit:cover;background:#0c1222}
 .fc-t{display:flex;flex-direction:column;gap:3px;padding:10px 12px 12px;min-height:44px}.fc-t b{color:var(--text-strong);font-size:15px}.fc-t span{color:var(--text-muted);font-size:13px;line-height:1.35}
 @media (max-width:520px){.fc-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.fc-t{padding:8px 10px 10px}.fc-t b{font-size:14px}.fc-t span{font-size:12px}}
+
+/* Nightly battle (Mike 2026-11-13): what the battle is, why building matters, how to join; live strip from /v1/world/battle */
+.nb{--fire:#FFB347;--fire-ink:#1A1206;margin:0 0 64px;padding:28px;border:1px solid var(--line);border-radius:16px;background:radial-gradient(120% 90% at 100% 0%,color-mix(in srgb,var(--fire) 10%,transparent),transparent 60%),var(--bg-raised)}
+:root[data-theme="light"] .nb{--fire:#B5650A;--fire-ink:#fff}
+.nb-top{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:28px;align-items:start}
+.nb h2{font-family:var(--font-display);font-weight:600;font-size:clamp(28px,4vw,40px);line-height:1.1;letter-spacing:-.01em;color:var(--text-strong);margin:8px 0 12px}
+.nb-lead{font-size:17px;max-width:620px;margin:0 0 18px}
+.nb-cta{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 10px}
+.nb-live{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--bg)}
+.nb-lk{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-family:var(--font-mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)}
+.nb-dot{width:8px;height:8px;border-radius:50%;background:var(--fire);box-shadow:0 0 0 0 color-mix(in srgb,var(--fire) 60%,transparent);animation:nbp 2s ease-out infinite}
+@keyframes nbp{to{box-shadow:0 0 0 8px transparent}}
+.nb-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0}
+.nb-stats div{min-width:0}.nb-stats dt{font-size:12.5px;color:var(--text-muted)}
+.nb-stats dd{margin:0;font-family:var(--font-mono);font-size:22px;font-weight:600;color:var(--text-strong);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nb-board{list-style:none;margin:12px 0 0;padding:10px 0 0;border-top:1px solid var(--line);display:grid;gap:2px;counter-reset:nb}
+.nb-board:empty{display:none}
+.nb-board li{display:flex;align-items:center;gap:8px;font-size:14px;counter-increment:nb;min-height:32px}
+.nb-board li::before{content:counter(nb);font-family:var(--font-mono);font-size:12px;color:var(--text-muted);width:14px}
+.nb-board a{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.nb-board b{font-family:var(--font-mono);color:var(--fire);font-weight:600}
+.nb-steps{list-style:none;margin:24px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.nb-steps>li{background:var(--bg-raised);padding:20px}
+.nb-n{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--fire);color:var(--fire-ink);font:600 13px var(--font-mono)}
+.nb-steps h3{font-family:var(--font-display);font-weight:600;font-size:20px;color:var(--text-strong);margin:8px 0 6px}
+.nb-steps p{margin:0;font-size:15px}.nb-small{margin-top:8px!important;font-size:13.5px!important;color:var(--text-muted)}
+.nb-sizes{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:4px}
+.nb-sizes li{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:8px;font-size:14px}
+.nb-sizes b{display:inline-grid;place-items:center;height:22px;border-radius:5px;background:color-mix(in srgb,var(--fire) 18%,transparent);color:var(--fire);font:600 11.5px var(--font-mono)}
+.nb-sizes li:nth-child(n+3) b{background:var(--fire);color:var(--fire-ink)}
+.nb-sizes i{font-style:normal;font-family:var(--font-mono);font-size:12px;color:var(--text-muted);white-space:nowrap}
+.nb-why{margin:18px 0 0;font-size:15px;max-width:780px}.nb-why b{color:var(--text-strong)}
+@media (max-width:860px){.nb-top{grid-template-columns:1fr}.nb-steps{grid-template-columns:1fr}}
+@media (max-width:520px){.nb{padding:18px 16px;margin-left:-8px;margin-right:-8px}.nb-cta .btn{flex:1 1 100%;justify-content:center}.nb-stats dd{font-size:19px}}
+@media (prefers-reduced-motion:reduce){.nb-dot{animation:none}}
+
+/* Orpheus (Mike 2026-11-13: ads for Orpheus on the homepage) */
+.orph{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:18px;align-items:center;margin:-64px 0 80px;padding:20px 22px;border:1px solid color-mix(in srgb,#8B6CF6 40%,var(--line));border-radius:14px;background:color-mix(in srgb,#8B6CF6 8%,var(--bg-raised))}
+.orph-mark{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,#8B6CF6 22%,transparent);color:var(--accent-text)}
+.orph-k{margin:0;font-family:var(--font-mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)}
+.orph h2{font-family:var(--font-display);font-weight:600;font-size:21px;line-height:1.25;color:var(--text-strong);margin:2px 0 4px}
+.orph p{margin:0;font-size:14.5px}.orph-body>p:last-child{color:var(--text)}
+.orph-btn{white-space:nowrap}
+@media (max-width:720px){.orph{grid-template-columns:auto minmax(0,1fr);align-items:start;margin-top:-72px}.orph-btn{grid-column:1/-1;justify-content:center}}

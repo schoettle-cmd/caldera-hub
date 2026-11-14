@@ -2349,7 +2349,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
     notify: (to, a) => { alerts.post({ title: a.title, body: a.body, ctaLabel: a.ctaLabel, ctaUrl: a.ctaUrl, target: to, key: a.key, by: "tools" }); },
     gravity: (from, to, reason) => { try { q("INSERT INTO gravity VALUES (?,?,?,?,?)").run(from, to, now(), reason, null); } catch { /* never blocks a download */ } },
     fetch: globalThis.fetch, changed: () => { (FEED as any)?.bust?.(); },
-    plugin: () => { try { const r = JSON.parse(fs.readFileSync(path.join(opts.siteDir || "", "releases.json"), "utf8")).releases?.[0]; return r ? { version: String(r.version), date: String(r.date), title: r.title } : null; } catch { return null; } } });
+    plugin: () => { try { const r = JSON.parse(fs.readFileSync(path.join(opts.siteDir || "", "releases.json"), "utf8")).releases?.find((x: any) => !x.hub); return r ? { version: String(r.version), date: String(r.date), title: r.title } : null; } catch { return null; } } });
   // the setup guide: a DM from the founder with what's still missing on a member's page (welcome + two follow-ups)
   GUIDE = opts.founder ? setupGuide({ q, now, hub: PUB(), founder: () => byHandle(String(opts.founder).toLowerCase())?.id || null,
     send: (f, t, text) => MSG ? MSG.system(f, t, text) : false, nameOf: id => String(profile(id)?.name || profile(id)?.handle || ""),

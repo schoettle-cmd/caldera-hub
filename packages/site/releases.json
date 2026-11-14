@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "world-2026-11-14",
+      "hub": true,
+      "date": "2026-11-14",
+      "title": "Nightly battles in dollars, with bigger missiles and fire",
+      "items": [
+        "Your day of code is now a munitions budget with no cap: $50,000 a point (a commit is 1, a merged pull request 3, a green CI run 2, a release 8).",
+        "Four missile sizes, S to XL, from an artillery shell to a cruise missile. Taller buildings, a recent release and a green CI run unlock the bigger ones.",
+        "Every missile that lands does damage, worked out with real blast physics against the building's construction, and every hit starts a fire that burns down over about four hours.",
+        "Open How damage works in the Battle view for the full math, tap any shot for its own numbers, and see every city's arsenal by size."
+      ]
+    },
+    {
       "version": "0.29.3",
       "date": "2026-11-12",
       "title": "Your agents' drones stay true",

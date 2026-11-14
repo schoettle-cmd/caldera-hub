@@ -191,7 +191,7 @@ ${BT ? `<script>window.CALDERA_BATTLE_ON=1</script>` : ""}${G ? `<script>${GROWT
 @media (max-width:600px){html.w-battle .w-main .c-live{display:none}.w-main .b-chip{font-size:11px;gap:6px;padding:6px 10px 6px 8px}}
 .w-main .b-chip b{flex:none}.w-main .b-chip span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .w-main .b-me .b-small{line-height:1.45}.w-main .b-me .b-link{min-height:0;padding:7px 0;margin:-7px 0;vertical-align:baseline}.w-main .b-board summary{line-height:1.35;padding:6px 0}
-.w-foot{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:13px;color:var(--text-muted,#8A8A93)}.w-foot a{color:var(--accent-text,#B9A6FF)}
+.w-foot{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:13px;color:var(--text-muted,#8A8A93)}.w-foot a{color:var(--accent-text,#B9A6FF)}.w-orph{flex:1 1 100%;padding:8px 12px;border:1px solid rgba(139,108,246,.35);border-radius:10px;background:rgba(139,108,246,.08);line-height:1.5}.w-orph b{color:var(--text-strong,#fff);font-weight:600}.w-orph a{font-weight:600;white-space:nowrap;display:inline-block;padding:4px 0}
 .w-legend i{display:inline-block;width:18px;height:4px;border-radius:2px;background:linear-gradient(90deg,#B98CFF,#FFC46B,#B98CFF);vertical-align:middle;margin-right:6px;box-shadow:0 0 6px rgba(200,160,255,.8)}.w-legend-stack i{background:repeating-linear-gradient(90deg,#FF7A96 0 4px,transparent 4px 7px);box-shadow:none}</style></head><body>
 ${o.nav}
 <main class="w-main">
@@ -201,7 +201,7 @@ ${o.nav}
 <div class="c-toasts" aria-live="polite"></div><div class="c-mininame" aria-hidden="true"><i></i>Caldera world</div>
 <div class="c-card" id="card" hidden></div><div class="c-hint">Drag to move &middot; scroll or pinch to zoom &middot; click a name to fly there</div></div>
 </div>${G ? growthMarkup() : ""}${BT ? battleMarkup() : ""}
-<div class="w-foot"><span class="w-legend"><i></i>Friendships are rays of light</span><span class="w-legend w-legend-stack"><i></i>Dashed coral: builds with a similar stack</span><span>&#128274; Padlocked buildings are private repos: size only, never names.</span><span>Only people listed in <a href="/people">People</a> appear.</span><a href="/#start">Add your city &rarr;</a></div>
+<div class="w-foot"><span class="w-legend"><i></i>Friendships are rays of light</span><span class="w-legend w-legend-stack"><i></i>Dashed coral: builds with a similar stack</span><span>&#128274; Padlocked buildings are private repos: size only, never names.</span><span>Only people listed in <a href="/people">People</a> appear.</span><a href="/#start">Add your city &rarr;</a><span class="w-orph"><b>More agents, more commits, more ammo.</b> Orpheus keeps your Claude agents working across all your accounts. <a href="https://useorpheus.com/?utm_source=caldera&amp;utm_medium=world" target="_blank" rel="noopener">Try Orpheus free</a></span></div>
 ${mapPanel(hub)}
 </main><footer class="footer"><span>&copy; 2026 mjonesone, LLC</span><span><a href="/guide">Guide</a> &middot; <a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a></span></footer>
 <script>window.CALDERA_TOOLS=${safeJson(o.tools || [])};window.CALDERA_TOOLS_HUB=${safeJson(hub)};window.CALDERA_LIVE=${safeJson({ url: "/v1/world/live", mode: "public" })};window.CALDERA_EXTRAS=${safeJson({ weather: `${hub}/v1/weather` })};window.CALDERA_GIFTS=${safeJson({ url: "/v1/gifts" })}</script>
