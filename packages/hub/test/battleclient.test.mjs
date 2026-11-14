@@ -46,3 +46,15 @@ test("battle client script: parses, reads the saved speed at start, starts repla
   assert.ok(/html\.w-replay \.b-chip\{display:none\}/.test(css) && !/w-replay \.b-chip/.test(mq), "during a replay the status chip is gone at every width, not only on a phone (the bar says the same, and the chip sat on the Labels chip)");
   assert.ok(!/—/.test(js + css), "no em dashes");
 });
+
+test("11-13 pure city: the replay (and the demo) sets html.w-replay while it plays and clears it on End or when it finishes; it never writes the viewer's Labels or Friendships choice", async () => {
+  const js = M.BATTLE_CLIENT_JS, play = js.slice(js.indexOf("function play(mode)"), js.indexOf("function mine()")), stop = js.slice(js.indexOf("function stopPlay()"), js.indexOf("function play(mode)"));
+  assert.ok(play.includes("classList.add('w-replay')") || play.includes('classList.add("w-replay")'), "play() sets the class the city renderer's PURE flag keys on");
+  assert.ok(stop.includes("classList.remove('w-replay')") || stop.includes('classList.remove("w-replay")'), "stopPlay() clears it, so labels and rays come back");
+  assert.ok(/if \(!p2 \|\| !p2\.replay\) \{\s*stopPlay\(\)/.test(play), "a replay that runs out ends through stopPlay too");
+  assert.ok(!/caldera-world-labels|caldera-world-rays/.test(js), "the battle client never touches the saved toggles");
+  // the world page the hub serves carries the renderer side (bundled from ../caldera)
+  const cb = await build({ entryPoints: [new URL("../../../../caldera/packages/plugin/src/city.ts", import.meta.url).pathname], bundle: true, platform: "node", format: "esm", packages: "external", write: false });
+  const { CITY_JS, CITY_CSS } = await import("data:text/javascript;base64," + Buffer.from(cb.outputFiles[0].text).toString("base64"));
+  assert.ok(CITY_JS.includes("function LBL(){return labels&&!PURE}") && CITY_JS.includes("contains('w-replay')") && CITY_CSS.includes("html.w-replay .c-live"), "the city renderer hides labels, rays and map text while html.w-replay is set");
+});
