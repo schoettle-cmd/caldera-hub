@@ -52,17 +52,17 @@ test("rankMembers: the day's real code (arsenal) per Pacific day, summed over th
   near(by.c.metric, 0); near(by.c.prev, 4); near(by.c.trend, -4);
   near(by.d.metric, 7, 1e-9); near(by.d.prev, 0); assert.equal(by.d.active, 1);
   assert.equal(by.a.tierName, "Mid-rise"); assert.equal(by.b.tierName, "Campus"); assert.equal(by.d.tier, 0);
-  assert.deepEqual(by.a.battle, { in: true, ammo: 21, hits: 3 }, "in the battles: tonight's ammo and hits landed over the window's nights");
-  assert.deepEqual(by.b.battle, { in: false, ammo: 0, hits: 0 }, "a peaceful zone shows zero");
+  assert.deepEqual(by.a.battle, { in: true, ammo: 21, hits: 3, usd: 0 }, "in the battles: tonight's ammo and hits landed over the window's nights");
+  assert.deepEqual(by.b.battle, { in: false, ammo: 0, hits: 0, usd: 0 }, "a peaceful zone shows zero");
   // the week folds both days; the UTC evening of Nov 6 (04:00 UTC Nov 7) still counts for Nov 6 Pacific
   const late = ev("c", "commit", P, {}); late.ts = (P + 1) * DAY + 4 * H; late.seen = late.ts;
   const week = L.rankRows([...ms.slice(0, 2), M("c", [...ms[2].events, late])], "week", P);
   const wb = Object.fromEntries(week.map(r => [r.handle, r]));
   near(wb.a.metric, 26); near(wb.b.metric, 65); near(wb.c.metric, 5); assert.equal(wb.c.active, 2);
   assert.equal(L.rankRows(ms, "all", P)[0].trend, null, "all-time has no window before");
-  // anti-gaming comes with the metric: voided commits, prereleases, stars and posts load nothing; 40 commits a day
+  // anti-gaming comes with the metric: voided commits, prereleases, stars and posts load nothing; no commit cap (Mike 11-13)
   const v = L.rankRows([M("v", [...["bot", "empty", "merge", "revert"].map(x => ev("v", "commit", P, { v: x })), ev("v", "release", P, { v: "prerelease" }), ev("v", "star", P), ev("v", "post", P, { repo: "caldera" })]), M("w", many("w", "commit", P, 100))], "day", P);
-  assert.equal(v.find(r => r.handle === "v").metric, 0); assert.equal(v.find(r => r.handle === "w").metric, 40);
+  assert.equal(v.find(r => r.handle === "v").metric, 0); assert.equal(v.find(r => r.handle === "w").metric, 100);
 });
 
 test("private names never leave the module: rows, the JSON and the post text carry handles and counts, no repo names", () => {

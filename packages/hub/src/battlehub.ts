@@ -13,7 +13,7 @@
 import crypto from "node:crypto";
 import type http from "node:http";
 import { DAY, dayOf, dayKey, type GEvent, type SimOut } from "./growth";
-import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, isBeginner, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
+import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, towersOf, dmgAt, dmgAll, usdOf, fmtUsd, scaledDistance, isBeginner, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
   type Fighter, type Shot, type Report, type ReportFreq } from "./battle";
 import type { GrowthMember } from "./growthhub";
 
@@ -57,17 +57,17 @@ export function battleHub(c: BattleHubCtx) {
   function fighterOf(x: Ctx, m: GrowthMember, day: number, waive: boolean): Fighter | null {
     const sim = x.sims.get(m.id); if (!sim) return null;
     const sn = snapOf(sim, day), active = sim.stats.filter(s => s.d <= day && s.pts > 0).length;
-    const ars = arsenal(x.evBy.get(m.id) || [], day, { ai: x.ai.get(m.id), streak: sn.streak, lots: sn.lots, reverted: x.reverted });
+    const tw = towersOf((m.city?.districts || []).flatMap((d: any) => d.repos || []));   // repo towers on the world map, tallest first: the only targets
+    const ars = arsenal(x.evBy.get(m.id) || [], day, { ai: x.ai.get(m.id), streak: sn.streak, lots: sn.lots, reverted: x.reverted, top: tw[0] });
     const o = { streak: sn.streak, joinedDays: day + 1 - dayOf(m.created || now()), activeDays: active, waived: waive };
-    const towers = (m.city?.districts || []).reduce((n: number, d: any) => n + (d.repos || []).filter((r: any) => r && !r.kind).length, 0);   // repo towers on the world map, the only targets
-    return { id: m.id, h: m.handle, ars, sh: shield(o), beg: isBeginner(o), lots: sn.lots, towers, side: sn.side, out7: sim.stats.filter(s => s.d > day - 7 && s.d <= day).reduce((t, s) => t + s.pts, 0), heads: heads(m.id), idle: sn.idle };
+    return { id: m.id, h: m.handle, ars, sh: shield(o), beg: isBeginner(o), lots: sn.lots, towers: tw.length, tw, side: sn.side, out7: sim.stats.filter(s => s.d > day - 7 && s.d <= day).reduce((t, s) => t + s.pts, 0), heads: heads(m.id), idle: sn.idle };
   }
   /** damage still showing per defender and lot at a time, from the last 4 nights (only for members still opted in) */
   function openDamage(x: Ctx, at: number, warOn: Set<string>): Map<string, Map<number, number>> {
     const out = new Map<string, Map<number, number>>(), n = lastNight(at - 1);
     for (const s of S.shots(n - 4, n)) {
       if (s.f <= 0 || s.lot < 0 || !warOn.has(s.d) || s.t > at) continue;
-      const r = remaining(s.f, s.t, at, x.pts(s.d)); if (r <= 0.005) continue;
+      const r = remaining(dmgAt(s, at), s.t, at, x.pts(s.d)); if (r <= 0.0005) continue;
       const m = out.get(s.d) || new Map<number, number>(); out.set(s.d, m); m.set(s.lot, (m.get(s.lot) || 0) + r);
     }
     return out;
@@ -81,12 +81,12 @@ export function battleHub(c: BattleHubCtx) {
     const x = ctxFor(), T = battleAt(night), on = warSet(T, x), opts = new Map(S.opts().map(r => [r.p, r] as [string, any]));
     const fighters = x.ms.filter(m => on.has(m.id)).map(m => fighterOf(x, m, night - 1, !!opts.get(m.id)?.waive)).filter((f): f is Fighter => !!f);
     const prev = S.shots(night - 1), lastPairs = new Set(prev.filter(s => s.f > 0).map(s => s.a + ">" + s.d));
-    const week = new Map<string, number>(); for (const s of S.shots(night - 6, night - 1)) if (s.f > 0) week.set(s.d, (week.get(s.d) || 0) + s.f);
+    const week = new Map<string, number>(); for (const s of S.shots(night - 6, night - 1)) if (s.f > 0) week.set(s.d, (week.get(s.d) || 0) + dmgAll(s));
     const r = resolveNight({ night, fighters, lastPairs, week, aims: S.aims(night), open: openDamage(x, T, on) });
-    const meta = { night: dayKey(night), at: T, raiders: r.raiders, fighters: fighters.map(f => ({ id: f.id, h: f.h, ammo: f.ars.ammo, shots: f.ars.shots.length, best: f.ars.best, sh: f.sh, beg: f.beg ? 1 : 0, c: f.ars.c, pr: f.ars.pr, rel: f.ars.rel, ai: f.ars.aiX, st: f.ars.streakX })) };
+    const meta = { night: dayKey(night), at: T, raiders: r.raiders, fighters: fighters.map(f => ({ id: f.id, h: f.h, ammo: f.ars.ammo, usd: f.ars.usd, n: f.ars.n, tech: f.ars.tech, guide: f.ars.guide, shots: f.ars.shots.length, best: f.ars.best, sh: f.sh, beg: f.beg ? 1 : 0, c: f.ars.c, pr: f.ars.pr, rel: f.ars.rel, ai: f.ars.aiX, st: f.ars.streakX })) };
     S.saveNight(night, meta, r.shots, now());
     S.prune(night - 120); cache = null;
-    console.log(`[battle] night ${dayKey(night)}: ${fighters.length} cities, ${r.shots.length} shots, ${r.shots.filter(s => s.f > 0).length} landed, raiders ${r.raiders.length}`);
+    console.log(`[battle] night ${dayKey(night)}: ${fighters.length} cities, ${r.shots.length} shots, ${r.shots.filter(s => s.f > 0).length} landed, ${fmtUsd(r.shots.reduce((t, s) => t + usdOf(s), 0))} damage, raiders ${r.raiders.length}`);
     return meta;
   }
   /** on each growth tick: resolve the night once its time has passed (a hub that was down more than 20 hours skips it: no
@@ -109,22 +109,25 @@ export function battleHub(c: BattleHubCtx) {
     const open = new Map<string, [number, number, number, number, string][]>();
     for (const s of S.shots(n - 4, n)) {
       if (s.f <= 0 || s.lot < 0 || !on.has(s.d)) continue;   // opting out rebuilds instantly
-      const r = remaining(s.f, s.t, at, x.pts(s.d)); if (r <= 0.005) continue;
+      const r = remaining(dmgAt(s, at), s.t, at, x.pts(s.d)); if (r <= 0.0005) continue;
       const h = "@" + (x.byId.get(s.d)?.handle || ""); if (!open.has(h)) open.set(h, []);
-      open.get(h)!.push([s.lot, Math.round(r * 100) / 100, s.f, s.t, x.handle(s.a)]);
+      open.get(h)!.push([s.lot, Math.round(r * 1e4) / 1e4, s.f, s.t, x.handle(s.a)]);
     }
     const members: Record<string, any> = {};
     for (const m of x.ms) {
       if (!on.has(m.id)) continue;
       const f = fighterOf(x, m, today, !!opts.get(m.id)?.waive); if (!f) continue;
-      const h = "@" + m.handle, last = S.shots(n).filter(s => s.d === m.id && s.f > 0), taken = last.reduce((t, s) => t + s.f, 0), left = last.reduce((t, s) => t + remaining(s.f, s.t, at, x.pts(m.id)), 0);
-      members[h] = { sh: f.sh, beg: f.beg ? 1 : 0, ammo: f.ars.ammo, best: f.ars.best, shots: f.ars.shots.length, hits: open.get(h) || [], reb: taken > 0 ? Math.round(100 * (1 - left / taken)) : 100, tgt: targetable(f) ? 1 : 0 };
+      const h = "@" + m.handle, last = S.shots(n).filter(s => s.d === m.id && s.f > 0), taken = last.reduce((t, s) => t + dmgAt(s, at), 0), left = last.reduce((t, s) => t + remaining(dmgAt(s, at), s.t, at, x.pts(m.id)), 0);
+      members[h] = { sh: f.sh, beg: f.beg ? 1 : 0, ammo: f.ars.ammo, usd: f.ars.usd, n: f.ars.n, tech: f.ars.tech, guide: f.ars.guide, cep: f.ars.cepX, reach: f.ars.reach, best: f.ars.best, shots: f.ars.shots.length, hits: open.get(h) || [], reb: taken > 0 ? Math.round(100 * (1 - left / taken)) : 100, tgt: targetable(f) ? 1 : 0 };
     }
-    const row = (s: any) => [x.handle(s.a), x.handle(s.d), s.w, s.f, s.t, s.lot, s.blocked, s.aim], shots = S.shots(n).map(row), prevShots = S.shots(n - 1).filter(s => s.night === n - 1).map(row);
-    const se = season(n, launch()), sc = scoreOf(S.shots(se.from, n), heads);
+    const row = (s: any) => [x.handle(s.a), x.handle(s.d), s.w, s.f, s.t, s.lot, s.blocked, s.aim, s.x || null], shots = S.shots(n).map(row), prevShots = S.shots(n - 1).filter(s => s.night === n - 1).map(row);
+    const se = season(n, launch()), sc = scoreOf(S.shots(se.from, n), heads), night = S.shots(n);
+    // the rules, as numbers, for the page's "How damage works" sheet (one source: battle.ts WAR)
+    const rules = { usd: WAR.usd, w: WAR.w, weapons: WAR.weapons, classes: WAR.classes.map(k => ({ k: k.k, name: k.name, kpa: k.kpa, sqm: k.sqm, load: k.load, z: Math.round(scaledDistance(k.kpa) * 100) / 100 })), fire: WAR.fire, guide: WAR.guide, soft: WAR.soft,
+      light: WAR.light, half: WAR.half, footprint: WAR.footprint, floorM: WAR.floorM, relDays: WAR.relDays, reach: WAR.reach, reachMax: WAR.reachMax, autoRepair: WAR.autoRepair, repairPerPt: WAR.repairPerPt };
     const board = [...sc.entries()].filter(([id]) => on.has(id)).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 10).map(([id, v]) => [x.handle(id), v]);
     // the renderer fires the night resolved before each local noon from 12:00 to 24:00 and repairs it the next morning, so it also needs the night before (citybattle.ts)
-    const v = { at: new Date(at).toISOString(), night: dayKey(n), t0: battleAt(n), next: battleAt(n + 1), prev: { night: dayKey(n - 1), t0: battleAt(n - 1), shots: prevShots }, season: { n: se.n, week: se.week }, members, shots, board, raiders: (S.night(n)?.raiders || []).map((id: string) => x.handle(id)), cities: Object.keys(members).length };
+    const v = { at: new Date(at).toISOString(), night: dayKey(n), t0: battleAt(n), next: battleAt(n + 1), prev: { night: dayKey(n - 1), t0: battleAt(n - 1), shots: prevShots }, season: { n: se.n, week: se.week }, members, shots, board, rules, usd: night.reduce((t, s) => t + usdOf(s), 0), fires: night.filter(s => s.x?.sp).length, raiders: (S.night(n)?.raiders || []).map((id: string) => x.handle(id)), cities: Object.keys(members).length };
     cache = { at, v }; return v;
   }
 
@@ -134,7 +137,7 @@ export function battleHub(c: BattleHubCtx) {
     const st = sim?.stats.find(s => s.d === day), f = fighterOf(x, m, dayOf(now()), !!opt?.waive);
     const meta = S.night(night)?.fighters?.find((y: any) => y.id === m.id);
     return reportFor(m.id, m.handle, peace ? [] : S.shots(night), { night, now: now(), peace, pts: x.pts(m.id), handle: x.handle, mvp: mvpOf(x.evBy.get(m.id) || [], day),
-      shield: f?.sh ?? 0, streak: sn?.streak || 0, built: st ? st.top : 0, ammo: meta?.ammo || 0 });
+      shield: f?.sh ?? 0, streak: sn?.streak || 0, built: st ? st.top : 0, ammo: meta?.ammo || 0, usd: meta?.usd });
   }
   function me(id: string) {
     const x = ctxFor(), m = x.byId.get(id); if (!m) return null;
@@ -143,13 +146,13 @@ export function battleHub(c: BattleHubCtx) {
       .sort((a, b) => Math.abs(a.side - (f?.side || 2)) - Math.abs(b.side - (f?.side || 2)) || a.h.localeCompare(b.h)).slice(0, 12).map(y => ({ h: "@" + y.h, sh: y.sh, beg: y.beg ? 1 : 0 }));
     const nights = S.night(n) ? reportOf(x, m, n) : null;
     return { h: "@" + m.handle, war: on.has(id) ? 1 : 0, waive: opt.waive, report: opt.report, email: !!c.emailOf(id), emailLive: c.emailOn(),
-      arsenal: f ? { ammo: f.ars.ammo, c: f.ars.c, pr: f.ars.pr, rel: f.ars.rel, ci: f.ars.ci, ai: f.ars.aiX, streak: f.ars.streakX, best: f.ars.best, shots: f.ars.shots.length } : null,
+      arsenal: f ? { usd: f.ars.usd, n: f.ars.n, tech: f.ars.tech, why: f.ars.techWhy, guide: f.ars.guide, cep: f.ars.cepX, reach: f.ars.reach, left: f.ars.left, ammo: f.ars.ammo, c: f.ars.c, pr: f.ars.pr, rel: f.ars.rel, ci: f.ars.ci, ai: f.ars.aiX, streak: f.ars.streakX, best: f.ars.best, shots: f.ars.shots.length } : null,
       shield: f?.sh ?? 0, beginner: f?.beg ? 1 : 0, next: battleAt(n + 1), aims: S.aimsOf(n + 1, id).map(t => x.handle(t)), aimCap: WAR.manualCap, rivals, last: nights };
   }
   function weekNote(x: Ctx, m: GrowthMember, n: number): string {
-    const sh = S.shots(n - 6, n), took = sh.filter(s => s.d === m.id).reduce((t, s) => t + s.f, 0), dealt = sh.filter(s => s.a === m.id).reduce((t, s) => t + s.f, 0);
+    const sh = S.shots(n - 6, n), took = sh.filter(s => s.d === m.id).reduce((t, s) => t + usdOf(s), 0), dealt = sh.filter(s => s.a === m.id).reduce((t, s) => t + usdOf(s), 0);
     const built = (x.sims.get(m.id)?.stats || []).filter(s => s.d >= n - 7 && s.d < n).reduce((t, s) => t + s.top, 0);
-    return `This week: ${built} lot${built === 1 ? "" : "s"} built, ${Math.round(dealt * 10) / 10} facades dealt, ${Math.round(took * 10) / 10} taken (all rebuilt on their own).`;
+    return `This week: ${built} lot${built === 1 ? "" : "s"} built, ${fmtUsd(dealt)} of damage dealt, ${fmtUsd(took)} taken (all rebuilt on its own).`;
   }
 
   // ---------------------------------------------------------------- the battle-report email (opt-in; sends only with CALDERA_BATTLE_EMAIL=1)
@@ -157,7 +160,7 @@ export function battleHub(c: BattleHubCtx) {
   function compose(x: Ctx, m: GrowthMember, night: number, weekly: boolean) {
     const r = reportOf(x, m, night), opt = S.ensure(m.id), shots = S.shots(night), on = warSet(Infinity, x);
     const built = x.ms.map(o => [x.handle(o.id), x.sims.get(o.id)?.stats.find(s => s.d === night - 1)?.top || 0] as [string, number]).filter(y => y[1] > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-    const reb = x.ms.filter(o => on.has(o.id)).map(o => { const mine = shots.filter(s => s.d === o.id && s.f > 0), t = mine.reduce((a, s) => a + s.f, 0), l = mine.reduce((a, s) => a + remaining(s.f, s.t, now(), x.pts(o.id)), 0);
+    const reb = x.ms.filter(o => on.has(o.id)).map(o => { const mine = shots.filter(s => s.d === o.id && s.f > 0), t = mine.reduce((a, s) => a + dmgAt(s, now()), 0), l = mine.reduce((a, s) => a + remaining(dmgAt(s, now()), s.t, now(), x.pts(o.id)), 0);
       return [x.handle(o.id), t > 0 ? Math.round(100 * (1 - l / t)) : -1] as [string, number]; }).filter(y => y[1] >= 0).sort((a, b) => b[1] - a[1]);
     const pairsByNight = [1, 2, 3, 4, 5, 6].map(k => new Set(S.shots(night - k).filter(s => s.a !== RAIDERS && s.d !== RAIDERS).map(s => [s.a, s.d].sort().join("|"))));
     const se = season(night, launch()), w = worldLines(shots, { handle: x.handle, built, rebuilt: reb, pairsByNight, season: se });

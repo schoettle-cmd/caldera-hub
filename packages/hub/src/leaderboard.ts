@@ -19,7 +19,7 @@
 import crypto from "node:crypto";
 import type http from "node:http";
 import { DAY, dayOf, dayKey, TIER_NAMES, tierOf, type GEvent, type SimOut } from "./growth";
-import { arsenal, battleStore } from "./battle";
+import { arsenal, battleStore, usdOf, fmtUsd } from "./battle";
 import type { GrowthMember } from "./growthhub";
 
 export type LbWindow = "day" | "week" | "month" | "all";
@@ -53,14 +53,14 @@ export interface LbMemberIn {
   /** repo -> AI signal count */ ai?: Map<string, number>;
   /** the streak standing on a Pacific day */ streak?: (pDay: number) => number;
   /** lot codes of the plot now (the city tier is the top lot) */ lots?: string;
-  /** in the battles */ war?: boolean;
+  /** in the battles */ war?: boolean; /** dollars of battle damage dealt on nights [from, to] */ dmg?: (from: number, to: number) => number;
   /** hits landed over nights [from, to] */ hits?: (from: number, to: number) => number;
 }
 export interface LbRow {
   rank: number; id: string; handle: string; name: string; avatar: string | null; url: string;
   /** points in the window */ metric: number; /** the window before, same length (0 for all-time) */ prev: number; /** metric - prev (null for all-time) */ trend: number | null;
   /** days with points in the window */ active: number; tier: number; tierName: string;
-  battle: { in: boolean; ammo: number; hits: number };
+  battle: { in: boolean; ammo: number; hits: number; /** dollars of damage dealt in the window */ usd: number };
 }
 const r1 = (x: number) => Math.round(x * 10) / 10;
 /** events shifted to Pacific wall time and bucketed by Pacific day, so arsenal()'s UTC-day filter sees Pacific days */
@@ -90,7 +90,7 @@ export function rankRows(ms: LbMemberIn[], win: LbWindow, pToday: number): LbRow
     let top = 0; for (const ch of m.lots || "") top = Math.max(top, Number(ch) || 0);
     const tier = top >= 4 ? tierOf(top) : top > 0 ? 1 : 0;
     rows.push({ rank: 0, id: m.id, handle: m.handle, name: m.name, avatar: m.avatar, url: m.url, metric: r1(cur.t), prev: r1(prev), trend: win === "all" ? null : r1(cur.t - prev), active: cur.a,
-      tier, tierName: TIER_NAMES[tier] || "", battle: { in: !!m.war, ammo: m.war ? r1(pts(pToday)) : 0, hits: m.war && m.hits ? m.hits(d0 + 1, win === "all" ? 1e9 : d1 + 1) : 0 } });
+      tier, tierName: TIER_NAMES[tier] || "", battle: { in: !!m.war, ammo: m.war ? r1(pts(pToday)) : 0, hits: m.war && m.hits ? m.hits(d0 + 1, win === "all" ? 1e9 : d1 + 1) : 0, usd: m.war && m.dmg ? m.dmg(d0 + 1, win === "all" ? 1e9 : d1 + 1) : 0 } });
   }
   rows.sort((a, b) => b.metric - a.metric || b.active - a.active || b.prev - a.prev || a.handle.localeCompare(b.handle));
   rows.forEach((r, i) => r.rank = i + 1);
@@ -158,7 +158,7 @@ export function leaderboardPage(rows: LbRow[], o: { win: LbWindow; me: string | 
     + `<td class="lb-who"><a href="${esc(r.url)}">${av(r)}<span class="lb-nm"><span class="lb-h">@${esc(r.handle)}</span>${r.name && r.name !== "@" + r.handle && r.name !== r.handle ? `<small>${esc(r.name)}</small>` : ""}</span>${mine ? `<span class="lb-you">you</span>` : ""}</a></td>`
     + `<td class="lb-num"><span>${r.metric.toFixed(1)}</span></td><td class="lb-tr">${trend(r)}</td>`
     + `<td class="lb-tier" data-t="${r.tier}"><span>${r.tier ? `<i class="lb-sq"></i>${esc(r.tierName)}` : `<span style="color:#8A8A93">no plot yet</span>`}</span></td>`
-    + `<td class="lb-war">${r.battle.in ? `<span><i class="lb-dot"></i><b>${Math.round(r.battle.ammo)} ammo</b> ${r.battle.hits} hit${r.battle.hits === 1 ? "" : "s"}</span>` : `<span class="off">peaceful</span>`}</td></tr>`;
+    + `<td class="lb-war">${r.battle.in ? `<span><i class="lb-dot"></i><b>${fmtUsd(Math.round(r.battle.ammo) * 50000)} budget</b> ${r.battle.hits} hit${r.battle.hits === 1 ? "" : "s"}${r.battle.usd > 0 ? `, ${fmtUsd(r.battle.usd)} damage` : ""}</span>` : `<span class="off">peaceful</span>`}</td></tr>`;
   const body = list.length ? `<div class="lb-tbl"><table><thead><tr><th class="lb-r">#</th><th>Developer</th><th class="lb-num">Points</th><th class="lb-tr">${TREND_HEAD[o.win]}</th><th class="lb-tier">City</th><th class="lb-war">Battle</th></tr></thead><tbody>`
     + list.map(r => row(r, !!me && r.id === me.id)).join("")
     + (me && !list.some(r => r.id === me.id) ? `<tr class="lb-gap"><td colspan="6"><span>&middot; &middot; &middot;</span></td></tr>${row(me, true)}` : "")
@@ -207,9 +207,10 @@ export function leaderboard(c: LbCtx) {
     const war = new Set(S.opts().filter(o => o.war).map(o => o.p));
     let shots: (import("./battle").Shot & { night: number })[] | null = null;
     const hitsOf = (id: string) => (from: number, to: number) => { if (!shots) shots = S.shots(0, 1e9); let n = 0; for (const s of shots) if (s.a === id && s.f > 0 && s.night >= from && s.night <= to) n++; return n; };
+    const dmgOf = (id: string) => (from: number, to: number) => { if (!shots) shots = S.shots(0, 1e9); let n = 0; for (const s of shots) if (s.a === id && s.night >= from && s.night <= to) n += usdOf(s); return n; };
     return ms.map(m => { const sim = sims.get(m.id);
       return { id: m.id, handle: m.handle, name: m.name, avatar: c.avatar(m.id), url: m.city ? `${hub}/@${m.handle}/city.html` : `${hub}/@${m.handle}/`, events: evBy.get(m.id) || [], ai: ai.get(m.id),
-        streak: (d: number) => (sim?.snaps.get(d) || sim?.snaps.get(d - 1))?.streak ?? sim?.streak ?? 0, lots: sim?.lots || "", war: war.has(m.id), hits: hitsOf(m.id) }; });
+        streak: (d: number) => (sim?.snaps.get(d) || sim?.snaps.get(d - 1))?.streak ?? sim?.streak ?? 0, lots: sim?.lots || "", war: war.has(m.id), hits: hitsOf(m.id), dmg: dmgOf(m.id) }; });
   }
   /** rows for the window ending on Pacific day `pDay` (default: today) */
   function rankFor(win: LbWindow, pDay = pacificDay(now())): LbRow[] {
