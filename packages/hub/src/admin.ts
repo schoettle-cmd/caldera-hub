@@ -15,7 +15,7 @@
  *   ... agent-token-list | agent-token-revoke <token-id>
  *   ... growth-run [--polls N] [--backfills N] | growth-run @handle [--backfill]   the World's growth views: one tick now
  *   ... growth-drops                    today's daily drop manifest
- *   ... battle-state | battle-run [--force] [YYYY-MM-DD] | battle-dry [YYYY-MM-DD] | battle-optin @handle [--backdate] [--waive] | battle-optout @handle | battle-report [--dry] [--force] [@handle] | battle-summary [--dry]
+ *   ... battle-state | battle-run [--force] [YYYY-MM-DD] | battle-dry [YYYY-MM-DD] | battle-restrike [YYYY-MM-DD] [--save] | battle-optin @handle [--backdate] [--waive] | battle-optout @handle | battle-report [--dry] [--force] [@handle] | battle-summary [--dry]
  *   ... leaderboard [day|week|month|all]            the Leaderboard's rows (top 25)
  *   ... leaderboard-post [--dry] [--force] [YYYY-MM-DD]   yesterday's (or that Pacific day's) top 10 to the feed, once per day; --dry composes only; --force posts under 3 shippers
  *   ... land-run [--dry] [handle]   the World's Expansion view: fetch merged PRs and stars gained now, store tonight's land
@@ -69,6 +69,8 @@ try {
       out({ restrike: b.restrikeNight(n), resolve: b.resolve(n, { dry: true }) }); process.exit(0); }
     if (cmd === "battle-run") { const d = argv.find(x => /^\d{4}-\d{2}-\d{2}$/.test(x)), n = d ? Math.floor(Date.parse(d + "T00:00:00Z") / 86_400_000) : Math.floor((Date.now() - 10 * 3600_000) / 86_400_000);
       out(b.resolve(n, { force: argv.includes("--force") })); process.exit(0); }
+    if (cmd === "battle-restrike") { const d = argv.find(x => /^\d{4}-\d{2}-\d{2}$/.test(x)), n = d ? Math.floor(Date.parse(d + "T00:00:00Z") / 86_400_000) : Math.floor((Date.now() - 10 * 3600_000) / 86_400_000);   // the stored night's same shots through today's strike math; --save stores them (sends nothing)
+      out(b.restrikeNight(n, { save: argv.includes("--save") })); process.exit(0); }
     if (cmd === "battle-optin" && mm) { b.optIn(mm.id, { since: argv.includes("--backdate") ? 0 : undefined, waive: argv.includes("--waive") ? true : undefined }); out(b.me(mm.id)); process.exit(0); }
     if (cmd === "battle-optout" && mm) { b.store.setWar(mm.id, false, Date.now()); out(b.me(mm.id)); process.exit(0); }
     if (cmd === "battle-summary") { out(b.postSummary({ dry: argv.includes("--dry") })); process.exit(0); }

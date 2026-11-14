@@ -245,6 +245,17 @@ export const usdOf = (s: Shot) => s.x ? s.x.u + s.x.fu : Math.round(s.f * WAR.le
 export const dmgAt = (s: Shot, now: number) => s.f + (s.x ? burnt(s.x.fi, s.t, now) : 0);
 /** blast and the whole fire, in towers' worth */
 export const dmgAll = (s: Shot) => s.f + (s.x ? s.x.fi : 0);
+/** The city that falls at the end of the night (Mike 11-14: "One city should be totally destroyed by the end of every battle,
+ *  like in tiny little bit blocks, similar to the way things break up in Tron"): the defender that took the most damage that
+ *  night in dollars (blast plus the whole fire, usdOf), the raiders' fleet included; ties go to more hits taken, then the id.
+ *  null on a night with no shots. A battle-layer climax only: the replay and the Battle view show the city derezzed until the
+ *  cranes rebuild it (whole by noon); the earned city, its land and its data are never touched. */
+export function fallenOf(shots: Shot[]): string | null {
+  const m = new Map<string, { usd: number; n: number }>();
+  for (const s of shots) { const r = m.get(s.d) || { usd: 0, n: 0 }; r.usd += usdOf(s); r.n++; m.set(s.d, r); }
+  const top = [...m.entries()].sort((a, b) => b[1].usd - a[1].usd || b[1].n - a[1].n || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))[0];
+  return top ? top[0] : null;
+}
 
 /** Resolve one night. Deterministic for the same input. Raiders stand in for a missing fair rival, with the night's median
  *  budget (at least $500k, rockets at most), and they fire back. */

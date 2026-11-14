@@ -13,7 +13,7 @@
 import crypto from "node:crypto";
 import type http from "node:http";
 import { DAY, dayOf, dayKey, type GEvent, type SimOut } from "./growth";
-import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, towersOf, dmgAt, dmgAll, usdOf, heldOf, restrike, fmtUsd, scaledDistance, isBeginner, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
+import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, towersOf, dmgAt, dmgAll, usdOf, fallenOf, heldOf, restrike, fmtUsd, scaledDistance, isBeginner, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
   type Fighter, type Shot, type Report, type ReportFreq } from "./battle";
 import type { GrowthMember } from "./growthhub";
 
@@ -129,7 +129,8 @@ export function battleHub(c: BattleHubCtx) {
       light: WAR.light, floor: WAR.floor, dome: WAR.dome, half: WAR.half, footprint: WAR.footprint, floorM: WAR.floorM, relDays: WAR.relDays, reach: WAR.reach, reachMax: WAR.reachMax, autoRepair: WAR.autoRepair, repairPerPt: WAR.repairPerPt };
     const board = [...sc.entries()].filter(([id]) => on.has(id)).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 10).map(([id, v]) => [x.handle(id), v]);
     // the renderer fires the night resolved before each local noon from 12:00 to 24:00 and repairs it the next morning, so it also needs the night before (citybattle.ts)
-    const v = { at: new Date(at).toISOString(), night: dayKey(n), t0: battleAt(n), next: battleAt(n + 1), prev: { night: dayKey(n - 1), t0: battleAt(n - 1), shots: prevShots }, season: { n: se.n, week: se.week }, members, shots, board, rules, usd: night.reduce((t, s) => t + usdOf(s), 0), held: night.reduce((t, s) => t + heldOf(s), 0), fires: night.filter(s => s.x?.sp).length, raiders: (S.night(n)?.raiders || []).map((id: string) => x.handle(id)), cities: Object.keys(members).length };
+    const fall = (ss: Shot[]) => { const f = fallenOf(ss); return f ? x.handle(f) : null; };   // the city that falls at the end of each night's replay (Mike 11-14)
+    const v = { at: new Date(at).toISOString(), night: dayKey(n), t0: battleAt(n), next: battleAt(n + 1), fallen: fall(night), prev: { night: dayKey(n - 1), t0: battleAt(n - 1), shots: prevShots, fallen: fall(S.shots(n - 1)) }, season: { n: se.n, week: se.week }, members, shots, board, rules, usd: night.reduce((t, s) => t + usdOf(s), 0), held: night.reduce((t, s) => t + heldOf(s), 0), fires: night.filter(s => s.x?.sp).length, raiders: (S.night(n)?.raiders || []).map((id: string) => x.handle(id)), cities: Object.keys(members).length };
     cache = { at, v }; return v;
   }
 
@@ -237,9 +238,12 @@ export function battleHub(c: BattleHubCtx) {
     }
     return false;
   }
-  /** operator check: a night's stored shots run again through today's strike math (same geometry, shields and order) */
-  function restrikeNight(night: number) {
+  /** operator check: a night's stored shots run again through today's strike math (same geometry, shields and order). save:
+   *  store them as the night (the same missiles, attackers, targets and times; the night's meta keeps its fighters and gets
+   *  restruck = when). Nothing is sent: the report email and the feed post only go from the tick, once per night. */
+  function restrikeNight(night: number, o: { save?: boolean } = {}) {
     const x = ctxFor(), old = S.shots(night), now2 = restrike(old);
+    if (o.save && old.length) { S.saveNight(night, { ...(S.night(night) || { night: dayKey(night), at: battleAt(night) }), restruck: now() }, now2.map(({ night: _n, ...s }: any) => s), now()); cache = null; }
     return { night: dayKey(night), n: old.length, old: old.reduce((t, s) => t + usdOf(s), 0), new: now2.reduce((t, s) => t + usdOf(s), 0),
       shots: now2.map((s, i) => ({ a: x.handle(s.a), d: x.handle(s.d), w: s.w, old: usdOf(old[i]!), new: usdOf(s), held: heldOf(s), sh: s.x?.sh || 0 })) };
   }

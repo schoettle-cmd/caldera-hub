@@ -187,7 +187,7 @@ export function battleClient() {
       hudEl.querySelector('[data-p="stop"]').onclick = function () { stopPlay(); };
       hudEl.querySelector('[data-p="hit"]').onclick = function () { if (!hudHit) return; var s = nightShots(hudHit.night)[hudHit.ix]; if (!s) return; if (A() && A().pause) A().pause(true); refresh(); openHow(s); };
       stage.appendChild(hudEl); }
-    var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
+    var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'fall' ? 'Final strike' : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
     hudEl.querySelector('[data-p="beat"]').textContent = (ph.demo ? 'Demo \u00b7 ' : '') + beat; hudEl.querySelector('[data-p="label"]').textContent = ph.label || '';
     var ht = ph.hit ? hitLine(ph.hit) : '';
     var hb = hudEl.querySelector('[data-p="hit"]'); hb.textContent = ht + (ht && !ph.demo ? ' \u00b7 math' : ''); hb.hidden = !ht; hb.classList.toggle('sh', !!(ph.hit && (ph.hit.shield || ph.hit.sh > 0))); hudHit = ph.hit && !ph.demo ? { night: ph.night, ix: ph.hit.ix } : null;

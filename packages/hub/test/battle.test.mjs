@@ -326,6 +326,14 @@ test("live: Battle is one more view (Now stays the default); every city is in un
     assert.deepEqual(B2.resolve(n), meta, "a night resolves once");
     s = await (await fetch(base + "/v1/world/battle")).json();
     assert.ok(s.shots.length === shots.length && s.shots.every(x => ["@rae", "@sam"].includes(x[0]) && ["@rae", "@sam"].includes(x[1])));
+    assert.ok(["@rae", "@sam"].includes(s.fallen), "the night names the city that falls (most damage taken): " + s.fallen);
+    // restrike --save: the same missiles through today's math, stored as the night; nothing is sent
+    const nShots = shots.length; B2.restrikeNight(n, { save: true });
+    const again = h.db.prepare("SELECT * FROM battle_shots WHERE night=? ORDER BY k").all(n);
+    assert.equal(again.length, nShots, "the same missiles"); assert.ok(again.every((x, i) => x.f > 0 && x.a === shots.find(y => y.k === x.k).a && x.d === shots.find(y => y.k === x.k).d), "same attackers and targets, every one lands");
+    assert.ok(h.db.prepare("SELECT json FROM battle_nights WHERE night=?").get(n).json.includes('"restruck"'), "the night is marked restruck");
+    assert.equal(sent.filter(m => m.src === "battle-report").length, 0, "restrike sends nothing");
+    s = await (await fetch(base + "/v1/world/battle")).json();
     const hitOn = ["@rae", "@sam"].find(k => s.members[k].hits.length);
     assert.ok(hitOn, "the night left damage to see");
     const last = (await (await fetch(base + "/v1/world/battle/me", { headers: { cookie: await cookie("rae") } })).json()).last;
@@ -444,4 +452,13 @@ test("restrike: a stored night from before 11-15 (shields held, $0) runs again t
   assert.equal(B.battleSubject(r), "Your city today: hit by @m and @q, your shield cut it to " + B.fmtUsd(r.takenUsd));
   const m = B.battleEmail(r, { built: [], hit: [], attackers: [], rebuilds: [], rivalry: null, season: { n: 1, week: 1 } }, { name: "U", hub: "https://caldera.social", unsub: "x", postal: "P" });
   assert.ok(m.text.includes(`Your shield took ${B.fmtUsd(r.heldUsd)} off.`) && !m.text.includes("nothing landed"), m.text);
+});
+
+test("fallen: the city that took the most damage in dollars falls at the end of the night (raiders count); ties: more hits, then id", () => {
+  const sh = (a, d, u, fu = 0) => ({ k: 0, a, d, w: "rocket", ammo: 2e5, roll: 0, f: 0.01, lot: 0, t: 0, aim: 0, blocked: 0, x: { u, fi: 0, fu, sp: 0, m: 1, cep: 1, r: 1, kpa: 1, c: 0, fl: 1, v: 1, sh: 0, cd: 1, st: 1, pc: 1, raw: 1 } });
+  assert.equal(B.fallenOf([]), null);
+  assert.equal(B.fallenOf([sh("a", "b", 100), sh("a", "b", 100), sh("b", "c", 150, 100)]), "c", "blast plus fire: $250 beats $200");
+  assert.equal(B.fallenOf([sh("a", "~raiders", 900), sh("~raiders", "a", 100)]), "~raiders", "the raiders' fleet is a city too");
+  assert.equal(B.fallenOf([sh("a", "b", 100), sh("a", "c", 50), sh("a", "c", 50)]), "c", "a tie on dollars goes to more hits");
+  assert.equal(B.fallenOf([sh("x", "d", 100), sh("x", "b", 100)]), "b", "then the id");
 });
