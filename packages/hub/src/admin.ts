@@ -1,6 +1,6 @@
 /**
  * Hub operator tool. Run on the server next to the hub (same data dir):
- *   CALDERA_DATA=/opt/caldera-hub/data node dist/admin.js list
+ *   CALDERA_DATA=<the hub's data dir> node dist/admin.js list
  *   ... hide <handle> "reason"     take a profile down (page 410, out of search/directory); owner cannot republish
  *   ... unhide <handle>            undo hide/block
  *   ... remove <handle> "reason"   erase the profile and everything tied to it, and keep the handle off-limits

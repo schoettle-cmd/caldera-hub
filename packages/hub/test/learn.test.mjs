@@ -1,5 +1,5 @@
 // Growth Engine's shared learning loop (Mike 11-06: "We need all these self-learning"). Before a digest goes out the hub asks
-// 127.0.0.1:4835/learn/arm for an arm: no answer = our own mail, holdout = no mail, an arm = its subject plus utm_campaign,
+// its learning service (LEARN_URL + /learn/arm) for an arm: no answer = our own mail, holdout = no mail, an arm = its subject plus utm_campaign,
 // utm_content and an opaque lt token on every link back to us, and "learn" in the mail guard's body (the guard counts the send).
 // Clicks and goals come back as fire-and-forget events with the member's address, looked up from the token, never from the URL.
 import { test } from "node:test";

@@ -3,7 +3,7 @@
 // drawn over it), the tap target at least 44 px, targets may not overlap, and a tap opens the store panel with real links.
 // Prints SIGNS PASS or SIGNS FAIL.
 // Usage: node scripts/sign-check.mjs [city url] [--phone]
-import { chromium } from '/Users/mjones/.npm/_npx/705bc6b22212b352/node_modules/playwright/index.mjs';
+import { chromium } from './playwright.mjs';
 const url = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : 'https://caldera.social/@mike/city.html';
 const phone = process.argv.includes('--phone'), fails = [];
 const b = await chromium.launch({ channel: 'chrome' });

@@ -19,7 +19,7 @@ export interface Mail { to: string; subject: string; html: string; text: string;
   learn?: { program: string; arm: string };
   /** extra query params for every link back to our own site, next to src= (utm_campaign, utm_content, and our opaque lt token) */
   utm?: Record<string, string> }
-/** The learning programs this hub sends (registered with Growth Engine, 127.0.0.1:4835/learn/*). Arm "a" is always our own copy. */
+/** The learning programs this hub sends (registered with the learning service, LEARN_URL + /learn/*). Arm "a" is always our own copy. */
 export const LEARN_PROGRAMS = { daily: "caldera_daily", newMember: "caldera_new_member" } as const;
 export const LEARN_GOALS: Record<string, string> = { caldera_daily: "return_visit", caldera_new_member: "follow" };
 export interface DigestData {
@@ -82,7 +82,7 @@ export interface EmailCtx {
   /** the hub's private key, for hashing addresses on the suppression list */
   pepper: Buffer;
   send?: (m: Mail) => Promise<void>; resendKey?: string; from?: string; replyTo?: string;
-  /** Growth Engine's learning API base (e.g. http://127.0.0.1:4835). Unset = no arms, our own copy, nothing reported. */
+  /** The learning service's API base (LEARN_URL). Unset = no arms, our own copy, nothing reported. */
   learnUrl?: string;
   digest: (owner: string, since: string) => DigestData | null;
   /** the network half of the daily email, and the day's AI news (left out when absent, e.g. in tests) */
@@ -228,8 +228,9 @@ export function emailer(ctx: EmailCtx) {
     return turn;
   }
   let sendChain: Promise<void> = Promise.resolve(), lastSend = 0;
-  // Shared mail guard (Growth Engine 2026-11-04): every Caldera email is checked on this box first. ok:false or regenerate
-  // = not sent; no answer in 2 s = sign-in mail and the daily summary still go, the rest is held. MAILGUARD=off skips it.
+  // Shared mail guard (Growth Engine 2026-11-04): every Caldera email is checked by the guard service at MAILGUARD_URL
+  // first. ok:false or regenerate = not sent; no answer in 2 s, or no MAILGUARD_URL set = sign-in mail and the daily
+  // summary still go, the rest is held. MAILGUARD=off skips the guard (a hub that runs without one).
   const KIND: Record<string, string> = { "signup-email": "auth", "signin-code": "auth", "signin-link": "auth", "publish-confirm": "auth", "email-message": "transactional", "email-message-request": "transactional",
     "email-invite": "transactional", "email-reconnect": "marketing", "email-update-nudge": "marketing", "stuck-claim": "marketing", "battle-report": "daily" };
   /** true, or the guard's check id = send it; false = don't */
@@ -239,7 +240,8 @@ export function emailer(ctx: EmailCtx) {
     const hdr = m.headers || {}, unsub = Object.keys(hdr).some(k => /^list-unsubscribe$/i.test(k));
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 2000);
     try {
-      const r = await fetch(process.env.MAILGUARD_URL || "http://127.0.0.1:4835/mailguard/check", { method: "POST", headers: { "content-type": "application/json" }, signal: ctl.signal,
+      const guardUrl = process.env.MAILGUARD_URL; if (!guardUrl) throw new Error("MAILGUARD_URL not set");   // no built-in address: same as no answer
+      const r = await fetch(guardUrl, { method: "POST", headers: { "content-type": "application/json" }, signal: ctl.signal,
         body: JSON.stringify({ product: "caldera", template, kind, to: m.to, subject: m.subject, text: m.text || "", html: m.html || "", generated: false, has_list_unsubscribe: unsub, test_mode: process.env.NODE_ENV === "test",
           ...(m.learn ? { learn: m.learn } : {}) }) });   // a passed check carrying "learn" is the one place a send counts on its arm
       const g: any = await r.json();
@@ -255,8 +257,8 @@ export function emailer(ctx: EmailCtx) {
     finally { clearTimeout(t); }
   }
   function guardRelease(id: number) {
-    const url = (process.env.MAILGUARD_URL || "http://127.0.0.1:4835/mailguard/check").replace(/\/mailguard\/check$/, "/mailguard/release");
-    post(url, { id }).catch(() => {});
+    const guardUrl = process.env.MAILGUARD_URL; if (!guardUrl) return;
+    post(guardUrl.replace(/\/mailguard\/check$/, "/mailguard/release"), { id }).catch(() => {});
   }
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 

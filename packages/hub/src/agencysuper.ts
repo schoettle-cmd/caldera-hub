@@ -7,19 +7,19 @@
  *  - fixed on the profile when the account is created (never changed after), and Agency Super is told, signed:
  *    POST https://agencysuper.com/api/fp/conversion, event signup, customer_ref = sha256 of the profile id
  * Nothing personal is ever sent. Our own and test addresses go as test:true. Events queue in as_events and a sender
- * retries with backoff; txn_id makes every event idempotent. No secret (AGENCYSUPER_SECRET, or
- * /opt/secrets/agencysuper-caldera.secret): events wait in the queue, nothing is sent.
+ * retries with backoff; txn_id makes every event idempotent. No secret (AGENCYSUPER_SECRET, or a file named by
+ * AGENCYSUPER_SECRET_FILE): events wait in the queue, nothing is sent. Which addresses count as ours: own.ts.
  */
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import type * as http from "node:http";
+import { isTestAddress } from "./own";
 
 export const CAMPAIGN = "caldera-signups";
 const URL_ = process.env.AGENCYSUPER_URL || "https://agencysuper.com/api/fp/conversion";
-const SECRET_FILE = process.env.AGENCYSUPER_SECRET_FILE || "/opt/secrets/agencysuper-caldera.secret";
+const SECRET_FILE = process.env.AGENCYSUPER_SECRET_FILE || "";   // no built-in path: set it, or AGENCYSUPER_SECRET
 const COOKIE = "asc", DAYS = 30, DAY = 86_400_000;
 const ASC_RE = /^[A-Za-z0-9_-]{6,80}$/;
-const OWN = /^(schoettle|mjonesoneinsta)(\+[^@]*)?@gmail\.com$|@(science-inc|mjonesone|joininboxhero|caldera)\.(com|social)$|@example\.(com|org|net)$/i;
 export const valid = (v: unknown): v is string => typeof v === "string" && ASC_RE.test(v);
 const nowIso = () => new Date().toISOString();
 export const refOf = (id: string) => crypto.createHash("sha256").update(String(id)).digest("hex");
@@ -48,7 +48,7 @@ export function agencySuper(c: { q: (sql: string) => any; emailOf: (owner: strin
   let secret: string | null = null, secretAt = 0;
   const key = () => {
     if (process.env.AGENCYSUPER_SECRET) return process.env.AGENCYSUPER_SECRET.trim();
-    if (Date.now() - secretAt > 60_000) { secretAt = Date.now(); try { secret = fs.readFileSync(SECRET_FILE, "utf8").trim() || null; } catch { secret = null; } }
+    if (Date.now() - secretAt > 60_000) { secretAt = Date.now(); try { secret = SECRET_FILE ? fs.readFileSync(SECRET_FILE, "utf8").trim() || null : null; } catch { secret = null; } }
     return secret;
   };
   const BACKOFF = [60e3, 5 * 60e3, 30 * 60e3, 2 * 3600e3, 6 * 3600e3, 12 * 3600e3];
@@ -81,7 +81,7 @@ export function agencySuper(c: { q: (sql: string) => any; emailOf: (owner: strin
         if (!valid(v)) return;
         const at = nowIso();
         if (q("INSERT OR IGNORE INTO as_clicks VALUES (?,?,?)").run(owner, v, at).changes !== 1) return;
-        const test = !!(email && OWN.test(email.trim()));
+        const test = !!(email && isTestAddress(email));
         q("INSERT OR IGNORE INTO as_events (txn_id,profile_id,event,occurred_at,test,created_at) VALUES (?,?,?,?,?,?)").run("caldera-signup-" + owner, owner, "signup", at, test ? 1 : 0, at);
         kick();
       } catch (e: any) { console.error("[agencysuper] attach", e?.message); }

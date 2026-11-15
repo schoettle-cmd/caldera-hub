@@ -7,7 +7,7 @@
  *   POST /v1/world/battle/aim        {target: "@h", off?: true}        manual fire, at most 3 shots tonight (optional bonus)
  *   POST /v1/world/battle/report     {freq: "daily"|"weekly"|"off"}    the battle-report email
  *   GET|POST /u/battle?t=            one-click unsubscribe (RFC 8058 POST from the List-Unsubscribe header)
- * Kill switches (in /opt/caldera-hub/.notify.env, then pm2 restart): CALDERA_BATTLE=0 turns battles off (no view, no nights);
+ * Kill switches (in the hub's environment, then restart it): CALDERA_BATTLE=0 turns battles off (no view, no nights);
  * the report email only sends with CALDERA_BATTLE_EMAIL=1 (off until Mike approves sending).
  */
 import crypto from "node:crypto";

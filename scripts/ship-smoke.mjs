@@ -1,7 +1,7 @@
 // Browser smoke after every hub deploy (MasterBuilder 2026-11-03, after HA's blank-screen morning): the landing, a profile
 // and the directory must render real content in a fresh browser, and the API must answer. Prints SMOKE PASS or SMOKE FAIL.
 // There is no Caldera demo account, so signed-in pages are not covered. Usage: node scripts/ship-smoke.mjs [base]
-import { chromium } from '/Users/mjones/.npm/_npx/705bc6b22212b352/node_modules/playwright/index.mjs';
+import { chromium } from './playwright.mjs';
 const BASE = process.argv[2] || 'https://caldera.social', fails = [];
 const b = await chromium.launch({ channel: 'chrome' });
 try {

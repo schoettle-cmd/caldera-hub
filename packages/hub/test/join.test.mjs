@@ -197,7 +197,7 @@ test("stuck-claim: dry run counts, send mails once with a working link, skips jo
   mails.length = 0;
   const stampOf = async () => (await (await get("/join/business")).text()).match(/name="stamp" value="([^"]+)"/)[1];
   await form("/join/business", { name: "Stuck Person", a: "Acme", email: "stuck@acme-mail.org", stamp: await stampOf() });
-  await form("/join/business", { name: "Tester", email: "schoettle+caldtest9@gmail.com", stamp: await stampOf() });
+  await form("/join/business", { name: "Tester", email: "tester+caldtest9@example.com", stamp: await stampOf() });
   mails.length = 0;
   const dry = await hub.stuckClaim({});
   assert.equal(dry.sent, 0); assert.equal(mails.length, 0); assert.ok(dry.unique_candidates >= 1); assert.ok(dry.test >= 1);

@@ -83,7 +83,7 @@ test("Obsidian: a vault's first publish is the whole flow and its first value", 
   const f = flows()["obsidian:obsidian"]; assert.deepEqual([f.start, f.auth_ok, f.created, f.first_value], [1, 1, 1, 1]);
 });
 test("left out: our own addresses, a page deleted the same day, and crawlers", async () => {
-  await google("10.0.0.8", "mjonesoneinsta@gmail.com", "Test Me", "", "/join");
+  await google("10.0.0.8", "owner+test@example.com", "Test Me", "", "/join");
   const { own } = await google("10.0.0.9", "gone@real.test", "Gus Gone", "", "/start");
   await fetch(base + "/settings/page", { method: "POST", redirect: "manual", headers: H("10.0.0.9", { cookie: own, origin: ORIGIN, "content-type": "application/x-www-form-urlencoded" }), body: new URLSearchParams({ do: "delete", sure: "on" }).toString() });
   await fetch(base + "/auth/google", { redirect: "manual", headers: { "user-agent": "Googlebot/2.1", "x-real-ip": "10.0.0.10", referer: ORIGIN + "/join" } });

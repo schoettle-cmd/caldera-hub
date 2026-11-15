@@ -1,7 +1,7 @@
 // Replay overlap check (MasterBuilder 2026-11-08, after the status chip sat on the Labels chip): at 360, 390 and 1366 wide, sample the demo replay
 // and fail if any visible, topmost control (tool chips, status chip, replay bar, recap, hint, battle bar) overlaps another. No screenshots.
 // Usage: node scripts/battle-overlap.mjs [screenshotDir]  (prints OVERLAP PASS or OVERLAP FAIL)
-import { chromium } from '/Users/mjones/.npm/_npx/705bc6b22212b352/node_modules/playwright/index.mjs';
+import { chromium } from './playwright.mjs';
 import fs from 'node:fs';
 const outdir = process.argv[2];
 const html = null;

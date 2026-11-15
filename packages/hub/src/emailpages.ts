@@ -23,6 +23,7 @@ import { cityData, type CityRepo } from "../../../../caldera/packages/plugin/src
 import { cleanImage } from "./images";
 import { type Typed, type Kind, type SignupKind, okKind, typedProjects, typedIndex, typedEditor, typedSignupForm, applyTyped, list, newId } from "./typed";
 import { TYPE_LIMITS } from "./join";
+import { isTestAddress } from "./own";
 
 const DAY = 86_400_000;
 const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -678,7 +679,7 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     const paired = (r: { content: string; ts: string }) => !!kindOf(r) && rows.some(x => kindOf(x) && kindOf(x) !== kindOf(r) && Math.abs(tsOf(x) - tsOf(r)) <= 30_000);
     counts.bot_pair = 0;
     for (const r of rows) {
-      if (/@(example\.|test\.)|\+caldtest|^schoettle/.test(r.email)) { counts.test!++; continue; }
+      if (/@(example\.|test\.)|\+caldtest/.test(r.email) || isTestAddress(r.email)) { counts.test!++; continue; }
       if (paired(r)) { counts.bot_pair!++; continue; }
       if (o.skipFrom && o.skipTo && r.ts >= o.skipFrom && r.ts < o.skipTo) { counts.bot_window!++; continue; }
       if (r.content === "{}") { counts.empty!++; continue; }

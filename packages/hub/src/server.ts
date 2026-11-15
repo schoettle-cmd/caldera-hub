@@ -68,13 +68,18 @@ export interface HubOptions { dataDir: string; port?: number; publicUrl?: string
   /** Handle of the founder: every new profile starts out as their friend (MySpace's Tom). */ founder?: string; tailnetOwners?: Record<string, string>; githubFetch?: typeof fetch; /** tests: stand-ins for DNS and fetching listed apps and websites */ listingsLookup?: Lookup; listingsGet?: typeof safeGet; /** run the shared-repo friendship job every 6 hours (the server binary turns it on; tests call it directly) */ repoJob?: boolean; /** read members' public GitHub signals into "what they're building" tags every 12 hours */ tagJob?: boolean; /** the World's Expansion view: nightly public-GitHub numbers (merged PRs, stars gained) */ landJob?: boolean; /** the World's Day/Week/Month growth views: false turns them off (CALDERA_GROWTH=0); growthJob runs the 15-minute tick, growthPoll lets it call GitHub */ growth?: boolean; growthJob?: boolean; growthPoll?: boolean; /** the World's battles: false turns them off (CALDERA_BATTLE=0) */ battle?: boolean; /** OpenRouter key for the tag normalising pass (rules only without it) */ llmKey?: string; onEvent?: (e: { type: "signup" | "delete"; handle?: string; name?: string; kind?: string; total: number }) => void; limits?: { perMinute?: number; writesPerMinute?: number; newProfilesPerDay?: number; newProfilesPerMinute?: number };
   /** daily summary emails: Resend key (production) or a send hook (tests); schedule starts the daily job */
   email?: { resendKey?: string; send?: (m: Mail) => Promise<void>; schedule?: boolean; reconnect?: boolean;
-    /** Growth Engine's learning API (arms, clicks, goals). Default: LEARN_URL or 127.0.0.1:4835 when mail really goes out (Resend);
+    /** Growth Engine's learning API (arms, clicks, goals). Default: LEARN_URL when mail really goes out (Resend), else none;
      *  off with a test send hook unless set here; LEARN=off turns it off. */
     learnUrl?: string }; }
 
 const MAX_BODY = 12 * 1024 * 1024;
 const RESERVED = new Set(["admin", "api", "www", "caldera", "help", "support", "root", "hub", "v1", "about", "login", "settings", "official", "team", "security", "obsidian", "me", "auth", "setup"]);
 const SECURITY_HEADERS = { "x-content-type-options": "nosniff", "referrer-policy": "strict-origin-when-cross-origin", "x-frame-options": "DENY" };
+// Content-Security-Policy. Pages that set their own keep it (a writeHead header replaces these). SITE_CSP: the static site
+// pages (own scripts and the feedback widget only, forms post to this hub only). BASE_CSP: every other response that names
+// none; looser where hub pages need it (photos and avatars from other hosts, a sign-in form that hands off to GitHub).
+const SITE_CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://mjonesone.com; connect-src 'self' https://mjonesone.com; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const BASE_CSP = "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://mjonesone.com; connect-src 'self' https://mjonesone.com; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 // User-uploaded profile pages run in a sandbox: unique origin, no access to the hub's origin, no forms, no top navigation.
 const PROFILE_CSP = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; manifest-src 'self'; base-uri 'none'; form-action 'none'";
 // The city page may also poll the hub for live traffic on the owner's sites (same hub only).
@@ -1665,7 +1670,7 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
       .filter(Boolean).slice(0, 3) as { by: string; text: string; tags: string[]; comments: number; url: string }[];
     return { boards, posts };
   }
-  const learnUrl = opts.email?.learnUrl ?? (opts.email?.resendKey && !opts.email?.send ? process.env.LEARN_URL || "http://127.0.0.1:4835" : undefined);
+  const learnUrl = opts.email?.learnUrl ?? (opts.email?.resendKey && !opts.email?.send ? process.env.LEARN_URL || undefined : undefined);
   const mail = emailer({ q, seal, unseal, hub: opts.publicUrl || "https://caldera.social", pepper: PRIV_KEY, send: opts.email?.send, resendKey: opts.email?.resendKey, learnUrl, digest: digestFor, network: networkFor, news: opts.email?.schedule ? () => newsToday(q) : undefined, rank: { active: d => ext.digestActive(d), subject: d => ext.digestSubject(d) } });
   const CODES = signinCodes(q, e => mail.hashOf(e));   // "Email me a code" (sign-in standard, 2026-10-29)
   if (opts.email?.schedule) mail.schedule();
@@ -2390,6 +2395,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   const server = http.createServer(async (req, res) => {
     freshFooter();
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+    res.setHeader("content-security-policy", BASE_CSP);
     if (HSTS) res.setHeader("strict-transport-security", HSTS);
     guardLinks(req, res, [], () => headerFor(req, (() => { try { return new URL(req.url || "/", "http://hub").pathname; } catch { return "/"; } })()));
     try {
@@ -2516,6 +2522,13 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": p === "/t.js" ? "public, max-age=3600" : "public, max-age=31536000, immutable", "access-control-allow-origin": "*", "cross-origin-resource-policy": "cross-origin" });
         return res.end(TRACK_JS);
       }
+      // RFC 9116: where to report a security problem. Expires is always about six months out, so it never goes stale.
+      if (req.method === "GET" && (p === "/.well-known/security.txt" || p === "/security.txt")) {
+        const site = (opts.publicUrl || "https://caldera.social").replace(/\/$/, ""), exp = new Date(Date.now() + 180 * 86_400_000); exp.setUTCHours(0, 0, 0, 0);
+        const contact = process.env.CALDERA_SECURITY_CONTACT || "mailto:hello@caldera.social";
+        res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=86400" });
+        return res.end(`Contact: ${contact}\nExpires: ${exp.toISOString().replace(".000Z", "Z")}\nPreferred-Languages: en\nCanonical: ${site}/.well-known/security.txt\nPolicy: ${site}/security\n`);
+      }
       if (req.method === "GET" && opts.siteDir && !p.startsWith("/v1/") && !p.startsWith("/@")) {
         let rel = p === "/" ? "index.html" : decodeURIComponent(p.slice(1));
         if (p === "/") FUNNEL.track(req, "view", String(url.searchParams.get("ref") || "").slice(0, 40));
@@ -2535,10 +2548,10 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
             if (v) FUNNEL.track(req, pb ? "pb-b" : "pb-a", PRIMARY_TEST);
             // the same view counted only when a person opened it (Sec-Fetch-User ?1): read pb1 on these (Growth Conversion 11-03)
             if (v && humanClick(req)) FUNNEL.track(req, pb ? "pb-b-h" : "pb-a-h", PRIMARY_TEST);
-            res.writeHead(200, { "content-type": MIME[ext] || "text/html; charset=utf-8", "cache-control": "private, max-age=0" });
+            res.writeHead(200, { "content-type": MIME[ext] || "text/html; charset=utf-8", "cache-control": "private, max-age=0", "content-security-policy": SITE_CSP });
             return res.end(withLive(pb || b || page));
           }
-          res.writeHead(200, { "content-type": MIME[ext] || (ext === ".zip" ? "application/zip" : "application/octet-stream"), "cache-control": "public, max-age=600" });
+          res.writeHead(200, { "content-type": MIME[ext] || (ext === ".zip" ? "application/zip" : "application/octet-stream"), "cache-control": "public, max-age=600", ...(ext === ".html" ? { "content-security-policy": SITE_CSP } : {}) });
           if (ext === ".html") return res.end(withLive(fs.readFileSync(file, "utf8")));   // whole, so off-site links get their new-window rewrite
           return fs.createReadStream(file).pipe(res);
         }
@@ -3468,7 +3481,7 @@ if (import.meta.url === `file://${process.argv[1]}` && /server\.js$/.test(proces
   const resend = process.env.CALDERA_RESEND_KEY, mailTo = process.env.CALDERA_NOTIFY_EMAIL, mailFrom = process.env.CALDERA_NOTIFY_FROM || "Caldera <inbox@caldera.social>";
   const warn = (what: string) => (r: Response) => { if (!r.ok) console.error(what + " notify failed", r.status); };
   // CALDERA_NOTIFY_LOG (2026-10-28, Mike: no per-profile emails): append each owner alert as one JSON line to a shared
-  // alerts log (DIRECTOR /opt/statsbot/alerts.jsonl, read by the 8:30am Morning brief) instead of emailing it.
+  // alerts log (the file it names, read by the morning brief) instead of emailing it.
   const alertLog = process.env.CALDERA_NOTIFY_LOG;
   const logAlert = (subject: string) => {
     try { fs.appendFileSync(alertLog!, JSON.stringify({ ts: new Date().toISOString(), source: "caldera", level: "info", text: subject.replace(/ \(\d+ total\)$/, ""), link: "" }) + "\n"); }

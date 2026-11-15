@@ -1,7 +1,7 @@
 /**
  * The growth simulation, wired into the hub: the 15-minute tick (ingest, poll GitHub, re-run the simulation), the state
  * API the World's renderer reads, the daily drop manifest, "today in your city", and the optional GitHub App webhook.
- * Kill switches (in /opt/caldera-hub/.notify.env, then pm2 restart): CALDERA_GROWTH=0 turns the whole thing off (the World
+ * Kill switches (in the hub's environment, then restart it): CALDERA_GROWTH=0 turns the whole thing off (the World
  * shows the Current map only); CALDERA_GROWTH_POLL=0 stops GitHub polling and keeps everything else.
  */
 import crypto from "node:crypto";

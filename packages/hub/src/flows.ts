@@ -17,10 +17,10 @@
  */
 import type http from "node:http";
 import { funnelDay } from "./funnel";
+import { isOwnAddress } from "./own";
 
 export type Method = "google" | "github" | "email" | "obsidian";
-const OWN = /^(schoettle|mjonesoneinsta)(\+[^@]*)?@gmail\.com$|@(science-inc|mjonesone)\.com$|@example\.(com|org|net)$/i;
-export const isOwnAddress = (email: string) => OWN.test(String(email || "").trim());
+export { isOwnAddress };   // the operator's own addresses come from the environment (own.ts)
 
 /** where this person started, from the page that sent them (same-site navigations carry the full URL) */
 export function doorOf(req: http.IncomingMessage, url?: URL, ownHost = ""): string {
