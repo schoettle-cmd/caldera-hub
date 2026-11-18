@@ -2442,7 +2442,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (/^\/(join(\/go)?|v1\/gate\/ev)$/.test(p) && await JOIN!.route(req, res, url, p)) return;   // the profile-type selector + touchpoint counts
       // crawlers never start OAuth (they ignore robots.txt's /auth/ rule and opened every member's Message gate, 11-02)
       if (/^\/auth\/(github|google)(\/callback)?$/.test(p) && AUTH_CRAWLER_UA.test(String(req.headers["user-agent"] || ""))) { res.writeHead(403, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" }); return res.end("Sign-in needs a browser."); }
-      if (/^\/(v1\/page\/claim(\/confirm)?|auth\/google(\/callback)?|start(\/confirm)?|settings(\/page|\/photo|\/typed|\/typed\/img|\/obsidian)?|me|join\/(designer|business|developer))$/.test(p) && await EMP!.route(req, res, url, p)) return;   // email pages (falls through for everyone else)   // email pages (falls through for everyone else)
+      if (/^\/(v1\/page\/claim(\/confirm)?|v1\/email\/nudge-off|auth\/google(\/callback)?|start(\/confirm)?|settings(\/page|\/photo|\/typed|\/typed\/img|\/obsidian)?|me|join\/(designer|business|developer))$/.test(p) && await EMP!.route(req, res, url, p)) return;   // email pages (falls through for everyone else)   // email pages (falls through for everyone else)
       if (/^\/(auth\/github|me$|me\/upload$|settings$|settings\/(status|claim)$|alerts$|v1\/github\/)/.test(p) && await GH.route(req, res, url)) return;
       if (/^\/(feed(\/|$)|v1\/feed$|v1\/posts|v1\/agent\/|settings\/agents$|v1\/comments\/|v1\/me\/notices$)/.test(p) && await FEED!.route(req, res, url, p)) return;
       if (p.startsWith("/v1/gifts") && await GIFTS!.route(req, res, p)) return;
@@ -3439,7 +3439,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   const reconnectStats = () => { const rows = q("SELECT profile_id FROM gh_accounts WHERE reconnect IS NOT NULL AND reconnect_mailed IS NULL AND claimed IS NULL").all() as any[];
     return { flagged: rows.length, reachable: rows.filter(r => mail.reconnectTo(r.profile_id)).length }; };
 
-  return { stuckClaim: (o: any) => EMP.stuckClaim(o), reconnect: { sweep: (max?: number) => reconnectOn ? reconnectSweep(max) : Promise.resolve(0), stats: reconnectStats, compose: mail.reconnectCompose }, ext, server, privateServer, db, admin, mail, feed: FEED!, messages: MSG!, guide: GUIDE, offerNamed: () => offerNamed(), digestFor, networkFor, feedReady, headerItems, privateModes: PM, promptPrivateChoice, act: { token: (v: string, h: string, ttl?: number) => actToken(v, h, ttl), read: readAct },
+  return { stuckClaim: (o: any) => EMP.stuckClaim(o), emailPagesDaily: () => EMP.daily(), reconnect: { sweep: (max?: number) => reconnectOn ? reconnectSweep(max) : Promise.resolve(0), stats: reconnectStats, compose: mail.reconnectCompose }, ext, server, privateServer, db, admin, mail, feed: FEED!, messages: MSG!, guide: GUIDE, offerNamed: () => offerNamed(), digestFor, networkFor, feedReady, headerItems, privateModes: PM, promptPrivateChoice, act: { token: (v: string, h: string, ttl?: number) => actToken(v, h, ttl), read: readAct },
     listen: (port = opts.port || 8787, host = process.env.CALDERA_HOST || "127.0.0.1") => new Promise<number>(r => server.listen(port, host, () => r((server.address() as any).port))),
     listenPrivate: (port = opts.privatePort || 0) => new Promise<number>(r => privateServer.listen(port, "127.0.0.1", () => r((privateServer.address() as any).port))) };
 }

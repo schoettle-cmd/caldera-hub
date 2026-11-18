@@ -101,3 +101,25 @@ test("signed out, tapping Message: sign-up page says why, offers GitHub, email a
   const t3 = new URL(mails[mails.length - 1].text.match(/https?:\/\/\S+start\/confirm\?\S+/)[0]).searchParams.get("t");
   assert.equal((await form("/start/confirm", { t: t3, back: "//evil.example" })).headers.get("location"), "/@bo-test/?welcome=1");   // no repos, no city: their page, never a 404
 });
+
+test("weekly update reminder: one-click unsubscribe header + footer link; the POST turns it off for good", async () => {
+  mails.length = 0;
+  await form("/start", { text: AI_ANSWER.replace("Dana Lee", "Nudge Person"), email: "nudge@example.com" });
+  const tok = new URL(mails[0].text.match(/https?:\/\/\S+start\/confirm\?t=\S+/)[0]).searchParams.get("t");
+  assert.equal((await form("/start/confirm", { t: tok })).status, 302);
+  hub.db.prepare("UPDATE email_accounts SET updated=? WHERE handle='nudge-person'").run(new Date(Date.now() - 8 * 86400_000).toISOString());
+  mails.length = 0; await hub.emailPagesDaily();
+  const m = mails.find(x => x.src === "email-update-nudge"); assert.ok(m, "a quiet page gets the reminder");
+  const off = m.headers["List-Unsubscribe"].slice(1, -1);
+  assert.match(off, /^http:\/\/hub\.test\/v1\/email\/nudge-off\?t=[\w-]{20,}$/); assert.equal(m.headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click");
+  assert.ok(m.html.includes(off) && m.text.includes(off), "the same link is in the footer of both parts");
+  const u = off.replace(ORIGIN, base);
+  assert.match(await (await fetch(u)).text(), /Turn it off/, "a GET (mail scanner) only shows a button");
+  assert.equal(hub.db.prepare("SELECT nudge_off FROM email_accounts WHERE handle='nudge-person'").get().nudge_off, 0);
+  const r = await fetch(u, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "List-Unsubscribe=One-Click" });
+  assert.equal(r.status, 200); assert.match(await r.text(), /Weekly reminder is off/);
+  assert.equal(hub.db.prepare("SELECT nudge_off FROM email_accounts WHERE handle='nudge-person'").get().nudge_off, 1);
+  hub.db.prepare("UPDATE email_accounts SET nudged=NULL WHERE handle='nudge-person'").run();
+  mails.length = 0; await hub.emailPagesDaily(); assert.ok(!mails.some(x => x.src === "email-update-nudge"), "no more reminders");
+  assert.equal((await fetch(base + "/v1/email/nudge-off?t=nope", { method: "POST" })).status, 200, "an unknown token does nothing, quietly");
+});

@@ -151,6 +151,13 @@ export function emailPages(c: EmailCtx) {
   // Attach Obsidian: a page moves into the owner's vault. Until the plugin confirms it saved the key the hub keeps hosting, so a lost reply can't orphan a page;
   // after that the hub's copy of the key is gone and the row only says who the address belongs to.
   try { q("ALTER TABLE email_accounts ADD COLUMN claimed TEXT").run(); } catch { /* already there */ }
+  try { q("ALTER TABLE email_accounts ADD COLUMN nudge_tok TEXT").run(); } catch { /* already there */ }   // one-click "stop the weekly reminder" link (mail guard: marketing needs List-Unsubscribe)
+  /** the weekly reminder's one-click off link for this page (token made on first use) */
+  const nudgeOffUrl = (a: any): string => {
+    let t = a.nudge_tok as string | null;
+    if (!t) { t = crypto.randomBytes(18).toString("base64url"); q("UPDATE email_accounts SET nudge_tok=? WHERE profile_id=?").run(t, a.profile_id); a.nudge_tok = t; }
+    return `${pub}/v1/email/nudge-off?t=${t}`;
+  };
   q("CREATE TABLE IF NOT EXISTS page_claims (code_hash TEXT PRIMARY KEY, profile_id TEXT, expires INTEGER, opened INTEGER)").run();
   const acctOf = (id: string | null) => id ? q("SELECT * FROM email_accounts WHERE profile_id=? AND claimed IS NULL").get(id) as any : null;
 
@@ -441,6 +448,13 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
   async function route(req: http.IncomingMessage, res: http.ServerResponse, url: URL, p: string): Promise<boolean> {
     if (await googleRoute(req, res, url, p)) return true;
     if (await pageClaimRoute(req, res, url, p)) return true;
+    // the weekly reminder's one-click off link: GET only shows a button (mail scanners prefetch links); POST, incl. the RFC 8058 List-Unsubscribe-Post, turns it off
+    if (p === "/v1/email/nudge-off" && (req.method === "GET" || req.method === "POST")) {
+      const t = (url.searchParams.get("t") || "").replace(/[^\w-]/g, "");
+      if (req.method === "GET") { c.page(res, 200, "Weekly reminder", `${STYLE}<main class="ep"><h1>Stop the weekly reminder?</h1><form method="post" action="/v1/email/nudge-off?t=${t}"><p class="lede">Stop the weekly "What's new this week?" email for your Caldera page. Your page stays as it is.</p><button class="btn" type="submit">Turn it off</button></form></main>`); return true; }
+      if (t) q("UPDATE email_accounts SET nudge_off=1 WHERE nudge_tok=?").run(t);   // idempotent; an unknown token does nothing
+      c.page(res, 200, "Weekly reminder is off", `${STYLE}<main class="ep"><h1>Weekly reminder is off</h1><p class="lede">We won't send the weekly update email any more. You can turn it back on in your page settings.</p></main>`); return true;
+    }
     if (p === "/start" && req.method === "GET") {
       if (url.searchParams.get("via") === "gh-return") c.track?.(req, "gh-return");   // the offer after leaving GitHub (site.js)
       startPage(res, "", "", "", okBack(url.searchParams.get("back")), okInv(url.searchParams.get("invite"))); return true; }
@@ -645,10 +659,11 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
       const quiet = Date.now() - Date.parse(a.updated) > 7 * DAY, nudged = a.nudged ? Date.now() - Date.parse(a.nudged) < 7 * DAY : false;
       if (a.nudge_off || !quiet || nudged) continue;
       q("UPDATE email_accounts SET nudged=? WHERE profile_id=?").run(new Date().toISOString(), a.profile_id);
-      try { const to = c.unseal(a.email_sealed), link = `${pub}/settings#update`;
+      try { const to = c.unseal(a.email_sealed), link = `${pub}/settings#update`, off = nudgeOffUrl(a);
         await c.note({ to, src: "email-update-nudge", subject: "What's new this week? Update your Caldera page in a minute", title: "What's new this week?",
-          html: `<p>Paste this into ChatGPT or Claude, then paste its answer on <a href="${esc(link)}">your page settings</a>. Every project you mention grows its building in your city.</p><pre style="white-space:pre-wrap;background:#F7F5FC;padding:12px;border-radius:8px;font-size:12.5px">${esc(UPDATE_PROMPT)}</pre><p><a href="${esc(link)}" style="display:inline-block;padding:10px 16px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">Update my page</a></p><p style="color:#777;font-size:12.5px">At most once a week. Turn it off on your page settings.</p>`,
-          text: `Paste this into ChatGPT or Claude, then paste its answer at ${link}:\n\n${UPDATE_PROMPT}\n\nAt most once a week. Turn it off on your page settings.` });
+          html: `<p>Paste this into ChatGPT or Claude, then paste its answer on <a href="${esc(link)}">your page settings</a>. Every project you mention grows its building in your city.</p><pre style="white-space:pre-wrap;background:#F7F5FC;padding:12px;border-radius:8px;font-size:12.5px">${esc(UPDATE_PROMPT)}</pre><p><a href="${esc(link)}" style="display:inline-block;padding:10px 16px;border-radius:999px;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600">Update my page</a></p><p style="color:#777;font-size:12.5px">At most once a week. <a href="${esc(off)}" style="color:#777">Stop these reminders</a> in one click.</p>`,
+          text: `Paste this into ChatGPT or Claude, then paste its answer at ${link}:\n\n${UPDATE_PROMPT}\n\nAt most once a week. Stop these reminders in one click: ${off}`,
+          headers: { "List-Unsubscribe": `<${off}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } });
       } catch (e: any) { console.error("email nudge", a.handle, e.message); }
     }
   }
