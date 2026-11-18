@@ -220,6 +220,7 @@ test("frontier UI: the World add box, the Armory target picker, and the owner-on
   assert.match(ad.html, /19 of 20 left today/); assert.match(ad.html, /<b>@kestrel-dev<\/b><span class="ad-st">unclaimed<\/span>/);
   assert.match(ad.html, /class="cl-main ad-main"/, "two columns once there is a list");
   assert.match(ad.html, /\.ad-form\[hidden\],\.ad-done\[hidden\],\.ad-list\[hidden\]\{display:none\}/, "the form really hides after an add");
+  assert.ok(ad.html.includes(".cl .cl-top a{color:var(--strong)}") && ad.html.includes(".w-add-r a{display:inline-flex;align-items:center}"), "Fable sign-off fixes");
   assert.match(ad.html, /\/v1\/frontier\/lookup\?u=/); assert.match(ad.html, /\.cl\{--text-muted:var\(--muted\)/, "token alias for the add box");
   // gap 2: the world map's live poll carries recent lands, so other members' adds appear on open maps
   const lv = await (await fetch(base + "/v1/world/live")).json();

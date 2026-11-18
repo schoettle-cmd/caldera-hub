@@ -24,7 +24,7 @@ button.cl-go{font:600 16px/1 var(--font-sans)}form.cl-row{margin:0}
 .cl-fine{margin:10px 0 0;font-size:13px;color:var(--muted);max-width:48ch}
 .cl-facts{margin:22px 0 0;padding:14px 0 0;border-top:1px solid var(--line);display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;font-size:14px;max-width:52ch}
 .cl-facts dt{color:var(--muted)}.cl-facts dd{margin:0;color:var(--text)}
-.cl-alt{margin:18px 0 0;font-size:14px;color:var(--muted)}.cl a{color:var(--accent-text)}.cl a.cl-go,.cl a.cl-go:visited{color:var(--on-accent);text-decoration:none}
+.cl-alt{margin:18px 0 0;font-size:14px;color:var(--muted)}.cl a{color:var(--accent-text)}.cl .cl-top a{color:var(--strong)}.cl a.cl-go,.cl a.cl-go:visited{color:var(--on-accent);text-decoration:none}
 .cl-msg{margin:0 0 16px;padding:10px 14px;border-radius:10px;border:1px solid var(--warn);color:var(--text);font-size:14px;max-width:52ch}
 .cl-msg b{color:var(--strong)}
 .cl-art{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line);aspect-ratio:5/4;max-width:100%;background:#2B2350}
@@ -181,6 +181,7 @@ export const ADD_CSS = String.raw`.cl{--text-muted:var(--muted);--bg-raised:var(
 .ad-main{align-items:start}
 .ad-form{max-width:480px}
 .ad-form[hidden],.ad-done[hidden],.ad-list[hidden]{display:none}
+.w-add-r a{display:inline-flex;align-items:center}
 .ad-done h2:focus{outline:none}
 .ad .w-add-in input,.ad .w-add-b{min-height:48px}
 .ad .w-add-in input{font-size:16px;padding-left:30px}
