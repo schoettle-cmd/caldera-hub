@@ -153,17 +153,19 @@ export const WADD_JS = String.raw`(function(){var f=document.getElementById('w-a
 GHL=/^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 function e(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function out(st,html){var r=f.querySelector('.w-add-r');if(!r){r=document.createElement('p');r.className='w-add-r';f.appendChild(r)}hint.hidden=true;r.setAttribute('data-st',st);r.setAttribute('role',st==='bad'||st==='limit'?'alert':'status');var k=html.search(/ ?<(a|button) /);r.innerHTML=k>0?'<span>'+html.slice(0,k)+'</span>'+html.slice(k):'<span>'+html+'</span>';wire(r)}
-function view(l){return '<a href="/world?focus='+encodeURIComponent(l)+'">View the land</a>'}
+function view(l){return '<a href="/world?focus='+encodeURIComponent(l)+'" data-view="'+e(l)+'">View the land</a>'}
 function wire(r){var c=r.querySelector('[data-copy]');if(c)c.onclick=function(){var url=location.origin+'/claim/'+c.getAttribute('data-copy'),ok=function(){c.textContent='Copied';setTimeout(function(){c.textContent='Copy the claim link'},2000)},
   no=function(){var i=document.createElement('input');i.readOnly=true;i.value=url;i.className='w-add-url';i.setAttribute('aria-label','Claim link');c.replaceWith(i);i.focus();i.select()};try{navigator.clipboard.writeText(url).then(ok,no)}catch(x){no()}};
-  var t=r.querySelector('[data-retry]');if(t)t.onclick=function(){go()}}
+  var t=r.querySelector('[data-retry]');if(t)t.onclick=function(){go()};
+  var v=r.querySelector('[data-view]');if(v&&window.CALDERA_FRONTIER_FOCUS)v.onclick=function(ev){if(window.CALDERA_FRONTIER_FOCUS('@'+v.getAttribute('data-view'))){ev.preventDefault();var st=document.getElementById('stage');if(st&&st.scrollIntoView)try{st.scrollIntoView({block:'nearest',behavior:'smooth'})}catch(x){}}}}   // on the world map: fly there, no page load
 function done(){busy=false;b.removeAttribute('aria-busy');b.disabled=false;b.textContent='Add to the map'}
 function go(){if(busy)return;var l=u.value.trim().replace(/^@/,'');if(!l){u.focus();return}
   if(!GHL.test(l)){out('bad','<b>No GitHub user named @'+e(l)+'.</b> Check the spelling. Use the username from github.com/username.');return}
   busy=true;b.disabled=true;b.setAttribute('aria-busy','true');b.textContent='Checking...';hint.hidden=false;hint.textContent='Checking GitHub for @'+l+'...';var r0=f.querySelector('.w-add-r');if(r0)r0.remove();
   fetch('/v1/frontier/add',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({login:l})}).then(function(r){return r.json().catch(function(){return {}}).then(function(j){return {s:r.status,j:j}})}).then(function(x){done();var j=x.j||{},L=j.login||l;
-    if(x.s===401){out('bad','<b>Sign in to add a GitHub.</b> The land shows who added it. <a href="/auth/github?back=%2Fworld">Sign in with GitHub</a>');return}
-    if(x.s===200&&j.ok){out('ok',j.st==='land'?'<b>@'+e(L)+' is already on the frontier</b>'+(j.by?', added by '+e(j.by)+'.':'.')+' '+view(L)+' <button type="button" data-copy="'+e(L)+'">Copy the claim link</button>':'<b>@'+e(L)+' is on the frontier.</b> The land is unclaimed until they claim it. Caldera does not contact them. '+view(L)+' <button type="button" data-copy="'+e(L)+'">Copy the claim link</button>');u.value='';u.focus();return}
+    if(x.s===401){out('bad','<b>Sign in to add a GitHub.</b> The land shows who added it. <a href="/auth/github?back='+encodeURIComponent(location.pathname)+'">Sign in with GitHub</a>');return}
+    if(x.s===200&&j.ok){if(j.land&&window.CALDERA_FRONTIER_ADD)try{window.CALDERA_FRONTIER_ADD(j.land.district,j.land.meta,false)}catch(x2){}   // gap 2: the open map draws it now
+      out('ok',j.st==='land'?'<b>@'+e(L)+' is already on the frontier</b>'+(j.by?', added by '+e(j.by)+'.':'.')+' '+view(L)+' <button type="button" data-copy="'+e(L)+'">Copy the claim link</button>':'<b>@'+e(L)+' is on the frontier.</b> The land is unclaimed until they claim it. Caldera does not contact them. '+view(L)+' <button type="button" data-copy="'+e(L)+'">Copy the claim link</button>');u.value='';u.focus();return}
     if(j.st==='member'){out('ok','<b>@'+e(j.handle||L)+' is already on Caldera.</b> <a href="/world?focus='+encodeURIComponent(j.handle||L)+'">View their city</a>');return}
     if(x.s===429||j.st==='limit'){out('limit','<b>You added 20 GitHubs today.</b> That is the daily limit. You can add more after midnight Pacific.');return}
     if(j.st==='missing'){out('bad','<b>No GitHub user named @'+e(L)+'.</b> Check the spelling. Use the username from github.com/username.');return}
@@ -172,3 +174,91 @@ function go(){if(busy)return;var l=u.value.trim().replace(/^@/,'');if(!l){u.focu
     if(j.st==='org'){out('bad','<b>@'+e(L)+' is an organization.</b> Only a person\'s GitHub can be a land.');return}
     out('bad','<b>Could not reach GitHub.</b> Nothing was added. <button type="button" data-retry>Try again</button>')}).catch(function(){done();out('bad','<b>Could not reach GitHub.</b> Nothing was added. <button type="button" data-retry>Try again</button>')})}
 f.onsubmit=function(ev){ev.preventDefault();go()};if(location.hash==='#add'){try{f.scrollIntoView({block:'center'})}catch(x){}u.focus()}})();`;
+
+/** /add (frontier-design J, Fable 11-17): the top-level add page the sandboxed profile opens. Two steps (Find, then Add) so a typo
+ *  never puts the wrong person on the map. CSS from the mockup; .nar/.ph/.duo there are the media queries here. */
+export const ADD_CSS = String.raw`.cl{--text-muted:var(--muted);--bg-raised:var(--raised);--text-strong:var(--strong);--danger:var(--bad);--success:var(--ok);--accent-btn:var(--accent)}
+.ad-main{align-items:start}
+.ad-form{max-width:480px}
+.ad-form[hidden],.ad-done[hidden],.ad-list[hidden]{display:none}
+.ad-done h2:focus{outline:none}
+.ad .w-add-in input,.ad .w-add-b{min-height:48px}
+.ad .w-add-in input{font-size:16px;padding-left:30px}
+.ad .w-add-b{padding:0 20px;font-size:15px}
+.ad .w-add-b.sec{background:transparent;border:1px solid var(--line);color:var(--text-strong)}
+.ad .w-add-in input:disabled,.ad .w-add-b:disabled{opacity:.55;cursor:not-allowed}
+.ad-meta{display:flex;justify-content:space-between;gap:12px;align-items:baseline;min-height:20px}
+.ad-left{margin:0 0 0 auto;font:500 12px/1.4 var(--font-mono);color:var(--text-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ad-gh{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:2px 12px;align-items:center;margin:0;padding:10px 12px;border-radius:10px;border:1px dashed var(--muted);background:var(--raised)}
+.ad-gh-av{grid-row:span 2;width:44px;height:44px;border-radius:8px;background:var(--line);display:grid;place-items:center;color:var(--muted);font:600 17px/1 var(--font-mono);overflow:hidden}
+.ad-gh-av img{width:100%;height:100%;object-fit:cover;filter:grayscale(1)}
+.ad-gh-n{font:600 15px/1.25 var(--font-mono);color:var(--strong);min-width:0;overflow-wrap:anywhere}
+.ad-gh-n small{font:500 11px/1 var(--font-mono);color:var(--muted);margin-left:6px}
+.ad-gh-d{grid-column:2;font-size:13px;color:var(--text);min-width:0}
+.ad-gh .w-add-b{grid-column:3;grid-row:1/span 2}
+.ad-done{display:grid;gap:12px;max-width:480px}
+.ad-done .cl-art{aspect-ratio:16/8}
+.ad-done h2{margin:0;font:600 20px/1.2 var(--font-display);color:var(--strong);overflow-wrap:anywhere}
+.ad-done p{margin:0;font-size:14.5px;max-width:46ch}
+.ad-copy{justify-self:start;background:none;border:0;padding:0;min-height:44px;color:var(--accent-text);font:600 14px/1 var(--font-sans);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.ad-list{margin:28px 0 0;min-width:0}
+.ad-main .ad-list{margin:0;padding:4px 0 0 32px;border-left:1px solid var(--line)}
+.ad-h{margin:0 0 4px;font:600 11px/1.3 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.ad-list ul{margin:0;padding:0;list-style:none}
+.ad-list a.ad-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;min-height:44px;padding:4px 0;border-bottom:1px solid var(--line);text-decoration:none;color:var(--text)}
+.ad-row b{font:600 14px/1.3 var(--font-mono);color:var(--strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ad-row:hover b{color:var(--accent-text);text-decoration:underline;text-underline-offset:2px}
+.ad-st{font:500 12px/1 var(--font-sans);padding:4px 8px;border-radius:999px;border:1px dashed var(--muted);color:var(--muted);white-space:nowrap}
+.ad-st.ok{border:1px solid var(--ok);color:var(--ok)}
+.ad-row time{font:500 12px/1 var(--font-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;min-width:6.5ch;text-align:right}
+.ad-row.new{animation:ad-new 1.2s ease-out 1}
+@keyframes ad-new{from{background:color-mix(in srgb,var(--accent) 16%,transparent)}to{background:transparent}}
+.ad-more{margin:8px 0 0;font-size:13px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.ad-row.new{animation:none}}
+@media (max-width:760px){.cl .ad-main .ad-list{margin:8px 0 0;padding:0;border-left:0}.cl .ad-form,.cl .ad-done{max-width:none}}
+@media (max-width:520px){.cl .ad-gh{grid-template-columns:44px minmax(0,1fr)}.cl .ad-gh .w-add-b{grid-column:1/-1;grid-row:auto;margin-top:8px}}
+@media (max-width:520px) and (min-height:600px) and (max-height:720px){.cl .ad .w-add-in input,.cl .ad .w-add-b{min-height:44px}.cl .ad .w-add-b{font-size:14px;padding:0 16px}.cl .ad-list{margin-top:16px}.cl .ad-list a.ad-row{min-height:36px;padding:2px 0}.cl .ad-row b{font-size:13px}.cl .ad-st,.cl .ad-row time{font-size:11px}.cl .ad-done{gap:8px}.cl .ad-done h2{font-size:17px}.cl .ad-done p{font-size:13px}.cl .ad-done .cl-art{aspect-ratio:16/6}.cl .ad-copy{min-height:36px;font-size:13px}.cl .ad-gh{padding:8px 10px}}`;
+export const ADD_JS = String.raw`(function(){var f=document.getElementById('w-add');if(!f)return;var u=f.querySelector('input'),b=f.querySelector('.w-add-b'),hint=f.querySelector('.w-add-h'),lf=document.querySelector('.ad-left'),box=document.querySelector('.ad'),live=document.getElementById('cl-live'),busy=false,hit=null,
+GHL=/^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+function e(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function q(l){return encodeURIComponent(l)}
+function view(l){return '<a href="/world?focus='+q(l)+'">View the land</a>'}
+function copyBtn(l,cls){return '<button type="button" class="'+(cls||'')+'" data-copy="'+e(l)+'">Copy the claim link</button>'}
+function clear(){var r=f.querySelector('.w-add-r,.ad-gh');if(r)r.remove();hit=null;b.classList.remove('sec')}
+function wire(r){var c=r.querySelector('[data-copy]');if(c)c.onclick=function(){var url=location.origin+'/claim/'+c.getAttribute('data-copy'),ok=function(){c.textContent='Copied';setTimeout(function(){c.textContent='Copy the claim link'},2000)},
+  no=function(){var i=document.createElement('input');i.readOnly=true;i.value=url;i.className='w-add-url';i.setAttribute('aria-label','Claim link');c.replaceWith(i);i.focus();i.select()};try{navigator.clipboard.writeText(url).then(ok,no)}catch(x){no()}};
+  var t=r.querySelector('[data-retry]');if(t)t.onclick=function(){find()};var a=r.querySelector('[data-add]');if(a)a.onclick=function(){add()}}
+function out(st,html){clear();var r=document.createElement('p');r.className='w-add-r';hint.hidden=true;r.setAttribute('data-st',st);r.setAttribute('role',st==='bad'||st==='limit'?'alert':'status');var k=html.search(/ ?<(a|button) /);r.innerHTML=k>0?'<span>'+html.slice(0,k)+'</span>'+html.slice(k):'<span>'+html+'</span>';f.appendChild(r);wire(r)}
+function setLeft(n){if(n==null||!lf)return;lf.textContent=n+' of 20 left today';if(n<=0){u.disabled=true;b.disabled=true}}
+function idle(){busy=false;b.removeAttribute('aria-busy');b.disabled=false;b.textContent='Find';hint.hidden=true}
+function signin(){out('bad','<b>Sign in to add a GitHub.</b> The land shows who added it. <a href="/auth/github?back=%2Fadd">Sign in with GitHub</a>')}
+function fail(x,j,L){if(x===401)return signin();
+  if(j.st==='land')return out('ok','<b>@'+e(L)+' is already on the frontier</b>'+(j.by?', added by '+e(j.by)+'.':'.')+' '+view(L)+' '+copyBtn(L));
+  if(j.st==='member')return out('ok','<b>@'+e(j.handle||L)+' is already on Caldera.</b> <a href="/world?focus='+q(j.handle||L)+'">View their city</a>');
+  if(x===429||j.st==='limit'){setLeft(0);return out('limit','<b>You added 20 GitHubs today.</b> That is the daily limit. You can add more after midnight Pacific.')}
+  if(j.st==='missing')return out('bad','<b>No GitHub user named @'+e(L)+'.</b> Check the spelling. Use the username from github.com/username.');
+  if(j.st==='blocked')return out('bad','<b>That username can\'t be shown on the map.</b> It contains a word Caldera does not show.');
+  if(j.st==='removed')return out('bad','<b>@'+e(L)+' can\'t be added.</b> This person asked not to be on Caldera.');
+  if(j.st==='org')return out('bad','<b>@'+e(L)+' is an organization.</b> Only a person\'s GitHub can be a land.');
+  out('bad','<b>Could not reach GitHub.</b> Nothing was added. <button type="button" data-retry>Try again</button>')}
+function req(m,url,body){return fetch(url,{method:m,credentials:'same-origin',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json().catch(function(){return {}}).then(function(j){return {s:r.status,j:j}})})}
+function find(){if(busy)return;var l=u.value.trim().replace(/^@/,'');if(!l){u.focus();return}clear();
+  if(!GHL.test(l))return out('bad','<b>No GitHub user named @'+e(l)+'.</b> Check the spelling. Use the username from github.com/username.');
+  busy=true;b.disabled=true;b.setAttribute('aria-busy','true');b.textContent='Checking...';hint.hidden=false;hint.textContent='Checking GitHub for @'+l+'...';
+  req('GET','/v1/frontier/lookup?u='+q(l)).then(function(x){idle();var j=x.j||{},L=j.login||l;
+    if(x.s===200&&j.st==='new'){hit=j;b.classList.add('sec');var c=document.createElement('div');c.className='ad-gh';c.setAttribute('role','status');
+      c.innerHTML='<span class="ad-gh-av" aria-hidden="true">'+e(L.charAt(0).toUpperCase())+'</span><span class="ad-gh-n">@'+e(L)+'<small>on GitHub</small></span><span class="ad-gh-d">'+e(j.name||L)+' · '+(+j.repos||0)+' public repos · Not on Caldera yet.</span><button type="button" class="w-add-b" data-add>Add to the map</button>';
+      f.appendChild(c);wire(c);c.querySelector('[data-add]').focus();return}
+    fail(x.s,j,L)}).catch(function(){idle();fail(0,{},l)})}
+function add(){if(busy||!hit)return;var l=hit.login,a=f.querySelector('[data-add]');busy=true;if(a){a.disabled=true;a.setAttribute('aria-busy','true');a.textContent='Adding...'}
+  req('POST','/v1/frontier/add',{login:l}).then(function(x){busy=false;var j=x.j||{},L=j.login||l;
+    if(x.s===200&&j.ok&&j.st==='added'){setLeft(j.left);done(L);return}
+    if(a){a.disabled=false;a.removeAttribute('aria-busy');a.textContent='Add to the map'}fail(x.s,j,L)}).catch(function(){busy=false;fail(0,{},l)})}
+function done(L){f.hidden=true;var d=document.querySelector('.ad-done');if(!d){d=document.createElement('div');d.className='ad-done';box.appendChild(d)}d.hidden=false;
+  d.innerHTML='<h2 tabindex="-1">@'+e(L)+' is on the frontier.</h2><p>The land is unclaimed until they claim it. Caldera does not contact them.</p><div class="cl-row"><a class="cl-go" href="/world?focus='+q(L)+'">View the land</a><button type="button" class="cl-go sec" data-again>Add another</button></div>'+copyBtn(L,'ad-copy');
+  wire(d);d.querySelector('[data-again]').onclick=function(){d.hidden=true;f.hidden=false;u.value='';clear();u.focus()};var h=d.querySelector('h2');h.focus();if(live)live.textContent=h.textContent;
+  var sec=document.querySelector('.ad-list');if(sec){sec.hidden=false;var ul=sec.querySelector('ul'),li=document.createElement('li');
+    li.innerHTML='<a class="ad-row new" href="/world?focus='+q(L)+'"><b>@'+e(L)+'</b><span class="ad-st">unclaimed</span><time>added '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</time></a>';ul.insertBefore(li,ul.firstChild)}}
+u.addEventListener('input',function(){if(hit)clear()});
+f.onsubmit=function(ev){ev.preventDefault();if(hit)add();else find()};})();
+`;

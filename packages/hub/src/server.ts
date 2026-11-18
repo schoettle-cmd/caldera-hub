@@ -943,7 +943,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     const per = (q("SELECT * FROM profiles WHERE handle IS NOT NULL").all() as any[]).filter(listed)
       .filter(pr => sitesOf(pr.id).length || q("SELECT 1 FROM agents WHERE owner=? LIMIT 1").get(pr.id))
       .map(pr => ({ handle: pr.handle as string, live: scrubPrivateLive(liveStats(pr.id, false, since), PM.modeFor(pr)) }));
-    return { ...foldLive(per, now()), lit: GIFTS ? GIFTS.litNow() : {}, members: worldNow().members.length };   // members: the World page rebuilds when someone joins
+    return { ...foldLive(per, now()), lit: GIFTS ? GIFTS.litNow() : {}, members: worldNow().members.length, lands: FR ? FR.recentLands() : [] };   // lands: other members' adds appear on open maps   // members: the World page rebuilds when someone joins
   }
   /** THE site header (logo, How it works, People, World, Guide, What's new, FAQ, Sign in, Get started), taken from the site's
    *  guide.html so hub-rendered pages match the static ones; current = the nav href to mark (e.g. "/world"). */
@@ -2509,7 +2509,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         } }
       if (req.method === "GET" && p === "/v1/world") { res.setHeader("cache-control", "public, max-age=60"); const w = worldNow(); return json(res, 200, { at: w.at, members: w.members, links: w.links, city: w.city }); }
       if (BATTLE && (p.startsWith("/v1/world/battle") || p === "/u/battle" || p === "/u/armory") && await BATTLE.route(req, res, p, url)) return;
-      if (FR && (p.startsWith("/v1/frontier/") || p.startsWith("/claim/")) && await FR.route(req, res, url)) return;
+      if (FR && (p.startsWith("/v1/frontier/") || p.startsWith("/claim/") || p === "/add") && await FR.route(req, res, url)) return;
       if (GROWTH && (p.startsWith("/v1/world/") || p === "/hooks/github") && await GROWTH.route(req, res, p, url)) return;
       if (LB && (p === "/leaderboard" || p === "/leaderboard/" || p === "/v1/leaderboard/rows") && await LB.route(req, res, p, url)) return;
       if (req.method === "GET" && p === "/v1/world/land") { res.setHeader("cache-control", "public, max-age=120"); return json(res, 200, landNow()); }
@@ -2517,7 +2517,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (req.method === "GET" && (p === "/world" || p === "/world/")) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache",
           "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" });
-        return res.end(worldPage(worldNow(), { frontier: FR ? (() => { try { return { districts: FR.districts(), meta: FR.meta() }; } catch (e: any) { console.error("frontier", e?.message); return null; } })() : null, hub: opts.publicUrl || "https://caldera.social", nav: worldNav(), tools: TOOLS ? TOOLS.mapData() : [], growth: GROWTH ? (() => { try { return GROWTH.state("day"); } catch (e: any) { console.error("growth state", e?.message); return null; } })() : null,
+        return res.end(worldPage(worldNow(), { frontier: FR ? (() => { try { return { districts: FR.districts(), meta: FR.meta(), fs: FR.claimedSlots() }; } catch (e: any) { console.error("frontier", e?.message); return null; } })() : null, hub: opts.publicUrl || "https://caldera.social", nav: worldNav(), tools: TOOLS ? TOOLS.mapData() : [], growth: GROWTH ? (() => { try { return GROWTH.state("day"); } catch (e: any) { console.error("growth state", e?.message); return null; } })() : null,
           battle: BATTLE ? (() => { try { return BATTLE.state(); } catch (e: any) { console.error("battle state", e?.message); return null; } })() : null }));
       }
       if (req.method === "GET" && /^\/gh\/[A-Za-z0-9-]+\/?$/.test(p)) FUNNEL.track(req, "preview");

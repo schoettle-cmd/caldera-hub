@@ -92,7 +92,9 @@ test("live frontier: lookup states, add (idempotent, daily limit), world map, bo
     assert.equal((await fetch(base + "/v1/frontier/add", { method: "POST", headers: { "content-type": "application/json", cookie: await cookie("ana"), origin: "https://evil.test" }, body: JSON.stringify({ login: "kestrel-dev" }) })).status, 403);
     let r = await as("ana", "/v1/frontier/add", { login: "kestrel-dev" });
     assert.equal(r.status, 200); assert.equal(r.body.st, "added"); assert.equal(r.body.claim, "https://hub.test/claim/kestrel-dev"); assert.equal(r.body.left, 19);
-    r = await as("bo", "/v1/frontier/add", { login: "KESTREL-DEV" }); assert.equal(r.body.st, "land"); assert.equal(r.body.by, "@ana", "idempotent: the first adder keeps it");
+    // gap 2: the reply carries the land, so the open world map draws it with no reload
+    assert.equal(r.body.land.district.nb, "@kestrel-dev"); assert.equal(r.body.land.district.uc, 1); assert.ok(Array.isArray(r.body.land.district.repos) && r.body.land.district.repos.length <= 8); assert.equal(r.body.land.meta.by, "@ana");
+    r = await as("bo", "/v1/frontier/add", { login: "KESTREL-DEV" }); assert.equal(r.body.st, "land"); assert.equal(r.body.by, "@ana", "idempotent: the first adder keeps it"); assert.equal(r.body.land.district.nb, "@kestrel-dev");
     assert.equal((await look("kestrel-dev")).st, "land");
     assert.equal((await as("ana", "/v1/frontier/add", { login: "hollis" })).status, 200);
     // the daily limit (20 a Pacific day)
@@ -160,6 +162,9 @@ test("live frontier: lookup states, add (idempotent, daily limit), world map, bo
     assert.equal(h.db.prepare("SELECT COUNT(*) n FROM alerts WHERE target=? AND dkey='frontier:kestrel-dev'").get(ids.ana.id).n, 1);
     if (BT) assert.equal(h.db.prepare("SELECT out FROM battle_opt WHERE profile=?").get(kes.id)?.out, 1, "a claim does not join the battles");
     cp = await page("/claim/kestrel-dev", right); assert.equal(cp.status, 302); assert.equal(cp.loc, "/@kes/city.html", "their own old link goes to their city");
+    // gap 1: the claimed land keeps its ring cell: the map gets the old slot and adder for the new member
+    assert.deepEqual(FR.claimedSlots()["@kes"], { slot: FR.store.get("kestrel-dev").slot, by: "@ana" });
+    assert.match((await page("/world")).html, /"fr":1/);
     cp = await page("/claim/kestrel-dev"); assert.match(cp.html, /This land is claimed\./);
     assert.equal((await get("bo", "/v1/frontier/lookup?u=kestrel-dev")).body.st, "member");
     // no land / removed
@@ -191,7 +196,7 @@ test("frontier: the seed adds as Caldera, skips orgs and missing names for good,
 });
 
 test("frontier UI: the World add box, the Armory target picker, and the owner-only profile section", async () => {
-  const { as, page, cookie } = await hubWith(["ana", "bo"]);
+  const { as, page, cookie, base } = await hubWith(["ana", "bo"]);
   assert.equal((await as("ana", "/v1/frontier/add", { login: "kestrel-dev" })).status, 200);
   const w = await page("/world");
   assert.match(w.html, /<form class="w-add" id="w-add"/);
@@ -205,6 +210,20 @@ test("frontier UI: the World add box, the Armory target picker, and the owner-on
   const theirs = await page("/@ana/", await cookie("bo"));
   assert.ok(!/Put a friend on the map/.test(theirs.html), "only on your own profile");
   assert.ok(!/Put a friend on the map/.test((await page("/@ana/")).html), "not for visitors");
+  // gap 3: the profile button opens /add (top level, outside the sandbox) in a new tab
+  assert.match(mine.html, /class="pf-add-b" href="https:\/\/hub\.test\/add" target="_blank"/);
+  assert.match(mine.html, /\(opens in a new tab\)/);
+  const out = await page("/add");
+  assert.equal(out.status, 200); assert.match(out.html, /Put a friend on the map/); assert.match(out.html, /href="\/auth\/github\?back=%2Fadd"/); assert.ok(!/id="w-add"/.test(out.html), "signed out: no form");
+  const ad = await page("/add", await cookie("ana"));
+  assert.match(ad.html, /<form class="w-add ad-form" id="w-add"/); assert.match(ad.html, />Find<\/button>/);
+  assert.match(ad.html, /19 of 20 left today/); assert.match(ad.html, /<b>@kestrel-dev<\/b><span class="ad-st">unclaimed<\/span>/);
+  assert.match(ad.html, /class="cl-main ad-main"/, "two columns once there is a list");
+  assert.match(ad.html, /\.ad-form\[hidden\],\.ad-done\[hidden\],\.ad-list\[hidden\]\{display:none\}/, "the form really hides after an add");
+  assert.match(ad.html, /\/v1\/frontier\/lookup\?u=/); assert.match(ad.html, /\.cl\{--text-muted:var\(--muted\)/, "token alias for the add box");
+  // gap 2: the world map's live poll carries recent lands, so other members' adds appear on open maps
+  const lv = await (await fetch(base + "/v1/world/live")).json();
+  assert.ok(Array.isArray(lv.lands) && lv.lands.some(x => x.district.nb === "@kestrel-dev" && x.district.uc === 1));
 });
 
 test("claim page CSS: the phone rules come after the desktop grid, so the page is one column at 390 px", async () => {

@@ -185,12 +185,12 @@ st.querySelectorAll('.b-chip,.c-tools,.c-tools button,#stage > [role=status]').f
 if(y>C.top-S.top+.5)cd.style.top=Math.round(y)+'px';if(y>C.top-S.top+.5||yb<S.height-10||C.bottom-S.top>yb)cd.style.maxHeight=Math.max(120,Math.round(yb-y))+'px'}finally{busy=false}}
 new MutationObserver(lay).observe(st,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class']});addEventListener('resize',lay);setInterval(lay,1000);lay()})();`;
 
-export function worldPage(w: World, o: { hub: string; nav: string; tools?: unknown[]; growth?: unknown | null; battle?: unknown | null; frontier?: { districts: any[]; meta: Record<string, any> } | null }): string {
+export function worldPage(w: World, o: { hub: string; nav: string; tools?: unknown[]; growth?: unknown | null; battle?: unknown | null; frontier?: { districts: any[]; meta: Record<string, any>; fs?: Record<string, { slot: number; by: string | null }> } | null }): string {
   const G = o.growth || null, BT = G ? o.battle || null : null;
   const hub = o.hub.replace(/\/$/, ""), n = w.members.length, b = w.city.districts.reduce((s, d) => s + d.repos.length, 0);
   // Frontier lands (frontier.ts) ride along as fogged districts on the world's edge (uc: 1), with their card facts in world.uc
   const FD = (o.frontier?.districts || []).filter(d => !w.members.some(m => "@" + m.handle.toLowerCase() === String(d.nb).toLowerCase()));
-  const data = { ...w.city, districts: [...w.city.districts, ...FD], openBase: "", world: { m: Object.fromEntries(w.members.map(m => ["@" + m.handle, m])), links: w.links, start: w.start, topics: w.topics || [], uc: o.frontier?.meta || {} } };
+  const data = { ...w.city, districts: [...w.city.districts, ...FD], openBase: "", world: { m: Object.fromEntries(w.members.map(m => ["@" + m.handle, m])), links: w.links, start: w.start, topics: w.topics || [], uc: o.frontier?.meta || {}, fr: o.frontier ? 1 : 0, fs: Object.fromEntries(Object.entries(o.frontier?.fs || {}).filter(([k]) => w.members.some(m => "@" + m.handle === k))) } };
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Caldera world: every member's city on one map</title>
 <meta name="description" content="Every Caldera member's GitHub and Obsidian city on one live map: ${n} neighborhoods, ${b} buildings, friendships as highways.">

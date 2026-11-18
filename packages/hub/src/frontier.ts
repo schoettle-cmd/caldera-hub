@@ -16,7 +16,7 @@ import crypto from "node:crypto";
 import type http from "node:http";
 import type { CityRepo } from "../../../../caldera/packages/plugin/src/city";
 import { nameBlocked } from "./armory";
-import { CLAIM_CSS, CLAIM_JS, GH_ICON, FLAG_ICON } from "./frontierpage";
+import { CLAIM_CSS, CLAIM_JS, GH_ICON, FLAG_ICON, WADD_CSS, ADD_CSS, ADD_JS } from "./frontierpage";
 
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
 export const FRONTIER = { addsPerDay: 20, lookupsPerHour: 60, reward: 50, perLand: 8, hidesPerHour: 5 };
@@ -48,6 +48,7 @@ export function frontierStore(q: Q) {
   const S = {
     get: (login: string): Land | null => { const r = q("SELECT * FROM frontier_lands WHERE lc=?").get(login.toLowerCase()); return r ? landOf(r) : null; },
     live: (): Land[] => (q("SELECT * FROM frontier_lands WHERE state='live' ORDER BY slot").all() as any[]).map(landOf),
+    claimed: (): Land[] => (q("SELECT * FROM frontier_lands WHERE state='claimed' ORDER BY slot").all() as any[]).map(landOf),
     byAdder: (p: string): Land[] => (q("SELECT * FROM frontier_lands WHERE adder=? AND state IN ('live','claimed') ORDER BY ts DESC").all(p) as any[]).map(landOf),
     addsSince: (p: string, since: number): number => (q("SELECT COUNT(*) n FROM frontier_lands WHERE adder=? AND ts>=?").get(p, since) as any).n,
     blocked: (login: string, ghId?: number | null): boolean => !!q("SELECT 1 FROM frontier_block WHERE h=? OR h=?").get(sha("lg:" + login.toLowerCase()), ghId ? sha("id:" + ghId) : "-"),
@@ -161,7 +162,7 @@ export function frontier(c: FrontierCtx) {
   /** add a land (idempotent). `p` is the adder (a member id, or SYSTEM_ADDER for the seed list). */
   async function add(p: string, raw: string): Promise<{ status: number; body: any }> {
     const r = await look(raw);
-    if (r.st === "land") return { status: 200, body: { ...r, ok: true, claim: c.hub() + "/claim/" + r.login, left: p === SYSTEM_ADDER ? null : left(p) } };
+    if (r.st === "land") return { status: 200, body: { ...r, ok: true, claim: c.hub() + "/claim/" + r.login, left: p === SYSTEM_ADDER ? null : left(p), land: landData(r.login) } };
     if (r.st !== "new") return { status: r.st === "github" ? 502 : r.st === "member" ? 409 : 422, body: r };
     if (p !== SYSTEM_ADDER && left(p) <= 0) return { status: 429, body: { st: "limit", login: r.login } };
     const repos = await c.ghRepos(r.login).catch(() => null);
@@ -169,17 +170,30 @@ export function frontier(c: FrontierCtx) {
     const l = S.add({ login: r.login, gh_id: r.id, name: r.name, repos: repos.length, adder: p, city: landRepos(repos, r.login) }, now());
     c.changed?.();
     console.log(`[frontier] ${p === SYSTEM_ADDER ? "seed" : "@" + (c.handleOf(p) || "?")} added @${l.login} (${l.repos} repos, slot ${l.slot})`);
-    return { status: 200, body: { st: "added", ok: true, login: l.login, name: l.name, repos: l.repos, claim: c.hub() + "/claim/" + l.login, left: p === SYSTEM_ADDER ? null : left(p) } };
+    return { status: 200, body: { st: "added", ok: true, login: l.login, name: l.name, repos: l.repos, claim: c.hub() + "/claim/" + l.login, left: p === SYSTEM_ADDER ? null : left(p), land: landData(l.login) } };
   }
 
   /** the world map's frontier: live lands, as districts the renderer fogs (uc: 1), with who added them */
   function districts(): { name: string; label: string; nb: string; notes: number; repos: CityRepo[]; uc: 1; by: string | null; slot: number }[] {
-    return S.live().filter(l => !nameBlocked(l.login)).map(l => { const by = adderName(l);
-      return { name: "@" + l.login + "/GitHub", label: "GitHub", nb: "@" + l.login, notes: 0, repos: l.city.map(r => ({ ...r, project: "@" + l.login + "/GitHub" })), uc: 1 as const, by: by ? "@" + by : null, slot: l.slot }; });
+    return S.live().filter(l => !nameBlocked(l.login)).map(districtOf);
   }
+  function districtOf(l: Land) { const by = adderName(l);
+    return { name: "@" + l.login + "/GitHub", label: "GitHub", nb: "@" + l.login, notes: 0, repos: l.city.map(r => ({ ...r, project: "@" + l.login + "/GitHub" })), uc: 1 as const, by: by ? "@" + by : null, slot: l.slot }; }
+  function metaOf(l: Land) { const by = adderName(l); return { by: by ? "@" + by : null, at: l.ts, n: l.repos, name: l.name }; }
+  /** gap 1 (MB 11-17): a claimed land keeps its ring cell. "@handle" -> its old slot and adder; the map lays that member out
+   *  in the ring like a land, lit. */
+  /** gap 2: lands added in the last 15 minutes, for the world map's live poll (other members' adds appear on open maps) */
+  function recentLands(ms = 15 * 60_000) { const t = now() - ms; return S.live().filter(l => l.ts >= t && !nameBlocked(l.login)).slice(-20).map(l => ({ district: districtOf(l), meta: metaOf(l) })); }
+  function claimedSlots(): Record<string, { slot: number; by: string | null }> {
+    const o: Record<string, { slot: number; by: string | null }> = {};
+    for (const l of S.claimed()) { const h = l.claimed_by ? c.handleOf(l.claimed_by) : null; if (!h) continue; const by = adderName(l); o["@" + h] = { slot: l.slot, by: by ? "@" + by : null }; }
+    return o;
+  }
+  /** gap 2: the add reply carries the land, so the open world map can draw it at once */
+  function landData(login: string) { const l = S.get(login); return l && l.state === "live" && !nameBlocked(l.login) ? { district: districtOf(l), meta: metaOf(l) } : null; }
   /** for the map card: who added it and when */
   function meta(): Record<string, { by: string | null; at: number; n: number; name: string }> {
-    const o: Record<string, any> = {}; for (const l of S.live()) { const by = adderName(l); o["@" + l.login] = { by: by ? "@" + by : null, at: l.ts, n: l.repos, name: l.name }; } return o;
+    const o: Record<string, any> = {}; for (const l of S.live()) o["@" + l.login] = metaOf(l); return o;
   }
 
   // ---------------------------------------------------------------- claim
@@ -317,6 +331,7 @@ ${l ? `<p class="cl-fine">Is this your GitHub? <a href="${signIn(`/claim/${u}?go
       const b = await c.readBody(req).catch(() => ({}));
       const r = await add(me, String(b?.login || "")); c.json(res, r.status, r.body); return true;
     }
+    if (p === "/add" && req.method === "GET") { send(res, 200, addPage(c.memberOf(req))); return true; }
     if (p === "/v1/frontier/mine" && req.method === "GET") {
       const me = c.memberOf(req); if (!me) { c.json(res, 401, { st: "signin" }); return true; }
       c.json(res, 200, { left: left(me), lands: S.byAdder(me).slice(0, 50).map(l => ({ login: l.login, state: l.state, at: l.ts, claimed: l.claimed_ts, paid: l.state === "claimed" && S.paid(l.lc) ? FRONTIER.reward : 0 })) }); return true;
@@ -347,6 +362,22 @@ ${l ? `<p class="cl-fine">Is this your GitHub? <a href="${signIn(`/claim/${u}?go
     return added;
   }
 
+  /** /add (frontier-design J): the whole add flow on a top-level page, opened from the sandboxed profile in a new tab */
+  function addPage(me: string | null): string {
+    const head = eyebrow("The frontier") + `<h1>Put a friend on the map</h1><p class="cl-lede">Their city appears on the frontier, unclaimed. You earn ${FRONTIER.reward} credits when they claim it. Caldera does not contact them.</p>`;
+    if (!me) return shell("Add a GitHub · Caldera", one(head + `<div class="cl-row"><a class="cl-go" href="${signIn("/add")}">${GH_ICON}Sign in with GitHub</a></div><p class="cl-fine">The land shows who added it.</p>`));
+    const all = S.byAdder(me), n = left(me), day = (t: number | null) => t ? new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Los_Angeles" }) : "";
+    const rows = all.slice(0, 10).map(l => `<li><a class="ad-row" href="/world?focus=${encodeURIComponent(l.login)}"><b>@${esc(l.login)}</b>${l.state === "claimed"
+      ? `<span class="ad-st ok">claimed${S.paid(l.lc) ? `, +${FRONTIER.reward} credits` : ""}</span><time>${esc(day(l.claimed_ts || l.ts))}</time>`
+      : `<span class="ad-st">unclaimed</span><time>added ${esc(day(l.ts))}</time>`}</a></li>`).join("");
+    const list = `<section class="ad-list" aria-labelledby="ad-h"${rows ? "" : " hidden"}><h2 class="ad-h" id="ad-h">GitHubs you added</h2><ul>${rows}</ul>${all.length > 10 ? `<p class="ad-more">And ${all.length - 10} more.</p>` : ""}</section>`;
+    const off = n <= 0 ? " disabled" : "";
+    const form = `<div class="ad"><form class="w-add ad-form" id="w-add" novalidate><div class="w-add-f"><div class="w-add-in"><span aria-hidden="true">@</span><label class="sr" for="w-add-u">GitHub username to add to the map</label><input id="w-add-u" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="39" placeholder="GitHub username" aria-describedby="w-add-h"${off}></div><button type="submit" class="w-add-b"${off}>Find</button></div>`
+      + `<div class="ad-meta"><p class="w-add-h" id="w-add-h" hidden></p><p class="ad-left">${n} of ${FRONTIER.addsPerDay} left today</p></div>`
+      + (n <= 0 ? `<p class="w-add-r" data-st="limit" role="alert"><span><b>You added 20 GitHubs today.</b> That is the daily limit. You can add more after midnight Pacific.</span></p>` : "") + `</form></div>`;
+    const main = rows ? `<main class="cl-main ad-main"><div>${head}${form}</div>${list}</main>` : `<main class="cl-one">${head}${form}${list}</main>`;
+    return shell("Add a GitHub · Caldera", main).replace("</head>", () => `<style>${WADD_CSS}${ADD_CSS}</style></head>`).replace("</body>", () => `<script>${ADD_JS}</script></body>`);
+  }
   /** the owner's own profile (frontier-design E2): "Put a friend on the map" under the city, with the GitHubs they added.
    *  Profiles are sandboxed (no forms, no cookies), so the button opens the World map's add box. */
   function profileSection(html: string, owner: string): string {
@@ -357,12 +388,12 @@ ${l ? `<p class="cl-fine">Is this your GitHub? <a href="${signIn(`/claim/${u}?go
       : `<li><a href="${esc(c.hub())}/world?focus=${encodeURIComponent(l.login)}">@${esc(l.login)}</a> &middot; unclaimed &middot; added ${esc(day(l.ts))}</li>`).join("");
     const sec = `<section class="pf-add" aria-labelledby="pf-add-h"><style>.pf-add{margin:22px 0 26px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--bg-raised)}.pf-add h2{margin:0 0 4px;font-size:1.05rem;color:var(--text-strong)}.pf-add p{margin:0 0 10px;color:var(--text-muted);font-size:14px}.pf-add-b{display:inline-flex;align-items:center;min-height:40px;padding:0 16px;border-radius:999px;background:var(--accent-btn,var(--accent));color:var(--on-accent,#fff)!important;font-weight:600;font-size:14px;text-decoration:none!important}.pf-add-b:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.pf-add h3{margin:14px 0 6px;font-size:12.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted)}.pf-add ul{margin:0;padding:0;list-style:none;font-size:13.5px;display:grid;gap:4px}.pf-add .pf-ok{color:var(--success)}@media (max-width:600px){.pf-add-b{min-height:44px}}</style>`
       + `<h2 id="pf-add-h">Put a friend on the map</h2><p>Type a GitHub username. Their city appears on the frontier, unclaimed. You earn ${FRONTIER.reward} credits when they claim it.</p>`
-      + `<a class="pf-add-b" href="${esc(c.hub())}/world#add" target="_blank" rel="noopener">Add a GitHub</a>`
+      + `<a class="pf-add-b" href="${esc(c.hub())}/add" target="_blank" rel="noopener">Add a GitHub<svg viewBox="0 0 24 24" aria-hidden="true" width="13" height="13"><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">(opens in a new tab)</span></a>`
       + (rows ? `<h3>GitHubs you added</h3><ul>${rows}</ul>${all.length > 10 ? `<p>And ${all.length - 10} more.</p>` : ""}` : "") + `</section>`;
     const m = /<a class="city-peek"[\s\S]*?<\/a>/.exec(html);
     if (m) return html.slice(0, m.index + m[0].length) + sec + html.slice(m.index + m[0].length);
     return /<\/main>/i.test(html) ? html.replace(/<\/main>/i, () => sec + "</main>") : html.replace(/<\/body>/i, () => sec + "</body>");
   }
 
-  return { route, look, add, districts, meta, store: S, seedSome, claimNow, profileSection, erase: (p: string) => S.erase(p) };
+  return { route, look, add, districts, meta, claimedSlots, landData, recentLands, addPage, store: S, seedSome, claimNow, profileSection, erase: (p: string) => S.erase(p) };
 }

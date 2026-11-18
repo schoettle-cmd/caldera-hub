@@ -320,7 +320,7 @@ export function battleClient() {
     fetch('/v1/frontier/add', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: login }) })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; }); })
       .then(function (x) {
-        if (x.status === 200 && x.j.login) { var h = '@' + x.j.login; if (!isLand(h)) (me.armory.lands = me.armory.lands || []).push(h); armOk = h + ' is on the frontier. Caldera does not contact them.'; pSet(i, h); return; }
+        if (x.status === 200 && x.j.login) { var h = '@' + x.j.login; if (x.j.land && window.CALDERA_FRONTIER_ADD) try { window.CALDERA_FRONTIER_ADD(x.j.land.district, x.j.land.meta, false); } catch (e2) {} if (!isLand(h)) (me.armory.lands = me.armory.lands || []).push(h); armOk = h + ' is on the frontier. Caldera does not contact them.'; pSet(i, h); return; }
         gl = { st: x.status === 429 ? 'limit' : x.j.st || 'github', login: login, j: x.j }; pPaint();
       }).catch(function () { gl = { st: 'github', login: login }; pPaint(); });
   }
