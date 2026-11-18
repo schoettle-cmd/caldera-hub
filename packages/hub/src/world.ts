@@ -172,6 +172,18 @@ const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&a
 const safeJson = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
 
 /** The world page: the city renderer in world mode, with the site's own look around it. */
+/** Mike 11-18 ("ui ux issue here overlap"): the city card opened under the battle status pill and the tools, hiding the
+ *  name line. While a card is open (not the bottom sheet), it starts below every overlay at the top of the map that shares
+ *  its column (the pill, the tool chips; any width, Duo and phone included) and its height stops above any overlay at the bottom (the pill on a phone). Status banners
+ *  (new land) count too; passing toasts step aside while a card is open, so nothing lies over the name line. */
+export const CARD_CLEAR_JS = String.raw`(function(){var st=document.getElementById('stage'),cd=document.getElementById('card');if(!st||!cd)return;var busy=false;var ss=document.createElement('style');ss.textContent='.c-stage.w-card-open .c-toasts{display:none}';document.head.appendChild(ss);
+function lay(){if(busy)return;busy=true;try{cd.style.top='';cd.style.maxHeight='';st.classList.toggle('w-card-open',!cd.hidden);if(cd.hidden||cd.classList.contains('is-sheet')||getComputedStyle(cd).position==='fixed')return;
+var S=st.getBoundingClientRect(),C=cd.getBoundingClientRect(),y=C.top-S.top,lim=S.height*.45,yb=S.height-10;
+st.querySelectorAll('.b-chip,.c-tools,.c-tools button,#stage > [role=status]').forEach(function(e){var cs=getComputedStyle(e);if(cs.display==='none'||cs.visibility==='hidden'||+cs.opacity===0)return;var r=e.getBoundingClientRect();if(!(r.width>0&&r.height>0))return;
+  var top=r.top-S.top,bot=r.bottom-S.top;if(r.right<=C.left||r.left>=C.right)return;if(top>lim){if(top-8<yb)yb=top-8;return}if(bot+8>y)y=bot+8});
+if(y>C.top-S.top+.5)cd.style.top=Math.round(y)+'px';if(y>C.top-S.top+.5||yb<S.height-10||C.bottom-S.top>yb)cd.style.maxHeight=Math.max(120,Math.round(yb-y))+'px'}finally{busy=false}}
+new MutationObserver(lay).observe(st,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class']});addEventListener('resize',lay);setInterval(lay,1000);lay()})();`;
+
 export function worldPage(w: World, o: { hub: string; nav: string; tools?: unknown[]; growth?: unknown | null; battle?: unknown | null }): string {
   const G = o.growth || null, BT = G ? o.battle || null : null;
   const hub = o.hub.replace(/\/$/, ""), n = w.members.length, b = w.city.districts.reduce((s, d) => s + d.repos.length, 0);
@@ -207,5 +219,5 @@ ${mapPanel(hub)}
 <script>window.CALDERA_TOOLS=${safeJson(o.tools || [])};window.CALDERA_TOOLS_HUB=${safeJson(hub)};window.CALDERA_LIVE=${safeJson({ url: "/v1/world/live", mode: "public" })};window.CALDERA_EXTRAS=${safeJson({ weather: `${hub}/v1/weather` })};window.CALDERA_GIFTS=${safeJson({ url: "/v1/gifts" })}</script>
 <script type="application/json" id="city-data">${safeJson(data)}</script>
 ${G ? `<script>window.CALDERA_GROWTH=${safeJson(G)}</script>` : ""}${BT ? `<script>window.CALDERA_BATTLE=${safeJson(BT)}</script>` : ""}
-<script>${CITY_JS}</script>${BT ? `<script>${BATTLE_CLIENT_JS}</script>` : ""}${G ? `<script>${GROWTH_CLIENT_JS}</script>` : ""}</body></html>`;
+<script>${CITY_JS}</script>${BT ? `<script>${BATTLE_CLIENT_JS}</script>` : ""}${G ? `<script>${GROWTH_CLIENT_JS}</script>` : ""}<script>${CARD_CLEAR_JS}</script></body></html>`;
 }
