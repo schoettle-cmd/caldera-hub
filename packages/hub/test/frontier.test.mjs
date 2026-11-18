@@ -206,3 +206,9 @@ test("frontier UI: the World add box, the Armory target picker, and the owner-on
   assert.ok(!/Put a friend on the map/.test(theirs.html), "only on your own profile");
   assert.ok(!/Put a friend on the map/.test((await page("/@ana/")).html), "not for visitors");
 });
+
+test("claim page CSS: the phone rules come after the desktop grid, so the page is one column at 390 px", async () => {
+  const { CLAIM_CSS } = await import("../dist/frontierpage.js").catch(() => import("../src/frontierpage.ts"));
+  const base = CLAIM_CSS.indexOf(".cl-main{display:grid"), ph = CLAIM_CSS.indexOf("@media (max-width:760px){.cl-main{grid-template-columns:minmax(0,1fr)");
+  assert.ok(base > 0 && ph > base, "the 760 px rule must follow the base .cl-main rule");
+});
