@@ -16,7 +16,7 @@ button.cl-go{font:600 16px/1 var(--font-sans)}form.cl-row{margin:0}
 .cl-eyebrow.lit{border:1px solid var(--accent);color:var(--accent-text)}
 .cl h1{font:600 clamp(26px,3.4vw,38px)/1.12 var(--font-display,'Source Serif 4',Georgia,serif);letter-spacing:-.01em;color:var(--strong);margin:12px 0 10px;text-wrap:balance;overflow-wrap:anywhere}
 .cl-lede{margin:0 0 18px;max-width:46ch;color:var(--text);font-size:16px}
-.cl-go{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:48px;padding:0 22px;border-radius:999px;border:0;background:var(--accent);color:var(--on-accent);font:600 16px/1 var(--font-sans,'IBM Plex Sans',sans-serif);cursor:pointer;text-decoration:none}
+.cl-go{box-sizing:border-box;max-width:100%;display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:48px;padding:0 22px;border-radius:999px;border:0;background:var(--accent);color:var(--on-accent);font:600 16px/1 var(--font-sans,'IBM Plex Sans',sans-serif);cursor:pointer;text-decoration:none}
 .cl-go svg{width:19px;height:19px}
 .cl-go:focus-visible,.cl a:focus-visible,.cl button:focus-visible,.cl input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .cl-go.sec{background:transparent;border:1px solid var(--line);color:var(--strong)}

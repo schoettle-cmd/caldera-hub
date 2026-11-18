@@ -212,3 +212,8 @@ test("claim page CSS: the phone rules come after the desktop grid, so the page i
   const base = CLAIM_CSS.indexOf(".cl-main{display:grid"), ph = CLAIM_CSS.indexOf("@media (max-width:760px){.cl-main{grid-template-columns:minmax(0,1fr)");
   assert.ok(base > 0 && ph > base, "the 760 px rule must follow the base .cl-main rule");
 });
+
+test("claim page CSS: the full-width Claim button includes its padding (no 390 px side scroll)", async () => {
+  const { CLAIM_CSS } = await import("../dist/frontierpage.js").catch(() => import("../src/frontierpage.ts"));
+  assert.match(CLAIM_CSS, /\n\.cl-go\{box-sizing:border-box;max-width:100%;/);
+});
