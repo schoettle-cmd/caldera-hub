@@ -286,7 +286,6 @@ export function battleClient() {
     else if (st === 'land') { k = 'new'; T = esc(L) + ' <small>unclaimed land</small>'; D = 'Added by ' + esc(j.by || 'Caldera') + ' &middot; ' + (j.repos || 0) + ' public repo' + (j.repos === 1 ? '' : 's'); B = '<button type="button" class="b-gh-go" data-gh="aim">Target ' + esc(L) + '</button>'; }
     else if (st === 'limit') { k = 'limit'; T = 'You added 20 GitHubs today'; D = 'That is the daily limit. You can add more after midnight Pacific. You can still target any land on the map.'; }
     else if (st === 'missing') { T = 'No GitHub user named ' + esc(L); D = 'Check the spelling. Use the username from github.com/username.'; }
-    else if (st === 'blocked') { T = 'That username can\'t be shown on the map'; D = 'It contains a word Caldera does not show. Pick another target.'; }
     else if (st === 'removed') { T = esc(L) + ' can\'t be added'; D = 'This person asked not to be on Caldera. Pick another target.'; }
     else if (st === 'org') { T = esc(L) + ' is an organization'; D = 'Only a person\'s GitHub can be a land. Type a person\'s username.'; }
     else if (st === 'member') { T = esc('@' + (j.handle || gl.login)) + ' is on Caldera'; D = 'Their city is not in the next battle. Pick another target.'; }
@@ -423,7 +422,7 @@ export function battleClient() {
     Array.prototype.slice.call(d.querySelectorAll('.b-bc')).forEach(function (b) { b.onclick = function () { if (b.disabled) return; cart.push({ k: b.getAttribute('data-k'), word: '', target: armAim, err: '' }); armAim = ''; armOk = ''; armErr = ''; pick = -1; armRender('#b-ar-w-' + cart.length); }; });
     Array.prototype.slice.call(d.querySelectorAll('.b-ar')).forEach(function (li) {
       var i = +li.getAttribute('data-i'), inp = li.querySelector('.b-ar-w input'), tb = li.querySelector('.b-ar-tb'), cnt = li.querySelector('.b-ar-cnt');
-      inp.oninput = function () { var v = inp.value.replace(/[^A-Za-z0-9]/g, '').slice(0, me.armory.wordMax); if (v !== inp.value) inp.value = v; cart[i].word = v.toUpperCase(); cnt.textContent = v.length + '/' + me.armory.wordMax;
+      inp.oninput = function () { var v = Array.from(inp.value).slice(0, me.armory.wordMax).join(''); if (v !== inp.value) inp.value = v; cart[i].word = v.toUpperCase(); cnt.textContent = Array.from(v).length + '/' + me.armory.wordMax;
         if (cart[i].err) { cart[i].err = ''; li.classList.remove('bad'); inp.removeAttribute('aria-invalid'); li.querySelector('.b-ar-e').hidden = true; } armFoot(); };
       tb.onclick = function () { if (pick === i) { pClose(i); return; } pick = i; pq = ''; gl = null; pAct = Math.max(0, pOpts().map(function (o) { return o.h; }).indexOf(cart[i].target || '')); armRender('#b-tp-q-' + (i + 1)); };
       li.querySelector('.b-ar-x').onclick = function () { pick = -1; cart.splice(i, 1); armRender(cart.length ? '#b-ar-w-' + Math.min(i + 1, cart.length) : '.b-bc:not([disabled])'); };
@@ -440,7 +439,7 @@ export function battleClient() {
       .then(function (x) {
         armBusy = false;
         if (x.status === 200) { cart = []; me = x.j.me && x.j.me.h ? x.j.me : me; armOk = 'Loaded: ' + n + ' bomb' + (n === 1 ? '' : 's') + ' for the next battle. They fly at ' + armClock(me.armory.locksAt) + '. Watch them hit in the morning replay.'; armRender(); return; }
-        if (x.status === 422 && x.j.rows) { x.j.rows.forEach(function (r) { if (cart[r.i]) cart[r.i].err = 'That word can\'t be used. Use letters and numbers only, no names, links or rude words.'; }); armErr = x.j.error; armRender('.b-ar.bad input'); return; }
+        if (x.status === 422 && x.j.rows) { x.j.rows.forEach(function (r) { if (cart[r.i]) cart[r.i].err = r.error || 'Write a word for this bomb.'; }); armErr = x.j.error; armRender('.b-ar.bad input'); return; }
         if (x.status === 402 && typeof x.j.balance === 'number') me.armory.balance = x.j.balance;
         armErr = x.j && x.j.error ? x.j.error : 'Could not buy right now. Nothing was charged. Try again.'; armRender();
       }).catch(function () { armBusy = false; armErr = 'Could not buy right now. Nothing was charged. Try again.'; armRender(); });

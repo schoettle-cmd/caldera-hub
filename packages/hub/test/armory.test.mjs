@@ -129,11 +129,11 @@ test("live armory: buy all-or-nothing, the bombs fly with their words, refunds, 
     assert.ok(me.armory, "the Armory in /me"); assert.equal(me.armory.balance, 100); assert.deepEqual(me.armory.targets, ["@sam"]);
     assert.ok(me.armory.now >= me.armory.opensAt && me.armory.now < me.armory.locksAt);
 
-    // a refused word charges nothing, and says which row
-    let r = await as("rae", "/v1/world/battle/armory", { bombs: [{ k: "inferno", word: "shipit" }, { k: "sparkler", word: "sh1t" }] });
+    // no word filter (Mike 11-18 "No boundaries"); a too-long word charges nothing, and says which row
+    let r = await as("rae", "/v1/world/battle/armory", { bombs: [{ k: "inferno", word: "shipit" }, { k: "sparkler", word: "thirteenchars" }] });
     assert.equal(r.status, 422); assert.deepEqual(r.body.rows.map(x => x.i), [1]); assert.match(r.body.error, /Nothing was charged/);
     assert.equal((await get("rae", "/v1/world/battle/me")).armory.balance, 100);
-    assert.equal((await as("rae", "/v1/world/battle/armory", { bombs: [{ k: "nova", word: "sam" }] })).status, 422, "a word can't name a player");
+    assert.equal((await as("rae", "/v1/world/battle/armory", { bombs: [{ k: "nova", word: "   " }] })).status, 422, "an empty word");
     assert.equal((await as("rae", "/v1/world/battle/armory", { bombs: [{ k: "nova", word: "GG", target: "@nobody" }] })).status, 422, "unknown target");
     // too expensive: 402 with the balance
     r = await as("rae", "/v1/world/battle/armory", { bombs: [{ k: "nova", word: "A" }, { k: "nova", word: "B" }, { k: "nova", word: "C" }] });

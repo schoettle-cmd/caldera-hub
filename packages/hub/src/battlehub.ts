@@ -16,7 +16,7 @@ import { DAY, dayOf, dayKey, type GEvent, type SimOut } from "./growth";
 import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, towersOf, dmgAt, dmgAll, usdOf, fallenOf, heldOf, restrike, fmtUsd, scaledDistance, isBeginner, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
   type Fighter, type Shot, type Report, type ReportFreq } from "./battle";
 import type { GrowthMember } from "./growthhub";
-import { ARMORY, bombOf, armoryNow, armoryStore, armoryPrefs, alertDue, alertText, armoryEmail, checkWord, cleanTz, clockIn, openAlertAt, remindAt, WORD_REFUSED, type BombKind } from "./armory";
+import { ARMORY, bombOf, armoryNow, armoryStore, armoryPrefs, alertDue, alertText, armoryEmail, checkWord, cleanTz, clockIn, openAlertAt, remindAt, type BombKind } from "./armory";
 
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
 export interface BattleMail { to: string; subject: string; html: string; text: string; headers?: Record<string, string>; src?: string; kind?: string }
@@ -352,7 +352,7 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
       if (th) { const tid = byH.get(th) || lands.find(l => l.h.toLowerCase() === th && (l.towers || 0) > 0)?.id; if (!tid || tid === id || (!tid.startsWith("uc:") && !on.has(tid))) { rows.push({ i, error: "That city isn't in the next battle. Pick another target." }); return; } target = tid; }
       items.push({ kind: kind as BombKind, word: w.word.toUpperCase(), target });
     });
-    if (rows.length) return done(422, { error: "Nothing was charged. Change the marked word and tap Buy again.", rows, refused: WORD_REFUSED });
+    if (rows.length) return done(422, { error: "Nothing was charged. Change the marked word and tap Buy again.", rows });
     const w = armoryNow(at), r = A.buy(id, w.night, items, at);
     if (!r.ok) { const cap = /at most/.test(r.error); return done(cap ? 409 : 402, { error: cap ? `You have ${ARMORY.perNight} bombs for tonight. That is the most per night.` : `Your balance is now ${r.balance} credits. Remove a bomb or pick a smaller one.`, balance: r.balance, cap }); }
     console.log(`[armory] ${x.handle(id)} bought ${items.length} for night ${w.night} (${items.map(i => i.kind).join(",")})`);

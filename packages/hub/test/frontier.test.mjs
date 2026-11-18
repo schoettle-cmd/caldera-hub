@@ -121,7 +121,7 @@ test("live frontier: lookup states, add (idempotent, daily limit), world map, bo
       const me = (await get("ana", "/v1/world/battle/me")).body;
       assert.ok(me.armory, "the Armory is open"); {
         assert.deepEqual(me.armory.lands, ["@hollis", "@kestrel-dev"]);
-        assert.equal((await as("ana", "/v1/world/battle/armory", { bombs: [{ k: "nova", word: "hollis" }] })).status, 422, "a word can't name an unclaimed land");
+        
         r = await as("ana", "/v1/world/battle/armory", { bombs: [{ k: "inferno", word: "hello", target: "@hollis" }, { k: "sparkler", word: "hi", target: "@kestrel-dev" }] });
         assert.equal(r.status, 200, JSON.stringify(r.body));
         const bal = (await get("ana", "/v1/world/battle/me")).body.armory.balance;

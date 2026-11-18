@@ -169,7 +169,6 @@ function go(){if(busy)return;var l=u.value.trim().replace(/^@/,'');if(!l){u.focu
     if(j.st==='member'){out('ok','<b>@'+e(j.handle||L)+' is already on Caldera.</b> <a href="/world?focus='+encodeURIComponent(j.handle||L)+'">View their city</a>');return}
     if(x.s===429||j.st==='limit'){out('limit','<b>You added 20 GitHubs today.</b> That is the daily limit. You can add more after midnight Pacific.');return}
     if(j.st==='missing'){out('bad','<b>No GitHub user named @'+e(L)+'.</b> Check the spelling. Use the username from github.com/username.');return}
-    if(j.st==='blocked'){out('bad','<b>That username can\'t be shown on the map.</b> It contains a word Caldera does not show.');return}
     if(j.st==='removed'){out('bad','<b>@'+e(L)+' can\'t be added.</b> This person asked not to be on Caldera.');return}
     if(j.st==='org'){out('bad','<b>@'+e(L)+' is an organization.</b> Only a person\'s GitHub can be a land.');return}
     out('bad','<b>Could not reach GitHub.</b> Nothing was added. <button type="button" data-retry>Try again</button>')}).catch(function(){done();out('bad','<b>Could not reach GitHub.</b> Nothing was added. <button type="button" data-retry>Try again</button>')})}
@@ -238,7 +237,6 @@ function fail(x,j,L){if(x===401)return signin();
   if(j.st==='member')return out('ok','<b>@'+e(j.handle||L)+' is already on Caldera.</b> <a href="/world?focus='+q(j.handle||L)+'">View their city</a>');
   if(x===429||j.st==='limit'){setLeft(0);return out('limit','<b>You added 20 GitHubs today.</b> That is the daily limit. You can add more after midnight Pacific.')}
   if(j.st==='missing')return out('bad','<b>No GitHub user named @'+e(L)+'.</b> Check the spelling. Use the username from github.com/username.');
-  if(j.st==='blocked')return out('bad','<b>That username can\'t be shown on the map.</b> It contains a word Caldera does not show.');
   if(j.st==='removed')return out('bad','<b>@'+e(L)+' can\'t be added.</b> This person asked not to be on Caldera.');
   if(j.st==='org')return out('bad','<b>@'+e(L)+' is an organization.</b> Only a person\'s GitHub can be a land.');
   out('bad','<b>Could not reach GitHub.</b> Nothing was added. <button type="button" data-retry>Try again</button>')}

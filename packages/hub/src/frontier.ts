@@ -15,7 +15,6 @@
 import crypto from "node:crypto";
 import type http from "node:http";
 import type { CityRepo } from "../../../../caldera/packages/plugin/src/city";
-import { nameBlocked } from "./armory";
 import { CLAIM_CSS, CLAIM_JS, GH_ICON, FLAG_ICON, WADD_CSS, ADD_CSS, ADD_JS } from "./frontierpage";
 
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
@@ -143,7 +142,6 @@ export function frontier(c: FrontierCtx) {
   async function look(raw: string): Promise<any> {
     const login = String(raw || "").trim().replace(/^@/, "");
     if (!GH_LOGIN.test(login)) return { st: "missing", login };
-    if (nameBlocked(login)) return { st: "blocked", login };
     const m = c.memberByName(login); if (m) return { st: "member", login, handle: m.handle };
     const l = S.get(login);
     if (l && l.state === "live") { const by = adderName(l); return { st: "land", login: l.login, by: by ? "@" + by : null, repos: l.repos, name: l.name }; }
@@ -175,7 +173,7 @@ export function frontier(c: FrontierCtx) {
 
   /** the world map's frontier: live lands, as districts the renderer fogs (uc: 1), with who added them */
   function districts(): { name: string; label: string; nb: string; notes: number; repos: CityRepo[]; uc: 1; by: string | null; slot: number }[] {
-    return S.live().filter(l => !nameBlocked(l.login)).map(districtOf);
+    return S.live().map(districtOf);
   }
   function districtOf(l: Land) { const by = adderName(l);
     return { name: "@" + l.login + "/GitHub", label: "GitHub", nb: "@" + l.login, notes: 0, repos: l.city.map(r => ({ ...r, project: "@" + l.login + "/GitHub" })), uc: 1 as const, by: by ? "@" + by : null, slot: l.slot }; }
@@ -183,14 +181,14 @@ export function frontier(c: FrontierCtx) {
   /** gap 1 (MB 11-17): a claimed land keeps its ring cell. "@handle" -> its old slot and adder; the map lays that member out
    *  in the ring like a land, lit. */
   /** gap 2: lands added in the last 15 minutes, for the world map's live poll (other members' adds appear on open maps) */
-  function recentLands(ms = 15 * 60_000) { const t = now() - ms; return S.live().filter(l => l.ts >= t && !nameBlocked(l.login)).slice(-20).map(l => ({ district: districtOf(l), meta: metaOf(l) })); }
+  function recentLands(ms = 15 * 60_000) { const t = now() - ms; return S.live().filter(l => l.ts >= t).slice(-20).map(l => ({ district: districtOf(l), meta: metaOf(l) })); }
   function claimedSlots(): Record<string, { slot: number; by: string | null }> {
     const o: Record<string, { slot: number; by: string | null }> = {};
     for (const l of S.claimed()) { const h = l.claimed_by ? c.handleOf(l.claimed_by) : null; if (!h) continue; const by = adderName(l); o["@" + h] = { slot: l.slot, by: by ? "@" + by : null }; }
     return o;
   }
   /** gap 2: the add reply carries the land, so the open world map can draw it at once */
-  function landData(login: string) { const l = S.get(login); return l && l.state === "live" && !nameBlocked(l.login) ? { district: districtOf(l), meta: metaOf(l) } : null; }
+  function landData(login: string) { const l = S.get(login); return l && l.state === "live" ? { district: districtOf(l), meta: metaOf(l) } : null; }
   /** for the map card: who added it and when */
   function meta(): Record<string, { by: string | null; at: number; n: number; name: string }> {
     const o: Record<string, any> = {}; for (const l of S.live()) o["@" + l.login] = metaOf(l); return o;

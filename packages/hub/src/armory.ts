@@ -5,7 +5,7 @@
  *  - the window opens when the last battle ends and locks when the next night runs (battleAt: 10:00 UTC = 02:00 PST / 03:00 PDT),
  *    so it is open at 6 PM in every time zone; each player gets one "Armory open" alert at 6 PM their time (Mike 11-18);
  *  - four types at different prices; each flies as one of the battle's weapons (same physics, same shields);
- *  - per bomb: a word (letters and numbers only, 1-12 characters, filtered) and a target ("random" or a city in the battle);
+ *  - per bomb: a word (anything, 1-12 characters, no filter: Mike 11-18 "No boundaries") and a target ("random" or a city in the battle);
  *  - nobody buys: the night is exactly what it was (the bombs fire after every normal shot, from their own random stream);
  *  - a bomb that cannot fire (the buyer left the battles, no valid target, the night was skipped) is refunded;
  *  - a shown word can be reported; the operator hides a word (admin battle-word-hide <id>).
@@ -77,43 +77,14 @@ export function clockIn(t: number, tz: string, locale = "en-US"): string {
   catch { return clockIn(t, "America/Los_Angeles", "en-US"); }
 }
 
-// ---------------------------------------------------------------- the word filter (shown to every player)
-const LEET: Record<string, string> = { "0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "8": "b", "9": "g", "$": "s", "@": "a" };
-/** substrings that are never allowed anywhere in a word */
-const NEVER = ["fuck", "fuk", "fck", "phuck", "shit", "sht", "cunt", "nigg", "nigr", "niga", "kike", "faggot", "fagot", "retard", "tranny", "whore", "slut", "bitch", "biatch",
-  "rapist", "nazi", "hitler", "heil", "kkk", "pedophil", "paedophil", "porn", "wank", "twat", "jizz", "dildo", "cocksuck", "asshole", "arsehole", "motherf", "wetback", "spick",
-  "chingchong", "killyourself", "killurself", "suicide", "molest", "incest", "bestial", "nude", "hentai", "milf", "clit", "orgasm", "penis", "vagina", "boner", "blowjob", "handjob",
-  "cumshot", "dickhead", "bollock", "bastard", "douche", "skank", "hooker", "terroris", "jihad", "genocide", "lynch", "gaschamber", "holocaust", "darkie",
-  "gook", "raghead", "towelhead", "sandnig", "zipperhead", "kafir", "dyke", "homo", "lesbo", "shemale", "trannie", "httpcolon", "dotcom", "dotnet", "dotorg"];
-/** whole words that are not allowed (too short or too common as parts of other words to match inside one) */
-const EXACT = ["ass", "arse", "asses", "cum", "cums", "dick", "dicks", "cock", "cocks", "puss", "pussy", "tit", "tits", "titty", "titties", "boob", "boobs", "anal", "anus", "sex", "sexy",
-  "fag", "fags", "spic", "spics", "chink", "chinks", "beaner", "beaners", "jap", "japs", "paki", "pakis", "kys", "gay", "gays", "negro", "prick", "piss", "rape", "rapes", "raped", "raping", "pedo", "pedos", "paedo",
-  "isis", "coon", "coons", "slave", "slaves", "nazis", "kike", "kikes", "wtf", "stfu", "gtfo", "lmfao", "fu", "fy", "milf", "dildo", "slag", "tosser", "wanker"];
-const URLISH = /^(https?|www)|(com|net|org)$/;
+// ---------------------------------------------------------------- the bomb word (Mike 11-18: "No boundaries": no word filter)
 export type WordCheck = { ok: true; word: string } | { ok: false; why: string };
-export const WORD_REFUSED = "That word can't be used. Use letters and numbers only, no names, links or rude words.";
-/** normalized for matching: lower case, look-alike digits to letters, runs of one letter collapsed ("fuuuck" -> "fuck") */
-export const normWord = (w: string) => w.toLowerCase().split("").map(c => LEET[c] || c).join("").replace(/(.)\1+/g, "$1");
-/** One word for a bomb. handles: the members' handles (a word may not name a player). */
-/** A GitHub username the map may show (Frontier D4): the NEVER and EXACT lists, as substrings and as the whole name. */
-export function nameBlocked(login: string): boolean {
-  const lo = String(login || "").toLowerCase(), flat = lo.replace(/[^a-z0-9]/g, ""), forms = [lo, flat, normWord(flat), flat.replace(/(.)\1+/g, "$1"), flat.split("").map(c => LEET[c] || c).join("")];
-  for (const s of NEVER) if (forms.some(f => f.includes(s))) return true;
-  for (const s of EXACT) if (forms.some(f => f === s || f === s + "s")) return true;
-  for (const part of lo.split("-")) if (EXACT.includes(part)) return true;
-  return false;
-}
-export function checkWord(raw: unknown, handles: Iterable<string> = []): WordCheck {
-  const w = String(raw ?? "").trim();
+/** One word for a bomb: anything the player types, trimmed, control characters removed. Only empty and too long are refused
+ *  (the bomb art fits wordMax characters). Players can still report a word, which hides it (report-word). */
+export function checkWord(raw: unknown, _handles: Iterable<string> = []): WordCheck {
+  const w = String(raw ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
   if (!w) return { ok: false, why: "Write a word for each bomb." };
-  if (w.length > ARMORY.wordMax) return { ok: false, why: `One word, at most ${ARMORY.wordMax} letters.` };
-  if (!/^[A-Za-z0-9]+$/.test(w)) return { ok: false, why: "Use letters and numbers only: no spaces, symbols, @handles, emails or links." };
-  if (/\d{5,}/.test(w)) return { ok: false, why: "That looks like a phone number. Use a word." };
-  const lo = w.toLowerCase(), n = normWord(w), raw2 = lo.replace(/(.)\1+/g, "$1"), nl = lo.split("").map(c => LEET[c] || c).join(""), forms = [lo, n, raw2, nl];
-  if (URLISH.test(lo) && lo.length > 5) return { ok: false, why: WORD_REFUSED };
-  for (const s of NEVER) if (forms.some(f => f.includes(s))) return { ok: false, why: WORD_REFUSED };
-  for (const s of EXACT) if (forms.some(f => f === s || f === s + "s")) return { ok: false, why: WORD_REFUSED };
-  for (const h of handles) { const k = String(h || "").toLowerCase().replace(/[^a-z0-9]/g, ""); if (k.length >= 3 && (lo === k || n === normWord(k))) return { ok: false, why: "A word can't name a player." }; }
+  if ([...w].length > ARMORY.wordMax) return { ok: false, why: `At most ${ARMORY.wordMax} characters.` };
   return { ok: true, word: w };
 }
 
