@@ -114,3 +114,20 @@ test("window glow: recent visitors light a district, and it fades over 30 minute
     assert.ok(s2["relay.example.com"] > 0 && Object.keys(s2).length === 2, `feed hosts are counted, junk ignored (${JSON.stringify(s2)})`);
   } finally { hub.server.close(); fs.rmSync(d, { recursive: true, force: true }); }
 });
+
+test("free tools: an operator-set logo shows as the tile; anything but data:image or https falls back to the letter", async () => {
+  const d = __mkdtemp(path.join(os.tmpdir(), "caldera-tools-icon-"));
+  const hub = createHub({ dataDir: d, publicUrl: "http://hub.test", founder: "ana", limits: { newProfilesPerDay: 100 } });
+  const base = "http://127.0.0.1:" + await hub.listen(0);
+  try {
+    const id = C.newIdentity(), page = `<html><head></head><body><main class="note"><h1 class="title">bo</h1><h2 id="projects">Projects</h2></main></body></html>`;
+    await fetch(base + `/v1/profiles/${id.id}/bundle`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ manifest: C.sign(id, "profile.manifest", { name: "BO", handle: "bo", boxKey: id.boxPublic }), files: { "index.html": Buffer.from(page).toString("base64") } }) });
+    const ins = hub.db.prepare("INSERT INTO tools (id,owner,name,pitch,platforms,license,url,repo,status,created,updated,gets,icon) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    ins.run("t1", id.id, "Logoed", "Has a logo.", "web", "Free", "https://a.test", null, "live", "2026-01-01", "2026-01-01", 0, "data:image/svg+xml;base64,PHN2Zy8+");
+    ins.run("t2", id.id, "Sneaky", "Bad logo.", "web", "Free", "https://b.test", null, "live", "2026-01-01", "2026-01-01", 0, "javascript:alert(1)");
+    const html = await (await fetch(base + "/@bo/", { headers: UA })).text();
+    assert.match(html, /<img class="tl-tile" src="data:image\/svg\+xml;base64,PHN2Zy8\+"/);
+    assert.ok(!html.includes("javascript:alert"), "unsafe logo never rendered");
+    assert.match(html, /<span class="tl-tile"[^>]*>S<\/span>/);
+  } finally { hub.server.close(); }
+});

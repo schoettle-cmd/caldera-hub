@@ -35,7 +35,7 @@ const REPO = /^https:\/\/github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,10
 const TID = /^[0-9a-f]{12}$/;
 
 export interface Tool { id: string; owner: string; name: string; pitch: string; platforms: string; license: string; url: string; repo: string | null;
-  status: string; created: string; updated: string; gets: number; stars: number | null; stars_at: string | null }
+  status: string; created: string; updated: string; gets: number; stars: number | null; stars_at: string | null; icon?: string | null }
 
 /** Check a listing from the form. https only; the download link may not point at Caldera itself. */
 export function validateTool(b: any, hubHost: string): { ok: true; t: { name: string; pitch: string; platforms: string[]; license: string; url: string; repo: string | null } } | { ok: false; error: string } {
@@ -56,6 +56,7 @@ export function tools(c: ToolsCtx) {
   const q = c.q, hub = c.hub.replace(/\/$/, ""), hubHost = new URL(hub).hostname;
   q(`CREATE TABLE IF NOT EXISTS tools (id TEXT PRIMARY KEY, owner TEXT, name TEXT, pitch TEXT, platforms TEXT, license TEXT, url TEXT, repo TEXT,
       status TEXT, created TEXT, updated TEXT, gets INTEGER DEFAULT 0, stars INTEGER, stars_at TEXT)`).run();
+  try { q(`ALTER TABLE tools ADD COLUMN icon TEXT`).run(); } catch { /* already there: a logo set by the operator (data:image or https) */ }
   q(`CREATE TABLE IF NOT EXISTS tool_gets (tool TEXT, member TEXT, ts TEXT, PRIMARY KEY (tool, member))`).run();
   q(`CREATE TABLE IF NOT EXISTS tool_reports (tool TEXT, reporter TEXT, reason TEXT, ts TEXT, PRIMARY KEY (tool, reporter))`).run();
 
@@ -126,7 +127,7 @@ export function tools(c: ToolsCtx) {
   function erase(id: string) { q("UPDATE tools SET status='removed' WHERE owner=?").run(id); q("DELETE FROM tool_gets WHERE member=?").run(id); }
 
   // ---------------------------------------------------------------- html
-  const tile = (name: string) => { const h = parseInt(crypto.createHash("md5").update(name).digest("hex").slice(0, 6), 16), hue = h % 360;
+  const tile = (name: string, icon?: string | null) => { if (icon && /^(data:image\/(png|svg\+xml|jpeg|webp);base64,|https:\/\/)/.test(icon)) return `<img class="tl-tile" src="${esc(icon)}" alt="" aria-hidden="true" loading="lazy">`; const h = parseInt(crypto.createHash("md5").update(name).digest("hex").slice(0, 6), 16), hue = h % 360;
     return `<span class="tl-tile" style="background:hsl(${hue} 55% 42%)" aria-hidden="true">${esc(name.trim().charAt(0).toUpperCase())}</span>`; };
   function card(t: Tool & { handle?: string; makerName?: string; since?: string }, o: { maker?: boolean; viewer?: string | null; review?: boolean } = {}) {
     const plats = t.platforms.split(",").filter(Boolean).map(p => `<span class="tl-chip">${esc(PLATFORMS[p] || p)}</span>`).join("");
@@ -136,14 +137,14 @@ export function tools(c: ToolsCtx) {
     const acts = [`<a class="tl-get" href="${hub}/tools/go/${t.id}" target="_blank" rel="noopener nofollow">Get it &#8599;</a>`,
       o.review ? `<button type="button" class="tl-btn" data-act="approve" data-id="${t.id}">Approve</button><button type="button" class="tl-btn ghost" data-act="reject" data-id="${t.id}">Reject</button>` : "",
       own || f ? `<button type="button" class="tl-btn ghost" data-act="delete" data-id="${t.id}">Remove</button>` : o.viewer ? `<button type="button" class="tl-link" data-act="report" data-id="${t.id}">Report</button>` : ""].join("");
-    return `<article class="tl-card" id="t-${t.id}">${tile(t.name)}<div class="tl-m"><div class="tl-top"><b>${esc(t.name)}</b>${t.status === "pending" ? `<span class="tl-chip warn">Waiting for review</span>` : ""}</div>`
+    return `<article class="tl-card" id="t-${t.id}">${tile(t.name, t.icon)}<div class="tl-m"><div class="tl-top"><b>${esc(t.name)}</b>${t.status === "pending" ? `<span class="tl-chip warn">Waiting for review</span>` : ""}</div>`
       + `<p>${esc(t.pitch)}</p><div class="tl-chips">${plats}</div><div class="tl-trust">${trust}</div>`
       + (o.maker && t.handle ? `<div class="tl-trust">by <a href="${hub}/@${esc(t.handle)}/">${esc(t.makerName || "@" + t.handle)}</a> &middot; on Caldera since ${esc(t.since || "")}</div>` : "")
       + `<div class="tl-acts">${acts}</div></div></article>`;
   }
   const CSS = `.tl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin:16px 0}
 .tl-card{display:flex;gap:14px;padding:16px;border:1px solid var(--line,#2a2a2e);border-radius:14px;background:var(--bg-raised,#1d1d21)}
-.tl-tile{flex:none;width:48px;height:48px;border-radius:12px;display:grid;place-items:center;color:#fff;font:700 22px var(--font-body,'IBM Plex Sans',Arial,sans-serif)}
+.tl-tile{flex:none;width:48px;height:48px;border-radius:12px;object-fit:cover;display:grid;place-items:center;color:#fff;font:700 22px var(--font-body,'IBM Plex Sans',Arial,sans-serif)}
 .tl-m{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}.tl-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tl-top b{color:var(--text-strong,#f2f2f5);font-size:16px}
 .tl-m p{margin:0;font-size:14px;color:var(--text,#dadadf)}.tl-chips{display:flex;flex-wrap:wrap;gap:6px}
 .tl-chip{font:500 11.5px var(--font-mono,'IBM Plex Mono',monospace);padding:2px 8px;border-radius:999px;background:var(--accent-soft,rgba(139,108,246,.12));color:var(--accent-text,#b39dfa)}.tl-chip.warn{background:rgba(232,197,71,.15);color:#E8C547}
