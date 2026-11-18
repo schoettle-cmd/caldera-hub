@@ -216,4 +216,5 @@ test("claim page CSS: the phone rules come after the desktop grid, so the page i
 test("claim page CSS: the full-width Claim button includes its padding (no 390 px side scroll)", async () => {
   const { CLAIM_CSS } = await import("../dist/frontierpage.js").catch(() => import("../src/frontierpage.ts"));
   assert.match(CLAIM_CSS, /\n\.cl-go\{box-sizing:border-box;max-width:100%;/);
+  assert.ok(CLAIM_CSS.includes(".cl a.cl-go,.cl a.cl-go:visited{color:var(--on-accent)"), "the button text stays white, not link purple");
 });
