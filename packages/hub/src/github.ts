@@ -24,6 +24,8 @@ import { alertItem, ALERT_CSS, ALERT_JS, type AlertRow } from "./alerts";
 
 export interface GhPerson { login: string; avatar: string; url: string; relation: string; invited: boolean; canEmail: boolean }
 export interface GhCtx {
+  /** the Battles group (Armory alerts) under Settings > Notifications; empty when not in the battles */
+  battleSettings?: (owner: string) => string;
   /** an email page's unverified public-GitHub city (emailpages.ts): mark it as this login's, then rebuild once linked */
   verifyPublicCity?: (id: string, login: string) => boolean;
   republishEmail?: (id: string) => void;
@@ -550,7 +552,7 @@ ${finishCard(a)}
 <div class="row" style="margin-top:12px"><button class="btn small" type="submit">Save and republish</button></div></form>
 ${listingsForm(edits)}
 ${sectionHead("people", "People")}${growth}
-${sectionHead("notifications", "Notifications")}${emailCard(a, edits)}
+${sectionHead("notifications", "Notifications")}${emailCard(a, edits)}${ctx.battleSettings?.(a.profile_id) || ""}
 ${sectionHead("privacy", "Privacy")}<div class="card"><b>&#128274; What Caldera can see on GitHub</b><p class="mut" style="margin:6px 0 0">Your public profile, your email address and your public repos: read-only. Not your code, not your private repos (unless you install the app for chosen repos, and then only names, sizes and commit counts). GitHub enforces this. <a href="/security">Details</a> &middot; Revoke any time at <a href="https://github.com/settings/applications" target="_blank" rel="noopener">github.com/settings/applications</a>, or delete your page below.</p></div><form method="post" class="card" id="privacy-form"><input type="hidden" name="do" value="privacy">
 <label><input type="checkbox" name="listed" ${edits.listed === false ? "" : "checked"}> Show me in the <a href="/people">People</a> directory and on the World map</label>
 <label><input type="checkbox" name="autoConnectRepos" ${edits.autoConnectRepos === false ? "" : "checked"}> Connect me automatically with people I know from GitHub (shared repos, mutual follows)</label>
@@ -585,7 +587,7 @@ ${sectionHead("page", "Your page", "Edited from Obsidian (<code>Caldera/profile.
 <div class="card">${ro("Name", esc(pr.name || ""))}${ro("Headline", esc(pr.headline || ""))}${ro("Links", links.map(([l, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(l)}</a>`).join(" &middot; "))}${ro("Groups", esc((Array.isArray(b.groups) ? b.groups : []).join(", ")))}
 ${(() => { const t = C.editPrompt({ hubUrl: pub, handle }); return `<pre id="pr-edit" style="max-height:120px">${esc(t)}</pre><button class="btn small" type="button" data-copy-text="pr-edit">Copy prompt for my AI</button>`; })()}</div>
 ${sectionHead("people", "People")}${growthCards({ profile_id: owner, handle }, {})}
-${sectionHead("notifications", "Notifications")}${emailCard({ profile_id: owner, handle }, {})}
+${sectionHead("notifications", "Notifications")}${emailCard({ profile_id: owner, handle }, {})}${ctx.battleSettings?.(owner) || ""}
 ${sectionHead("privacy", "Privacy", "Set in Obsidian: Settings &rarr; Caldera, or in <code>Caldera/profile.md</code>.")}<div class="card">${yes(b.listed !== false, "Listed in People and on the World map")}${yes(b.showViews !== false, "View count shown on your page")}${yes(b.autoConnectGithub !== false && b.autoConnectRepos !== false, "Connect automatically with people you know from GitHub")}</div>${ctx.privateMode ? privateReposForm(ctx.privateMode.modeFor(pr), !!ctx.privateMode.chosen(pr)) : ""}${ctx.searchPref ? searchForm(ctx.searchPref.on(pr)) : ""}
 ${sectionHead("account", "Account")}<div class="card danger-zone"><a class="btn small ghost" href="/signout?h=${encodeURIComponent(handle)}">Sign out of this browser</a>
 <p class="mut" style="margin-top:10px">To delete your Caldera profile, run <b>Caldera: Delete my profile from the hub</b> in Obsidian. Your vault is never touched.</p></div>`, ctx.owner?.bar?.(owner) || "");

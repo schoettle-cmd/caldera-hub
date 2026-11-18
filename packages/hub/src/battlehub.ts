@@ -16,6 +16,7 @@ import { DAY, dayOf, dayKey, type GEvent, type SimOut } from "./growth";
 import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, towersOf, dmgAt, dmgAll, usdOf, fallenOf, heldOf, restrike, fmtUsd, scaledDistance, isBeginner, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
   type Fighter, type Shot, type Report, type ReportFreq } from "./battle";
 import type { GrowthMember } from "./growthhub";
+import { ARMORY, bombOf, armoryNow, armoryStore, armoryPrefs, alertDue, alertText, armoryEmail, checkWord, cleanTz, clockIn, openAlertAt, remindAt, WORD_REFUSED, type BombKind } from "./armory";
 
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
 export interface BattleMail { to: string; subject: string; html: string; text: string; headers?: Record<string, string>; src?: string; kind?: string }
@@ -31,6 +32,10 @@ export interface BattleHubCtx {
   /** CALDERA_BATTLE_EMAIL=1: the report email may actually go out */ emailOn: () => boolean;
   /** the feed's system voice (sysposts.ts): idempotent by key; absent until the feed plumbing is wired */ systemPost?: (key: string, text: string, links?: string[]) => { posted: boolean; id?: string };
   /** team size, for per-capita strength and scoring (1 for a person) */ heads?: (profileId: string) => number;
+  /** a personal bell alert (alerts.ts); `key` folds repeats into one row */ alertPost?: (o: { target: string; key: string; title: string; body: string; ctaLabel?: string; ctaUrl?: string; by?: string }) => void;
+  /** the one-click unsubscribe-from-all link for a member */ unsubAll?: (profileId: string) => string | null;
+  /** CALDERA_ARMORY_EMAIL=1: the once-a-day "Armory open" email may go out (off until Mike approves sending) */ armoryEmailOn?: () => boolean;
+  /** Frontier lands (frontier.ts) on the map now: Armory bombs can aim at them */ lands?: () => { login: string; repos: any[] }[];
   now?: () => number;
 }
 
@@ -41,6 +46,8 @@ export function battleHub(c: BattleHubCtx) {
   if (!S.meta("launch")) S.setMeta("launch", String(lastNight(now())));
   const launch = () => Number(S.meta("launch")) || lastNight(now());
   let cache: { at: number; v: any } | null = null;
+  const A = armoryStore(c.q), PR = armoryPrefs(c.q, () => crypto.randomBytes(18).toString("base64url"));
+  const idem = new Map<string, { at: number; v: any }>();   // Buy taps by idempotency key (10 minutes)
 
   // ---------------------------------------------------------------- inputs from the growth simulation
   function ctxFor() {
@@ -48,11 +55,17 @@ export function battleHub(c: BattleHubCtx) {
     const ms = c.members(), byId = new Map(ms.map(m => [m.id, m] as [string, GrowthMember])), evBy = new Map<string, GEvent[]>();
     const reverted = new Set<string>(); for (const e of events) if (e.x?.rv) reverted.add(e.x.rv.slice(0, 7));
     for (const e of events) { if (!evBy.has(e.p)) evBy.set(e.p, []); evBy.get(e.p)!.push(e); }
-    const handle = (id: string) => id === RAIDERS ? "raiders from the sea" : "@" + (byId.get(id)?.handle || "someone");
+    const handle = (id: string) => id === RAIDERS ? "raiders from the sea" : id.startsWith("uc:") ? "@" + id.slice(3) : "@" + (byId.get(id)?.handle || "someone");
     const pts = (id: string) => { const sim = sims.get(id); const m = new Map((sim?.stats || []).map(s => [s.d, s.pts] as [number, number])); return (d: number) => m.get(d) || 0; };
     return { sims, events, ai, ms, byId, evBy, reverted, handle, pts };
   }
   type Ctx = ReturnType<typeof ctxFor>;
+  /** Frontier lands as targets only: no arsenal, no shield, never idle; damage is for show (frontier-design F8) */
+  function landsNow(): Fighter[] {
+    let L: { login: string; repos: any[] }[] = []; try { L = c.lands ? c.lands() : []; } catch (e: any) { console.error("[battle] lands", e?.message); }
+    return L.map(l => { const tw = towersOf(l.repos || []);
+      return { id: "uc:" + l.login, h: l.login, ars: { shots: [], usd: 0, ammo: 0, n: 0, cepX: 1, reach: 0 } as any, sh: 0, beg: false, lots: "", towers: tw.length, tw, side: 0, out7: 0, heads: 1, idle: null } as Fighter; });
+  }
   function snapOf(sim: SimOut, day: number) { return sim.snaps.get(day) || sim.snaps.get(day - 1) || { side: sim.side, lots: sim.lots, streak: sim.streak, tier: sim.tier, idle: sim.idle, bank: sim.bank }; }
   function fighterOf(x: Ctx, m: GrowthMember, day: number, waive: boolean): Fighter | null {
     const sim = x.sims.get(m.id); if (!sim) return null;
@@ -83,10 +96,15 @@ export function battleHub(c: BattleHubCtx) {
     const fighters = x.ms.filter(m => on.has(m.id)).map(m => fighterOf(x, m, night - 1, !!opts.get(m.id)?.waive)).filter((f): f is Fighter => !!f);
     const prev = S.shots(night - 1), lastPairs = new Set(prev.filter(s => s.f > 0).map(s => s.a + ">" + s.d));
     const week = new Map<string, number>(); for (const s of S.shots(night - 6, night - 1)) if (s.f > 0) week.set(s.d, (week.get(s.d) || 0) + dmgAll(s));
-    const r = resolveNight({ night, fighters, lastPairs, week, aims: S.aims(night), open: openDamage(x, T, on) });
+    const bombs = A.live(night).filter(b => b.state === "paid").map(b => ({ id: b.id, a: b.p, w: bombOf(b.kind)!.w, k: b.kind, word: b.word, target: b.target }));
+    const r = resolveNight({ night, fighters, lastPairs, week, aims: S.aims(night), open: openDamage(x, T, on), bombs, lands: landsNow() });
     const meta = { night: dayKey(night), at: T, raiders: r.raiders, fighters: fighters.map(f => ({ id: f.id, h: f.h, ammo: f.ars.ammo, usd: f.ars.usd, n: f.ars.n, tech: f.ars.tech, guide: f.ars.guide, shots: f.ars.shots.length, best: f.ars.best, sh: f.sh, beg: f.beg ? 1 : 0, c: f.ars.c, pr: f.ars.pr, rel: f.ars.rel, ai: f.ars.aiX, st: f.ars.streakX })) };
     if (o.dry) return { ...meta, dry: true, shots: r.shots.map(s => ({ a: x.handle(s.a), d: x.handle(s.d), w: s.w, f: s.f, usd: usdOf(s), held: heldOf(s), sh: s.x?.sh || 0 })) };
     S.saveNight(night, meta, r.shots, now());
+    // the Armory: mark what flew, refund what could not, and pay the daily battle reward to every city that fired
+    for (const f of r.fired) A.fired(f.id, f.k);
+    for (const id of r.unfired) A.refund(id, "could not fire", now());
+    for (const id of new Set(r.shots.map(s => s.a))) if (x.byId.has(id)) A.reward(id, night, now());
     S.prune(night - 120); cache = null;
     console.log(`[battle] night ${dayKey(night)}: ${fighters.length} cities, ${r.shots.length} shots, ${r.shots.filter(s => s.f > 0).length} landed, ${fmtUsd(r.shots.reduce((t, s) => t + usdOf(s), 0))} damage, raiders ${r.raiders.length}`);
     return meta;
@@ -96,6 +114,9 @@ export function battleHub(c: BattleHubCtx) {
   async function tick() {
     const n = lastNight(now());
     if (!S.hasNight(n) && now() - battleAt(n) < 20 * 3600_000) { try { resolve(n); } catch (e: any) { console.error("[battle] resolve", e?.message); } }
+    // bombs of a night that will never run (the hub was down, or it is long past) get their credits back
+    try { for (const b of A.stale(S.hasNight(n) || now() - battleAt(n) >= 20 * 3600_000 ? n : n - 1)) A.refund(b.id, "the night did not run", now()); } catch (e: any) { console.error("[armory] refund", e?.message); }
+    try { await armoryAlerts(); } catch (e: any) { console.error("[armory] alerts", e?.message); }
     // 20:30 Pacific, after the day's salvo on the map (12:00 drop, 20:00 salvo, local): the report email and the feed summary
     if (now() >= battleAt(n) + 18.5 * 3600_000) {
       if (c.emailOn()) { try { await sendReports(); } catch (e: any) { console.error("[battle] email", e?.message); } }
@@ -122,7 +143,9 @@ export function battleHub(c: BattleHubCtx) {
       const h = "@" + m.handle, last = S.shots(n).filter(s => s.d === m.id && s.f > 0), taken = last.reduce((t, s) => t + dmgAt(s, at), 0), left = last.reduce((t, s) => t + remaining(dmgAt(s, at), s.t, at, x.pts(m.id)), 0);
       members[h] = { sh: f.sh, beg: f.beg ? 1 : 0, ammo: f.ars.ammo, usd: f.ars.usd, n: f.ars.n, tech: f.ars.tech, guide: f.ars.guide, cep: f.ars.cepX, reach: f.ars.reach, best: f.ars.best, shots: f.ars.shots.length, hits: open.get(h) || [], reb: taken > 0 ? Math.round(100 * (1 - left / taken)) : 100, tgt: targetable(f) ? 1 : 0 };
     }
-    const row = (s: any) => [x.handle(s.a), x.handle(s.d), s.w, s.f, s.t, s.lot, s.blocked, s.aim, s.x || null], shots = S.shots(n).map(row), prevShots = S.shots(n - 1).filter(s => s.night === n - 1).map(row);
+    const hid = A.hiddenIds([...S.shots(n), ...S.shots(n - 1)].map(s => s.x?.bid).filter((v): v is number => v != null));
+    const xOut = (s: any) => s.x && s.x.bid != null && hid.has(s.x.bid) ? { ...s.x, word: (bombOf(s.x.bk)?.name || "").toUpperCase(), hid: 1 } : s.x || null;   // a hidden word shows as the bomb's name (armory-design B8)
+    const row = (s: any) => [x.handle(s.a), x.handle(s.d), s.w, s.f, s.t, s.lot, s.blocked, s.aim, xOut(s)], shots = S.shots(n).map(row), prevShots = S.shots(n - 1).filter(s => s.night === n - 1).map(row);
     const se = season(n, launch()), sc = scoreOf(S.shots(se.from, n), heads), night = S.shots(n);
     // the rules, as numbers, for the page's "How damage works" sheet (one source: battle.ts WAR)
     const rules = { usd: WAR.usd, w: WAR.w, weapons: WAR.weapons, classes: WAR.classes.map(k => ({ k: k.k, name: k.name, kpa: k.kpa, sqm: k.sqm, load: k.load, z: Math.round(scaledDistance(k.kpa) * 100) / 100 })), fire: WAR.fire, guide: WAR.guide, soft: WAR.soft,
@@ -150,7 +173,65 @@ export function battleHub(c: BattleHubCtx) {
     const nights = S.night(n) ? reportOf(x, m, n) : null;
     return { h: "@" + m.handle, war: on.has(id) ? 1 : 0, waive: opt.waive, report: opt.report, email: !!c.emailOf(id), emailLive: c.emailOn(),
       arsenal: f ? { usd: f.ars.usd, n: f.ars.n, tech: f.ars.tech, why: f.ars.techWhy, guide: f.ars.guide, cep: f.ars.cepX, reach: f.ars.reach, left: f.ars.left, ammo: f.ars.ammo, c: f.ars.c, pr: f.ars.pr, rel: f.ars.rel, ci: f.ars.ci, ai: f.ars.aiX, streak: f.ars.streakX, best: f.ars.best, shots: f.ars.shots.length } : null,
-      shield: f?.sh ?? 0, beginner: f?.beg ? 1 : 0, next: battleAt(n + 1), aims: S.aimsOf(n + 1, id).map(t => x.handle(t)), aimCap: WAR.manualCap, rivals, last: nights };
+      shield: f?.sh ?? 0, beginner: f?.beg ? 1 : 0, next: battleAt(n + 1), aims: S.aimsOf(n + 1, id).map(t => x.handle(t)), aimCap: WAR.manualCap, rivals, last: nights ? { ...nights, ...lastBombs(x, id, n) } : null,
+      armory: on.has(id) ? armoryOf(x, id) : null };
+  }
+  /** the Armory panel's state for one member (armory-design A7) */
+  function armoryOf(x: Ctx, id: string) {
+    const w = armoryNow(now()), on = warSet(Infinity, x), pr = PR.ensure(id), n = lastNight(now());
+    const targets = x.ms.filter(o => o.id !== id && on.has(o.id)).map(o => "@" + o.handle).sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
+    return { opensAt: w.open, locksAt: w.lock, now: now(), night: w.night, balance: A.balance(id), cap: ARMORY.perNight, wordMax: ARMORY.wordMax,
+      kinds: ARMORY.types.map(t => ({ k: t.k, name: t.name, cost: t.cost, line: t.line })),
+      bought: A.of(w.night, id).filter(b => b.state !== "refunded").map(b => ({ id: b.id, k: b.kind, word: b.word, target: b.target ? x.handle(b.target) : null })),
+      targets, lands: landsNow().filter(l => (l.towers || 0) > 0).map(l => "@" + l.h).sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" })),
+      reward: A.rewarded(id, n), tz: pr.tz, alerts: { open: pr.open, remind: pr.remind } };
+  }
+  /** recap rows (armory-design C1): custom bombs that hit you last night, and how yours did */
+  function lastBombs(x: Ctx, id: string, n: number) {
+    const sh = S.shots(n).filter(s => s.x?.bk), hid = A.hiddenIds(sh.map(s => s.x!.bid!).filter(v => v != null));
+    const word = (s: Shot) => hid.has(s.x!.bid!) ? (bombOf(s.x!.bk!)?.name || "").toUpperCase() : s.x!.word || "";
+    const cost = (s: Shot) => bombOf(s.x!.bk!)?.cost || 0, hit = (s: Shot) => s.f > 0 && !s.blocked && !((s.x?.sh || 0) >= 1);
+    const onMe = sh.filter(s => s.d === id).sort((a, b) => cost(b) - cost(a)), mine = sh.filter(s => s.a === id).sort((a, b) => cost(b) - cost(a)), top = mine.find(hit);
+    return { bombs: onMe.map(s => ({ k: s.x!.bk!, word: word(s), from: x.handle(s.a), hit: hit(s) ? 1 : 0 })),
+      mine: mine.length ? { n: mine.length, hit: mine.filter(hit).length, top: top ? { k: top.x!.bk!, word: word(top), on: x.handle(top.d) } : null } : null,
+      reward: A.rewarded(id, n) };
+  }
+  /** "Armory open" alerts and the reminder, on the growth tick (about every 15 minutes) */
+  async function armoryAlerts() {
+    const x = ctxFor(), on = warSet(Infinity, x), at = now(), n = lastNight(at), mailOn = !!c.armoryEmailOn?.();
+    if (!c.alertPost) return { sent: 0 };
+    let sent = 0;
+    for (const m of x.ms) {
+      if (!on.has(m.id)) continue;
+      const pr = PR.ensure(m.id), w = armoryNow(at), bal = A.balance(m.id);
+      const due = alertDue({ now: at, tz: pr.tz, open: pr.open, remind: pr.remind, sentOpen: pr.sentOpen, sentRemind: pr.sentRemind, balance: bal, bought: A.held(w.night, m.id), war: true });
+      if (!due || !PR.claim(m.id, due.kind, due.night)) continue;
+      const reward = A.rewarded(m.id, n), t = alertText(due.kind, { lock: w.lock, tz: pr.tz, balance: bal, reward });
+      c.alertPost({ target: m.id, key: "armory:" + due.night, title: t.title, body: t.body, ctaLabel: t.ctaLabel, ctaUrl: t.ctaUrl, by: "armory" }); sent++;
+      if (due.kind === "open" && mailOn && pr.mail) {
+        const to = c.emailOf(m.id); if (!to) continue;
+        const un = `${c.hub.replace(/\/$/, "")}/u/armory?t=${pr.token}`, mail = armoryEmail({ name: m.name || m.handle, lock: w.lock, tz: pr.tz, balance: bal, reward, hub: c.hub, unsubArmory: un, unsubAll: c.unsubAll?.(m.id) || un, postal: c.postal });
+        await c.send({ to, subject: mail.subject, html: mail.html, text: mail.text, src: "armory-open", kind: "armory", headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }).catch((e: any) => console.error("[armory] send", e?.message));
+      }
+    }
+    return { sent };
+  }
+  /** the Battles group in Settings > Notifications (frontier-design C) */
+  function settingsHtml(id: string): string {
+    const x = ctxFor(); if (!warSet(Infinity, x).has(id)) return "";
+    const pr = PR.ensure(id), w = armoryNow(now()), short = new Date(openAlertAt(w.night, pr.tz)).getTime() && clockIn(openAlertAt(w.night, pr.tz), pr.tz);
+    const city = pr.tz.split("/").pop()!.replace(/_/g, " "), e = (t: string) => t.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]!));
+    const sw = (k: string, label: string, on: boolean, d: string) => `<div class="st-row"><label for="sw-${k}">${label}</label><button type="button" class="st-sw" id="sw-${k}" role="switch" aria-checked="${on}" data-k="${k}" aria-describedby="d-${k}"></button><p id="d-${k}">${d}</p></div>`;
+    return `<style>.st-g{margin:14px 0 0;padding:14px 16px;border:1px solid var(--line,#2A2A2F);border-radius:12px}.st-gh{margin:0 0 6px;font:600 15px/1.3 inherit}.st-row{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"l s" "d d";align-items:center;gap:2px 12px;min-height:60px;padding:8px 0;border-top:1px solid var(--line,#2A2A2F)}.st-row:first-of-type{border-top:0}.st-row label{grid-area:l;font-weight:600}.st-row p{grid-area:d;margin:0;font-size:13px;opacity:.75}
+.st-sw{grid-area:s;position:relative;width:48px;height:28px;border-radius:999px;border:0;background:#8A8A94;cursor:pointer}.st-sw::before{content:"";position:absolute;inset:-8px -2px}.st-sw::after{content:"";position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .15s}.st-sw[aria-checked="true"]{background:#6E4FE0}.st-sw[aria-checked="true"]::after{transform:translateX(20px)}.st-sw:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}.st-sw[aria-busy="true"]{opacity:.6}
+.st-foot{display:grid;gap:4px;margin-top:8px;font-size:12.5px;opacity:.75}.st-err{color:#E5484D;font-size:13px;margin:6px 0 0}@media (prefers-reduced-motion:reduce){.st-sw::after{transition:none}}</style>
+<div class="st-g" role="group" aria-labelledby="st-battles"><h3 class="st-gh" id="st-battles">Battles</h3>
+${sw("armory-open", "Armory open", pr.open, `One alert a day at ${e(short || "6:00 PM")} your time, when you can pick bombs for the next battle.`)}
+${sw("armory-remind", "Reminder before lock", pr.remind, "One more alert 1 hour before the Armory locks, only if you picked no bombs. Never during your night.")}
+<div class="st-foot"><span>Sent to: the bell${c.emailOf(id) ? ". Armory open also goes to your Caldera email" : ". Caldera email is off, so no Armory email"}.</span><span>Your time zone: ${e(city)}. The Armory locks at ${e(clockIn(w.lock, pr.tz))}.</span></div>
+<p class="st-err" role="alert" hidden></p></div>
+<script>(function(){var g=document.getElementById('st-battles').parentNode,er=g.querySelector('.st-err');g.querySelectorAll('.st-sw').forEach(function(b){b.onclick=function(){var on=b.getAttribute('aria-checked')!=='true';b.setAttribute('aria-checked',on);b.setAttribute('aria-busy','true');er.hidden=true;
+var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fetch('/v1/world/battle/notify',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)}).then(function(r){if(!r.ok)throw 0}).catch(function(){b.setAttribute('aria-checked',!on);er.textContent='Could not save. Your setting did not change. Try again.';er.hidden=false}).then(function(){b.removeAttribute('aria-busy')})}})})();</script>`;
   }
   function weekNote(x: Ctx, m: GrowthMember, n: number): string {
     const sh = S.shots(n - 6, n), took = sh.filter(s => s.d === m.id).reduce((t, s) => t + usdOf(s), 0), dealt = sh.filter(s => s.a === m.id).reduce((t, s) => t + usdOf(s), 0);
@@ -161,7 +242,7 @@ export function battleHub(c: BattleHubCtx) {
   // ---------------------------------------------------------------- the battle-report email (opt-in; sends only with CALDERA_BATTLE_EMAIL=1)
   const unsubUrl = (t: string) => `${c.hub.replace(/\/$/, "")}/u/battle?t=${t}`;
   function compose(x: Ctx, m: GrowthMember, night: number, weekly: boolean) {
-    const r = reportOf(x, m, night), opt = S.ensure(m.id), shots = S.shots(night), on = warSet(Infinity, x);
+    const r = { ...reportOf(x, m, night), ...lastBombs(x, m.id, night) }, opt = S.ensure(m.id), shots = S.shots(night), on = warSet(Infinity, x);
     const built = x.ms.map(o => [x.handle(o.id), x.sims.get(o.id)?.stats.find(s => s.d === night - 1)?.top || 0] as [string, number]).filter(y => y[1] > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     const reb = x.ms.filter(o => on.has(o.id)).map(o => { const mine = shots.filter(s => s.d === o.id && s.f > 0), t = mine.reduce((a, s) => a + dmgAt(s, now()), 0), l = mine.reduce((a, s) => a + remaining(dmgAt(s, now()), s.t, now(), x.pts(o.id)), 0);
       return [x.handle(o.id), t > 0 ? Math.round(100 * (1 - l / t)) : -1] as [string, number]; }).filter(y => y[1] >= 0).sort((a, b) => b[1] - a[1]);
@@ -210,6 +291,13 @@ export function battleHub(c: BattleHubCtx) {
       const row = t ? S.byToken(t) : null; if (row) S.setReport(row.p, "off");   // idempotent; also the RFC 8058 one-click POST
       res.end(c.page("You're unsubscribed", "<p>No more battle reports. You can turn them back on any time from the World's Battle view.</p>")); return true;
     }
+    if (p === "/u/armory" && (req.method === "GET" || req.method === "POST")) {
+      const t = (url.searchParams.get("t") || "").replace(/[^\w-]/g, ""), row = t ? PR.byToken(t) : null;
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+      if (req.method === "GET") { res.end(c.page("Stop Armory emails", `<form method="post" action="/u/armory?t=${t}"><p>Stop the daily "Armory open" email to this address. The alert in your bell stays; you can change both in Settings.</p><button type="submit" style="font:600 15px/1 sans-serif;padding:12px 20px;border-radius:999px;border:0;background:#6E4FE0;color:#fff">Stop Armory emails</button></form>`)); return true; }
+      if (row) PR.set(row.p, { mail: false });
+      res.end(c.page("You're unsubscribed", "<p>No more Armory emails. The alert in your bell stays. You can turn the email back on in Settings.</p>")); return true;
+    }
     if (!p.startsWith("/v1/world/battle/")) return false;
     const id = c.memberOf(req);
     if (req.method === "GET" && p === "/v1/world/battle/me") { res.setHeader("cache-control", "private, no-store"); c.json(res, 200, id ? me(id) : { h: null }); return true; }
@@ -231,12 +319,44 @@ export function battleHub(c: BattleHubCtx) {
       else { if (S.aimsOf(night, id).length >= WAR.manualCap) { c.json(res, 409, { error: `you've aimed all ${WAR.manualCap} shots for tonight` }); return true; } S.aim(night, id, t.id, now()); }
       c.json(res, 200, me(id)); return true;
     }
+    if (p === "/v1/world/battle/tz") { const z = cleanTz(b.tz); if (z) PR.setTz(id, z); c.json(res, 200, { ok: !!z }); return true; }
+    if (p === "/v1/world/battle/notify") { PR.set(id, { open: typeof b.armoryOpen === "boolean" ? b.armoryOpen : undefined, remind: typeof b.armoryRemind === "boolean" ? b.armoryRemind : undefined }); const pr = PR.ensure(id); c.json(res, 200, { open: pr.open, remind: pr.remind }); return true; }
+    if (p === "/v1/world/battle/armory") return buy(res, id, b);
+    if (p === "/v1/world/battle/report-word") {
+      const bid = Number(b.bid), row = Number.isInteger(bid) ? A.get(bid) : null;
+      if (!row || row.state !== "fired") { c.json(res, 404, { error: "no such word" }); return true; }
+      if (row.p === id) { c.json(res, 400, { error: "that's your own word" }); return true; }
+      const n2 = A.report(bid, id, now()); cache = null; c.json(res, 200, { ok: true, reports: n2 }); return true;
+    }
     if (p === "/v1/world/battle/report") {
       const f = String(b.freq || "") as ReportFreq; if (!["daily", "weekly", "off"].includes(f)) { c.json(res, 400, { error: "freq must be daily, weekly or off" }); return true; }
       if (f !== "off" && !c.emailOf(id)) { c.json(res, 409, { error: "confirm an email first", url: "/settings" }); return true; }
       S.setReport(id, f); c.json(res, 200, me(id)); return true;
     }
     return false;
+  }
+  /** Buy (armory-design A7): all or nothing; any refused word charges nothing; one result per idempotency key */
+  function buy(res: http.ServerResponse, id: string, b: any): true {
+    const key = typeof b.key === "string" ? id + ":" + b.key.slice(0, 64) : null, at = now();
+    for (const [k, v] of idem) if (at - v.at > 600_000) idem.delete(k);
+    if (key && idem.has(key)) { const v = idem.get(key)!.v; c.json(res, v.status, v.body); return true; }
+    const done = (status: number, body: any) => { if (key) idem.set(key, { at, v: { status, body } }); c.json(res, status, body); return true as const; };
+    const x = ctxFor(), on = warSet(Infinity, x); if (!on.has(id)) return done(409, { error: "Join the battles first." });
+    const list = Array.isArray(b.bombs) ? b.bombs.slice(0, ARMORY.perNight + 1) : []; if (!list.length) return done(400, { error: "Add a bomb to start." });
+    const lands = landsNow(), handles = [...x.ms.map(m => m.handle), ...lands.map(l => l.h)], byH = new Map(x.ms.map(m => [m.handle.toLowerCase(), m.id] as [string, string]));
+    const rows: { i: number; error: string }[] = [], items: { kind: BombKind; word: string; target: string | null }[] = [];
+    list.forEach((it: any, i: number) => {
+      const kind = String(it?.k || ""); if (!bombOf(kind)) { rows.push({ i, error: "Pick a bomb." }); return; }
+      const w = checkWord(String(it?.word || "").toUpperCase(), handles); if (!w.ok) { rows.push({ i, error: w.why }); return; }
+      let target: string | null = null; const th = String(it?.target || "").replace(/^@/, "").toLowerCase();
+      if (th) { const tid = byH.get(th) || lands.find(l => l.h.toLowerCase() === th && (l.towers || 0) > 0)?.id; if (!tid || tid === id || (!tid.startsWith("uc:") && !on.has(tid))) { rows.push({ i, error: "That city isn't in the next battle. Pick another target." }); return; } target = tid; }
+      items.push({ kind: kind as BombKind, word: w.word.toUpperCase(), target });
+    });
+    if (rows.length) return done(422, { error: "Nothing was charged. Change the marked word and tap Buy again.", rows, refused: WORD_REFUSED });
+    const w = armoryNow(at), r = A.buy(id, w.night, items, at);
+    if (!r.ok) { const cap = /at most/.test(r.error); return done(cap ? 409 : 402, { error: cap ? `You have ${ARMORY.perNight} bombs for tonight. That is the most per night.` : `Your balance is now ${r.balance} credits. Remove a bomb or pick a smaller one.`, balance: r.balance, cap }); }
+    console.log(`[armory] ${x.handle(id)} bought ${items.length} for night ${w.night} (${items.map(i => i.kind).join(",")})`);
+    return done(200, { ok: true, ids: r.ids, balance: r.balance, me: me(id) });
   }
   /** operator check: a night's stored shots run again through today's strike math (same geometry, shields and order). save:
    *  store them as the night (the same missiles, attackers, targets and times; the night's meta keeps its fighters and gets
@@ -247,7 +367,15 @@ export function battleHub(c: BattleHubCtx) {
     return { night: dayKey(night), n: old.length, old: old.reduce((t, s) => t + usdOf(s), 0), new: now2.reduce((t, s) => t + usdOf(s), 0),
       shots: now2.map((s, i) => ({ a: x.handle(s.a), d: x.handle(s.d), w: s.w, old: usdOf(old[i]!), new: usdOf(s), held: heldOf(s), sh: s.x?.sh || 0 })) };
   }
-  return { route, tick, resolve, restrikeNight, state, me, postSummary, sendReports, store: S, erase: (id: string) => { S.erase(id); cache = null; },
+  /** a Frontier land left the map (claimed, removed or hidden): bombs aimed at it for the coming battle get their credits back */
+  function landGone(login: string) {
+    const t = "uc:" + login.toLowerCase(), w = armoryNow(now());
+    for (const b of A.live(w.night)) if (b.state === "paid" && b.target && b.target.toLowerCase() === t) A.refund(b.id, "the land left the map", now());
+    cache = null;
+  }
+  /** a member who just claimed a Frontier land is not put in the battles (frontier-design H5) */
+  const leave = (id: string) => { S.setWar(id, false, now()); cache = null; };
+  return { route, tick, resolve, restrikeNight, state, me, postSummary, sendReports, store: S, armory: A, prefs: PR, armoryAlerts, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
     /** operator: opt a member in; since (ms) backdates it so a seed night can include them */
     optIn: (id: string, o: { waive?: boolean; since?: number } = {}) => { S.setWar(id, true, o.since ?? now()); if (o.waive !== undefined) S.setWaive(id, o.waive); cache = null; } };
 }

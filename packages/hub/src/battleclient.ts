@@ -189,7 +189,10 @@ export function battleClient() {
       stage.appendChild(hudEl); }
     var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'fall' ? 'Final strike' : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
     hudEl.querySelector('[data-p="beat"]').textContent = (ph.demo ? 'Demo \u00b7 ' : '') + beat; hudEl.querySelector('[data-p="label"]').textContent = ph.label || '';
-    var ht = ph.hit ? hitLine(ph.hit) : '';
+    var hs = ph.hit && !ph.demo ? nightShots(ph.night)[ph.hit.ix] : null, ht = ph.hit ? hitLine(ph.hit) + bombTail(hs) : '';
+    var mh = me && me.h ? String(me.h) : null, fl = hudEl.querySelector('[data-p="flag"]'), canFlag = !!(me && bombOf(hs) && !hs[8].hid && hs[0] !== mh && !flagBusy);
+    if (canFlag && !fl) { hudEl.querySelector('.b-pt').insertAdjacentHTML('beforeend', flagHtml(hs)); fl = hudEl.querySelector('[data-p="flag"]'); }
+    if (fl) { if (!canFlag) fl.remove(); else { fl.setAttribute('aria-label', 'Report the word ' + hs[8].word); fl.onclick = function () { flagAsk(hs); }; } }
     var hb = hudEl.querySelector('[data-p="hit"]'); hb.textContent = ht + (ht && !ph.demo ? ' \u00b7 math' : ''); hb.hidden = !ht; hb.classList.toggle('sh', !!(ph.hit && (ph.hit.shield || ph.hit.sh > 0))); hudHit = ph.hit && !ph.demo ? { night: ph.night, ix: ph.hit.ix } : null;
     var pb = hudEl.querySelector('[data-p="pause"]'); pb.setAttribute('aria-pressed', String(!!ph.paused)); pb.textContent = ph.paused ? 'Play' : 'Pause';
     var sk = hudEl.querySelector('[data-p="skip"]'); sk.textContent = st === 'rebuild' ? 'Finish' : st === 'wide' ? 'Cranes' : 'Next';
@@ -197,11 +200,27 @@ export function battleClient() {
     var fo = hudEl.querySelector('[data-p="follow"]'); fo.hidden = ph.follow !== false;
   }
   function hudOff() { if (hudEl) { hudEl.remove(); hudEl = null; } }
+  var flagBusy = false;
+  function flagAsk(s) {
+    if (!hudEl) return; if (api() && api().pause) api().pause(true); flagBusy = true;
+    var pt = hudEl.querySelector('.b-pt'), keep = pt.innerHTML, q2 = document.createElement('div'); q2.className = 'b-flagq'; q2.setAttribute('role', 'group'); q2.setAttribute('aria-label', 'Report word');
+    q2.innerHTML = '<span>Report "' + esc(s[8].word) + '" from ' + esc(s[0]) + '? We hide it for you now and review it.</span><button type="button" data-p="flagyes">Report</button><button type="button" data-p="flagno">Cancel</button>';
+    var fl = pt.querySelector('[data-p="flag"]'); if (fl) fl.remove(); pt.appendChild(q2); q2.querySelector('[data-p="flagyes"]').focus();
+    var back = function () { q2.remove(); flagBusy = false; };
+    q2.querySelector('[data-p="flagno"]').onclick = back;
+    q2.querySelector('[data-p="flagyes"]').onclick = function () {
+      post('/v1/world/battle/report-word', { bid: s[8].bid }).then(function () {
+        s[8].word = (BNAME[s[8].bk] || s[8].bk).toUpperCase(); s[8].hid = 1;   // hidden for this viewer at once (B8); the sprite key follows the word
+        q2.querySelector('span').textContent = 'Reported. The word is hidden for you.'; Array.prototype.slice.call(q2.querySelectorAll('button')).forEach(function (b) { b.remove(); });
+        setTimeout(back, 2500);
+      }).catch(function () { q2.querySelector('span').textContent = 'Could not send the report. Try again.'; });
+    };
+  }
   function show() {
     on = true; if (bar) bar.hidden = false; document.documentElement.classList.add('w-battle');
     if (api()) { api().layers(layers); api().view(true, data); }
     stats(); load(); mine(); chipTick(); clearInterval(chipT); chipT = setInterval(chipTick, 1000); clearInterval(pollT); pollT = setInterval(load, 600000);
-    if (layers.replay) play(replayMode);
+    if (layers.replay) play(replayMode, true);
   }
   function hide() {
     on = false; stopPlay(); closeHow(); if (bar) bar.hidden = true; document.documentElement.classList.remove('w-battle'); if (api()) api().view(false); clearInterval(chipT); clearInterval(pollT); if (chip) { chip.remove(); chip = null; }
@@ -225,10 +244,10 @@ export function battleClient() {
   // ---------------------------------------------------------------- replay: the cinematic strike-by-strike replay (or the demo)
   var cap = q('[data-b="cap"]'), hudT = 0;
   function stopPlay() { if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); document.documentElement.classList.remove('fb-hide'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); }
-  function play(mode) {
+  function play(mode, auto) {
     if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0;
     closeHow();
-    var n = on && api() && api().replay ? api().replay(mode, { speed: speed }) : 0;
+    var n = on && api() && api().replay ? api().replay(mode, { speed: speed, auto: !!auto }) : 0;
     if (!n) { if (cap) cap.textContent = mode === 'demo' ? 'The demo needs two cities with repo towers on the map.' : 'No missiles today: nothing to replay. Try the demo replay.'; playing = setTimeout(stopPlay, 3500); return; }
     var ph = api().phase(), b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', String(mode !== 'demo')); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', String(mode === 'demo')); layers.replay = mode !== 'demo';
     if (cap) cap.textContent = (mode === 'demo' ? 'Demo: a sample battle between the biggest cities on the map, synthetic shots. ' : 'Replay: ') + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ', ' + n + ' missile' + (n === 1 ? '' : 's') + ', about ' + Math.round(ph.dur / 1000 / (ph.speed || 1)) + ' s at ' + BSPD.label(ph.speed || 1) + '. Scroll, pinch or drag to look around; Fit shows the whole map; tap the map for the next strike.';
@@ -237,6 +256,211 @@ export function battleClient() {
     hudT = setInterval(function () { try { var p2 = api() && api().phase ? api().phase() : null; if (!p2 || !p2.replay) { stopPlay(); return; } hud(p2); } catch (e) { stopPlay(); } }, 200);
     playing = setTimeout(stopPlay, 900000);   // a safety net: the poll above ends the replay when it ends, a paused one may wait
   }
+
+  // ---------------------------------------------------------------- the Armory (armory-design A): custom bombs with a word, bought with help credits
+  var BICON = {
+    sparkler: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/>',
+    thunderbolt: '<path d="M13.5 2.5 5 13.5h6l-1.5 8 8.5-11h-6z" fill="currentColor" fill-opacity=".22"/>',
+    inferno: '<path d="M12 21.5c-3.9 0-6.5-2.6-6.5-6.2 0-3.5 2.4-5.4 3.6-8.3.5 1.7 1.6 2.7 2.7 3.2.2-3.1 1.5-5.6 3.7-7.7.3 3.6 3.5 6 3.5 11.2 0 4.6-3 7.8-7 7.8z" fill="currentColor" fill-opacity=".22"/><path d="M12 21.5c-1.7 0-2.8-1.2-2.8-2.8 0-1.8 1.5-2.7 2.3-4.4 1.5 1.4 3.3 2.6 3.3 4.4 0 1.6-1.1 2.8-2.8 2.8z"/>',
+    nova: '<circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="6.4" stroke-opacity=".7"/><ellipse cx="12" cy="12" rx="10" ry="4.2" stroke-opacity=".45"/>'
+  };
+  var BNAME = { sparkler: 'Sparkler', thunderbolt: 'Thunderbolt', inferno: 'Inferno', nova: 'Nova' };
+  function bIcon(k) { return '<i class="b-bi" data-k="' + esc(k) + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (BICON[k] || '') + '</svg></i>'; }
+  var cart = [], armSkew = 0, armT = 0, armBusy = false, armOk = '', armErr = '', armTzSent = false;
+  // the target picker (frontier-design D): a button per bomb row, an inline list of battle cities, and a GitHub lookup that can add an unclaimed land
+  var pick = -1, pq = '', pAct = 0, gl = null, glT = 0, glX = null, armAim = '', GHL = /^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+  function isLand(h) { return !!(h && me && me.armory && (me.armory.lands || []).indexOf(h) >= 0); }
+  function pOpts() {
+    var A2 = me.armory, q = pq.toLowerCase(), by = function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : 1; };
+    var all = A2.targets.slice().sort(by).map(function (h) { return { h: h, t: 'member' }; }).concat((A2.lands || []).slice().sort(by).map(function (h) { return { h: h, t: 'unclaimed' }; }));
+    if (!q) return [{ h: '', t: 'any city in the battle' }].concat(all);
+    var a = [], b = []; all.forEach(function (o) { var s = o.h.replace(/^@/, '').toLowerCase(), i = s.indexOf(q); if (i === 0) a.push(o); else if (i > 0) b.push(o); });
+    return a.concat(b);
+  }
+  function ghHtml() {
+    if (!gl) return '';
+    var L = '@' + gl.login, j = gl.j || {}, st = gl.st, T = '', D = '', M = '', B = '', k = 'bad';
+    if (st === 'wait') { k = 'wait'; T = 'Checking GitHub for ' + esc(L); D = 'This takes a second.'; }
+    else if (st === 'new' && j.left === 0) { k = 'limit'; T = 'You added 20 GitHubs today'; D = 'That is the daily limit. You can add more after midnight Pacific. You can still target any land on the map.'; }
+    else if (st === 'new') { k = 'new'; T = esc(L) + ' <small>on GitHub</small>'; D = esc(j.name || gl.login) + ' &middot; ' + (j.repos || 0) + ' public repo' + (j.repos === 1 ? '' : 's'); M = 'Not on Caldera yet. Adding puts an unclaimed land on the frontier, built from public GitHub data. Caldera does not contact them.'; B = '<button type="button" class="b-gh-go" data-gh="add">Add to the map and target</button>'; }
+    else if (st === 'land') { k = 'new'; T = esc(L) + ' <small>unclaimed land</small>'; D = 'Added by ' + esc(j.by || 'Caldera') + ' &middot; ' + (j.repos || 0) + ' public repo' + (j.repos === 1 ? '' : 's'); B = '<button type="button" class="b-gh-go" data-gh="aim">Target ' + esc(L) + '</button>'; }
+    else if (st === 'limit') { k = 'limit'; T = 'You added 20 GitHubs today'; D = 'That is the daily limit. You can add more after midnight Pacific. You can still target any land on the map.'; }
+    else if (st === 'missing') { T = 'No GitHub user named ' + esc(L); D = 'Check the spelling. Use the username from github.com/username.'; }
+    else if (st === 'blocked') { T = 'That username can\'t be shown on the map'; D = 'It contains a word Caldera does not show. Pick another target.'; }
+    else if (st === 'removed') { T = esc(L) + ' can\'t be added'; D = 'This person asked not to be on Caldera. Pick another target.'; }
+    else if (st === 'org') { T = esc(L) + ' is an organization'; D = 'Only a person\'s GitHub can be a land. Type a person\'s username.'; }
+    else if (st === 'member') { T = esc('@' + (j.handle || gl.login)) + ' is on Caldera'; D = 'Their city is not in the next battle. Pick another target.'; }
+    else if (st === 'busy') { k = 'limit'; T = 'Too many lookups'; D = 'Try again in an hour. You can still target any city in the list.'; }
+    else { T = 'Could not reach GitHub'; D = 'Nothing was added.'; B = '<button type="button" class="b-gh-go ghost" data-gh="retry">Try again</button>'; }
+    return '<div class="b-gh" data-st="' + k + '" role="' + (k === 'bad' || k === 'limit' ? 'alert' : 'status') + '"><span class="b-gh-av" aria-hidden="true">' + (k === 'wait' ? '<span class="b-spin"></span>' : esc(gl.login.charAt(0).toUpperCase())) + '</span>'
+      + '<span class="b-gh-n">' + T + '</span><span class="b-gh-d">' + D + '</span>' + (M ? '<p class="b-gh-m">' + M + '</p>' : '') + B + '</div>';
+  }
+  function pList(n) {
+    var o = pOpts(); if (pAct >= o.length) pAct = Math.max(0, o.length - 1);
+    return (o.length ? '<p class="b-tp-h" id="b-tp-h-' + n + '">' + (pq ? 'Members' : 'In the next battle') + '</p><ul class="b-tp-l" id="b-tp-l-' + n + '" role="listbox" aria-labelledby="b-tp-h-' + n + '">'
+      + o.map(function (x, i) { return '<li role="option" id="b-tp-o-' + n + '-' + i + '" data-h="' + esc(x.h) + '" aria-selected="' + (i === pAct) + '"><span>' + esc(x.h || 'Random') + '</span><small>' + esc(x.t) + '</small></li>'; }).join('') + '</ul>' : '') + ghHtml();
+  }
+  function pHtml(n) {
+    return '<div class="b-tp"><div class="b-tp-in"><span aria-hidden="true">@</span><label class="sr" for="b-tp-q-' + n + '">Search a member or type a GitHub username</label>'
+      + '<input id="b-tp-q-' + n + '" type="text" role="combobox" aria-expanded="true" aria-controls="b-tp-l-' + n + '" aria-autocomplete="list" aria-activedescendant="b-tp-o-' + n + '-' + pAct + '" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="39" placeholder="Member or GitHub username" value="' + esc(pq) + '"></div>'
+      + '<div class="b-tp-r">' + pList(n) + '</div></div>';
+  }
+  function pClose(i) { pick = -1; pq = ''; gl = null; clearTimeout(glT); if (glX) { try { glX.abort(); } catch (e) {} glX = null; } armRender('#b-ar-t-' + (i + 1)); }
+  function pSet(i, h) { if (cart[i]) cart[i].target = h; pClose(i); }
+  function pLook(q) {
+    if (glX) { try { glX.abort(); } catch (e) {} } glX = typeof AbortController === 'function' ? new AbortController() : null;
+    gl = { st: 'wait', login: q }; pPaint();
+    fetch('/v1/frontier/lookup?u=' + encodeURIComponent(q), { credentials: 'same-origin', signal: glX ? glX.signal : undefined })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; }); })
+      .then(function (x) { if (pq.toLowerCase() !== q.toLowerCase()) return; gl = { st: x.j.st || 'github', login: x.j.login || q, j: x.j }; pPaint(); })
+      .catch(function (e) { if (e && e.name === 'AbortError') return; if (pq.toLowerCase() === q.toLowerCase()) { gl = { st: 'github', login: q }; pPaint(); } });
+  }
+  function pAdd(i) {
+    var login = gl && gl.login; if (!login) return; var bt = panel.querySelector('[data-gh="add"]'); if (bt) { bt.disabled = true; bt.setAttribute('aria-busy', 'true'); }
+    fetch('/v1/frontier/add', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: login }) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; }); })
+      .then(function (x) {
+        if (x.status === 200 && x.j.login) { var h = '@' + x.j.login; if (!isLand(h)) (me.armory.lands = me.armory.lands || []).push(h); armOk = h + ' is on the frontier. Caldera does not contact them.'; pSet(i, h); return; }
+        gl = { st: x.status === 429 ? 'limit' : x.j.st || 'github', login: login, j: x.j }; pPaint();
+      }).catch(function () { gl = { st: 'github', login: login }; pPaint(); });
+  }
+  function pPaint() {   // the list and the lookup card only: the input keeps its caret
+    var d = panel && panel.querySelector('#armory'), r = d && d.querySelector('.b-tp-r'), inp = d && d.querySelector('.b-tp-in input'); if (!r) return;
+    r.innerHTML = pList(pick + 1); if (inp) inp.setAttribute('aria-activedescendant', 'b-tp-o-' + (pick + 1) + '-' + pAct); pWireList();
+  }
+  function pWireList() {
+    var d = panel && panel.querySelector('#armory'); if (!d || pick < 0) return; var i = pick;
+    Array.prototype.slice.call(d.querySelectorAll('.b-tp-l li')).forEach(function (li) { li.onclick = function () { pSet(i, li.getAttribute('data-h')); }; });
+    var g = d.querySelector('.b-gh-go'); if (g) g.onclick = function () { var a = g.getAttribute('data-gh'); if (a === 'add') pAdd(i); else if (a === 'aim') { var h = '@' + gl.login; if (!isLand(h)) (me.armory.lands = me.armory.lands || []).push(h); pSet(i, h); } else pLook(gl.login); };
+  }
+  function pWire() {
+    var d = panel && panel.querySelector('#armory'); if (!d || pick < 0) return; var i = pick, inp = d.querySelector('.b-tp-in input'); if (!inp) return;
+    inp.oninput = function () {
+      pq = inp.value.replace(/^@/, '').trim(); pAct = 0; gl = null; clearTimeout(glT); if (glX) { try { glX.abort(); } catch (e) {} glX = null; }
+      var q = pq.toLowerCase(), known = pOpts().some(function (o) { return o.h.toLowerCase() === '@' + q; });
+      if (pq && GHL.test(pq) && !known) glT = setTimeout(function () { pLook(pq); }, 400);
+      pPaint();
+    };
+    inp.onkeydown = function (ev) {
+      var o = pOpts();
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); if (!o.length) return; pAct = (pAct + (ev.key === 'ArrowDown' ? 1 : o.length - 1)) % o.length; pPaint(); var a = d.querySelector('#b-tp-o-' + (i + 1) + '-' + pAct); if (a && a.scrollIntoView) a.scrollIntoView({ block: 'nearest' }); }
+      else if (ev.key === 'Enter') { ev.preventDefault(); if (o.length) pSet(i, o[pAct].h); else if (gl && gl.st === 'new' && gl.j && gl.j.left !== 0) pAdd(i); else if (gl && gl.st === 'land') { var h = '@' + gl.login; if (!isLand(h)) (me.armory.lands = me.armory.lands || []).push(h); pSet(i, h); } }
+      else if (ev.key === 'Escape') { ev.preventDefault(); pClose(i); }
+    };
+    pWireList();
+  }
+  // "Target in the Armory" on an unclaimed land's card (cityfrontier.ts): open the Armory and aim a bomb there
+  window.CALDERA_ARMORY_TARGET = function (h) {
+    if (!me || !me.armory) return false; if (h === null) return true;
+    if (!isLand(h) && me.armory.targets.indexOf(h) < 0) (me.armory.lands = me.armory.lands || []).push(h);
+    var d = panel && panel.querySelector('#armory'); if (d) d.open = true;
+    var r = cart.filter(function (x) { return !x.target; })[0];
+    if (r) { r.target = h; armOk = 'Bomb ' + (cart.indexOf(r) + 1) + ' now aims at ' + h + '.'; armRender('#b-ar-t-' + (cart.indexOf(r) + 1)); }
+    else { armAim = h; armOk = 'Pick a bomb. It aims at ' + h + '.'; armRender('.b-bc:not([disabled])'); }
+    if (d && d.scrollIntoView) d.scrollIntoView({ block: 'nearest' });
+    return true;
+  };
+  function armClock(t) { try { return new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch (e) { return hhmm(t); } }
+  function armSpan(ms) { if (ms < 60000) return 'under 1m'; var h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000); return h ? h + 'h ' + m + 'm' : m + 'm'; }
+  function armCost(k) { var A2 = me && me.armory, t = A2 && A2.kinds.filter(function (x) { return x.k === k; })[0]; return t ? t.cost : 0; }
+  function armTotal() { return cart.reduce(function (t, r) { return t + armCost(r.k); }, 0); }
+  function armBuyLabel() {
+    var A2 = me.armory, tot = armTotal();
+    if (armBusy) return ['Buying...', false];
+    if (!cart.length) return ['Add a bomb to start', false];
+    for (var i = 0; i < cart.length; i++) if (!cart[i].word) return ['Add a word to bomb ' + (i + 1), false];
+    if (tot > A2.balance) return ['Need ' + (tot - A2.balance) + ' more credits', false];
+    return ['Buy ' + cart.length + ' bomb' + (cart.length === 1 ? '' : 's') + ' for ' + tot + ' credits', true];
+  }
+  function armoryHtml() {
+    var A2 = me && me.armory; if (!A2) return '';
+    var open = !A2.bought.length; try { var sv = localStorage.getItem('caldera.world.armory'); if (sv === '1') open = true; else if (sv === '0') open = false; } catch (e) {}
+    if (location.hash === '#armory') open = true;
+    return '<details class="b-board b-arm" id="armory" data-st="open"' + (open ? ' open' : '') + '>' + armBody() + '</details>';
+  }
+  function armBody() {
+    var A2 = me.armory, tot = armTotal(), left = A2.balance - tot, room = A2.cap - A2.bought.length - cart.length;
+    var spent = A2.bought.reduce(function (t, b) { return t + armCost(b.k); }, 0);
+    var load = A2.bought.length ? '<div class="b-arm-load"><h4>Loaded for tonight <span>' + A2.bought.length + ' bomb' + (A2.bought.length === 1 ? '' : 's') + ', ' + spent + ' credits</span></h4><ul>'
+      + A2.bought.map(function (b) { return '<li>' + bIcon(b.k) + '<b>' + esc(BNAME[b.k] || b.k) + '</b><q>' + esc(b.word) + '</q><span>' + (b.target ? 'at ' + esc(b.target) : 'at a random rival') + '</span></li>'; }).join('') + '</ul></div>' : '';
+    var cards = A2.kinds.map(function (t) {
+      var n = cart.filter(function (r) { return r.k === t.k; }).length, need = t.cost - left, dis = room <= 0 || need > 0;
+      return '<button type="button" class="b-bc" data-k="' + esc(t.k) + '" aria-describedby="b-bc-' + esc(t.k) + '-d"' + (dis ? ' disabled' : '') + '>' + bIcon(t.k)
+        + '<span class="b-bc-n">' + esc(t.name) + '</span><span class="b-bc-p">' + t.cost + ' credits</span><span class="b-bc-d" id="b-bc-' + esc(t.k) + '-d">' + esc(t.line) + '</span>'
+        + '<span class="b-bc-add" aria-hidden="true">' + (room <= 0 ? A2.cap + ' per night reached' : need > 0 ? 'Need ' + need + ' more credits' : '+ Add') + '</span>'
+        + '<span class="b-bc-c"' + (n ? '' : ' hidden') + '>' + n + '</span></button>';
+    }).join('');
+    var rows = cart.map(function (r, i) {
+      var n = i + 1;
+      return '<li class="b-ar' + (r.err ? ' bad' : '') + '" data-k="' + esc(r.k) + '" data-i="' + i + '">' + bIcon(r.k) + '<span class="b-ar-n">' + esc(BNAME[r.k] || r.k) + ' <small>' + armCost(r.k) + '</small></span>'
+        + '<label class="b-ar-w"><span class="sr">Word for bomb ' + n + '</span><input id="b-ar-w-' + n + '" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="' + A2.wordMax + '" placeholder="Your word" aria-describedby="b-ar-e-' + n + '" value="' + esc(r.word) + '"' + (r.err ? ' aria-invalid="true"' : '') + '><span class="b-ar-cnt" aria-hidden="true">' + r.word.length + '/' + A2.wordMax + '</span></label>'
+        + '<button type="button" class="b-ar-tb" id="b-ar-t-' + n + '" aria-haspopup="listbox" aria-expanded="' + (pick === i) + '" aria-label="Target for bomb ' + n + ': ' + esc(r.target || 'Random') + (isLand(r.target) ? ', unclaimed land' : '') + '"><span>' + esc(r.target || 'Random') + '</span>' + (isLand(r.target) ? '<i class="b-un">Unclaimed</i>' : '') + '</button>'
+        + '<button type="button" class="b-ar-x" aria-label="Remove bomb ' + n + '">&times;</button><p class="b-ar-e" id="b-ar-e-' + n + '" role="alert"' + (r.err ? '' : ' hidden') + '>' + esc(r.err || '') + '</p>' + (pick === i ? pHtml(n) : '') + '</li>';
+    }).join('');
+    var bl = armBuyLabel();
+    return '<summary><span class="b-arm-t">Armory</span><span class="b-arm-clock" data-arm="clock" role="timer" aria-live="off"></span><span class="b-arm-bal"><b data-arm="bal">' + A2.balance + '</b> credits</span></summary>'
+      + '<p class="b-arm-lede">Custom bombs for the next battle. Each one carries a word that rises over the hit in the replay, for everyone to see.</p>' + load
+      + '<div class="b-arm-cards" role="group" aria-label="Add a bomb">' + cards + '</div><ol class="b-arm-rows" data-arm="rows" aria-label="Bombs to buy">' + rows + '</ol>'
+      + '<div class="b-arm-foot"><dl class="b-arm-sum"><dt>Balance</dt><dd data-arm="bal2">' + A2.balance + '</dd><dt>This order</dt><dd data-arm="tot">' + (tot ? '-' + tot : '0') + '</dd><dt>Left after</dt><dd data-arm="left"' + (left < 0 ? ' class="neg"' : '') + '>' + left + '</dd></dl>'
+      + '<button type="button" class="b-arm-buy" data-arm="buy"' + (bl[1] ? '' : ' disabled') + (armBusy ? ' aria-busy="true"' : '') + '>' + esc(bl[0]) + '</button></div>'
+      + (armErr ? '<p class="b-ar-e" role="alert">' + esc(armErr) + '</p>' : '')
+      + '<p class="b-arm-note" data-arm="note">' + (A2.balance < 5 && !cart.length ? 'You have ' + A2.balance + ' credits. Each city that fires in a battle gets +10. Earn more by answering asks in the <a href="/gardens">gardens</a>. ' : '') + 'Credits are spent when you tap Buy. Up to ' + A2.cap + ' bombs per night. Help credits have no cash value.</p>'
+      + '<p class="b-arm-ok" data-arm="ok" role="status"' + (armOk ? '' : ' hidden') + '>' + esc(armOk) + '</p>';
+  }
+  function armRender(focus) {
+    var d = panel && panel.querySelector('#armory'); if (!d || !me || !me.armory) return;
+    d.innerHTML = armBody(); armWire(); armTick();
+    if (focus) { var f = d.querySelector(focus); if (f) f.focus(); }
+  }
+  function armFoot() {   // typing: update the counters and the Buy button without rebuilding the rows (keeps the caret)
+    var d = panel && panel.querySelector('#armory'); if (!d) return; var bl = armBuyLabel(), b = d.querySelector('[data-arm="buy"]');
+    b.textContent = bl[0]; b.disabled = !bl[1];
+    if (armOk) { armOk = ''; var ok = d.querySelector('[data-arm="ok"]'); if (ok) ok.hidden = true; }
+  }
+  function armWire() {
+    var d = panel && panel.querySelector('#armory'); if (!d) return;
+    d.ontoggle = function () { try { localStorage.setItem('caldera.world.armory', d.open ? '1' : '0'); } catch (e) {} };
+    Array.prototype.slice.call(d.querySelectorAll('.b-bc')).forEach(function (b) { b.onclick = function () { if (b.disabled) return; cart.push({ k: b.getAttribute('data-k'), word: '', target: armAim, err: '' }); armAim = ''; armOk = ''; armErr = ''; pick = -1; armRender('#b-ar-w-' + cart.length); }; });
+    Array.prototype.slice.call(d.querySelectorAll('.b-ar')).forEach(function (li) {
+      var i = +li.getAttribute('data-i'), inp = li.querySelector('.b-ar-w input'), tb = li.querySelector('.b-ar-tb'), cnt = li.querySelector('.b-ar-cnt');
+      inp.oninput = function () { var v = inp.value.replace(/[^A-Za-z0-9]/g, '').slice(0, me.armory.wordMax); if (v !== inp.value) inp.value = v; cart[i].word = v.toUpperCase(); cnt.textContent = v.length + '/' + me.armory.wordMax;
+        if (cart[i].err) { cart[i].err = ''; li.classList.remove('bad'); inp.removeAttribute('aria-invalid'); li.querySelector('.b-ar-e').hidden = true; } armFoot(); };
+      tb.onclick = function () { if (pick === i) { pClose(i); return; } pick = i; pq = ''; gl = null; pAct = Math.max(0, pOpts().map(function (o) { return o.h; }).indexOf(cart[i].target || '')); armRender('#b-tp-q-' + (i + 1)); };
+      li.querySelector('.b-ar-x').onclick = function () { pick = -1; cart.splice(i, 1); armRender(cart.length ? '#b-ar-w-' + Math.min(i + 1, cart.length) : '.b-bc:not([disabled])'); };
+    });
+    var buy = d.querySelector('[data-arm="buy"]'); if (buy) buy.onclick = armBuy;
+    pWire();
+  }
+  function armBuy() {
+    if (armBusy || !armBuyLabel()[1]) return;
+    pick = -1; armBusy = true; armErr = ''; armRender();
+    var key = Date.now().toString(36) + Math.random().toString(36).slice(2), n = cart.length;
+    fetch('/v1/world/battle/armory', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: key, bombs: cart.map(function (r) { return { k: r.k, word: r.word, target: r.target || null }; }) }) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; }); })
+      .then(function (x) {
+        armBusy = false;
+        if (x.status === 200) { cart = []; me = x.j.me && x.j.me.h ? x.j.me : me; armOk = 'Loaded: ' + n + ' bomb' + (n === 1 ? '' : 's') + ' for the next battle. They fly at ' + armClock(me.armory.locksAt) + '. Watch them hit in the morning replay.'; armRender(); return; }
+        if (x.status === 422 && x.j.rows) { x.j.rows.forEach(function (r) { if (cart[r.i]) cart[r.i].err = 'That word can\'t be used. Use letters and numbers only, no names, links or rude words.'; }); armErr = x.j.error; armRender('.b-ar.bad input'); return; }
+        if (x.status === 402 && typeof x.j.balance === 'number') me.armory.balance = x.j.balance;
+        armErr = x.j && x.j.error ? x.j.error : 'Could not buy right now. Nothing was charged. Try again.'; armRender();
+      }).catch(function () { armBusy = false; armErr = 'Could not buy right now. Nothing was charged. Try again.'; armRender(); });
+  }
+  function armTick() {
+    var d = panel && panel.querySelector('#armory'); if (!d || !me || !me.armory) return;
+    var left = me.armory.locksAt - (Date.now() + armSkew), c = d.querySelector('[data-arm="clock"]'); if (!c) return;
+    if (left <= 0) { c.textContent = 'Battle running'; clearInterval(armT); armT = 0; setTimeout(mine, 60000); return; }
+    c.textContent = 'Locks in ' + armSpan(left); c.classList.toggle('last', left < 3600000);
+  }
+  function armStart() {
+    if (!me || !me.armory) return;
+    armSkew = me.armory.now - Date.now(); clearInterval(armT); armT = setInterval(armTick, 15000); armWire(); armTick();
+    if (!armTzSent) { armTzSent = true; try { var z = Intl.DateTimeFormat().resolvedOptions().timeZone; if (z && z !== me.armory.tz) post('/v1/world/battle/tz', { tz: z }).catch(function () {}); } catch (e) {} }
+    if (location.hash === '#armory') { var d = panel.querySelector('#armory'); if (d && d.scrollIntoView) d.scrollIntoView({ block: 'nearest' }); }
+  }
+  // the report flag on a custom bomb's word in the replay (armory-design D1)
+  function bombOf(s) { return s && s[8] && s[8].bk ? s[8] : null; }
+  function bombTail(s) { var x = bombOf(s); return x ? ' · ' + (BNAME[x.bk] || x.bk) + ' "' + x.word + '" from ' + s[0] : ''; }
+  function flagHtml(s) { return '<button type="button" data-p="flag" class="b-flag" aria-label="Report the word ' + esc(s[8].word) + '"><svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M5 21V4m0 0h11l-2 4 2 4H5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Report</button>'; }
   // ---------------------------------------------------------------- the member's panel
   var panel = q('[data-b="me"]');
   function mine() {
@@ -263,13 +487,14 @@ export function battleClient() {
       + '<details class="b-fire"><summary>Fire at a rival (optional, up to ' + me.aimCap + ' shots tonight)</summary>'
       + (opts ? '<div class="b-aim"><select aria-label="Rival to aim at">' + opts + '</select><button type="button" class="b-doaim"' + ((me.aims || []).length >= me.aimCap ? ' disabled' : '') + '>Aim a shot</button></div>' : '<p>No rivals in range yet. Auto-fire finds a fair match, or raiders from the sea.</p>')
       + (aims ? '<ul class="b-aims">' + aims + '</ul>' : '') + '</details>'
+      + armoryHtml()
       + reportHtml()
       + '<p class="b-small">' + (me.beginner || me.waive ? '<button type="button" class="b-link b-waive">' + (me.waive ? 'Turn my beginner shield back on' : 'Drop my beginner shield') + '</button> &middot; ' : '') + '<button type="button" class="b-link b-leave">Leave the battles</button> (your city rebuilds instantly)</p>';
     panel.querySelector('.b-leave').onclick = function () { act('/v1/world/battle/opt', { war: false }); };
     var wv = panel.querySelector('.b-waive'); if (wv) wv.onclick = function () { act('/v1/world/battle/opt', { waive: !me.waive }); };
     var da = panel.querySelector('.b-doaim'); if (da) da.onclick = function () { act('/v1/world/battle/aim', { target: panel.querySelector('.b-aim select').value }); };
     Array.prototype.slice.call(panel.querySelectorAll('.b-unaim')).forEach(function (b) { b.onclick = function () { act('/v1/world/battle/aim', { target: b.getAttribute('data-h'), off: true }); }; });
-    wireReport();
+    wireReport(); armStart();
   }
   function reportHtml() {
     var f = me.report || 'off';
@@ -290,6 +515,10 @@ export function battleClient() {
     var t = document.querySelector('.g-today'); if (t) t.remove();
     var raids = L.raids.length ? L.raids.map(function (r) { return esc(r.from) + ', ' + hhmm(r.t); }).join('; ') : 'none';
     var rows = [['Raids on you', L.raids.length ? L.raids.length + ' (' + raids + ')' : 'none'], ['Damage taken', L.taken > 0 ? usd(L.takenUsd) + (L.tiers ? ', ' + L.tiers + ' tower' + (L.tiers === 1 ? '' : 's') + ' hit' : '') + (L.fires ? ', ' + L.fires + ' caught fire' : '') : (L.raids.length ? 'none: your shield held' : 'none')]];
+    var bq = function (b) { return (BNAME[b.k] || b.k) + ' "' + b.word + '"'; };
+    if (L.bombs && L.bombs.length) rows.push(['Custom bombs on you', L.bombs.length + ': ' + L.bombs.slice(0, 2).map(function (b) { return bq(b) + ' from ' + b.from; }).join(', ') + (L.bombs.length > 2 ? ', +' + (L.bombs.length - 2) + ' more' : '')]);
+    if (L.mine) rows.push(['Your bombs', L.mine.n + ' flew, ' + (L.mine.hit ? L.mine.hit + ' hit. ' + (L.mine.top ? bq(L.mine.top) + ' hit ' + L.mine.top.on : '') : 'none hit: shields held')]);
+    if (L.reward > 0) rows.push(['Battle reward', '+' + L.reward + ' credits for the Armory']);
     if (L.heldUsd > 0 && L.taken > 0) rows.push(['Your shield held', usd(L.heldUsd) + ' of blast off those hits']);
     if (L.taken > 0) rows.push(['Rebuilt so far', L.rebuilt + '%']);
     rows.push(['Your towers fired', L.fired + ' shot' + (L.fired === 1 ? '' : 's') + ', ' + L.landed + ' hit' + (L.landed === 1 ? '' : 's') + (L.on.length ? ' on ' + L.on.slice(0, 2).join(', ') : '') + (L.dealtUsd ? ', ' + usd(L.dealtUsd) + ' of damage' : '')]);
@@ -297,10 +526,11 @@ export function battleClient() {
     rows.push(['Shield now', Math.round(L.shield * 100) + '%' + (L.streak ? ' (' + L.streak + '-day streak)' : '')]);
     var card = document.createElement('div'); card.className = 'b-recap'; card.setAttribute('role', 'dialog'); card.setAttribute('aria-label', 'What your city did last night');
     card.innerHTML = '<button type="button" class="g-x" aria-label="Dismiss">&times;</button><b>What your city did last night</b><dl>' + rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('') + '</dl>'
-      + '<div class="b-rbtn"><button type="button" class="g-go">&#9654; Watch the replay</button><button type="button" class="b-share">Copy link</button></div>';
+      + '<div class="b-rbtn"><button type="button" class="g-go">&#9654; Watch the replay</button><button type="button" class="b-share">Copy link</button>' + (me.armory ? '<a class="b-share b-toarm" href="#armory">Armory</a>' : '') + '</div>';
     stage.appendChild(card);
     var done = function () { card.remove(); try { localStorage.setItem('caldera.world.recap', L.night); } catch (e) {} };
     card.querySelector('.g-x').onclick = done;
+    var ta = card.querySelector('.b-toarm'); if (ta) ta.onclick = function (ev) { ev.preventDefault(); done(); var d = panel && panel.querySelector('#armory'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); var s2 = d.querySelector('summary'); if (s2) s2.focus(); } };
     card.querySelector('.g-go').onclick = function () { done(); var b = document.querySelector('[data-gview="battle"]'); if (!on && b) b.click(); setLayer('replay', true); };
     card.querySelector('.b-share').onclick = function () { var u = location.origin + '/world?view=battle&replay=1'; try { navigator.clipboard.writeText(u); card.querySelector('.b-share').textContent = 'Copied'; } catch (e) { prompt('Link to last night', u); } };
   }
@@ -374,6 +604,134 @@ html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, c
 .w-main .c-stage.c-full{height:100%;min-height:0}
 .w-battle-only{display:none}html.w-battle .w-battle-only{display:revert}html.w-battle .w-now-only,html.w-battle .w-grow-only{display:none}
 @media (max-width:600px){.b-bar{padding:8px 10px}.b-stats{gap:2px 10px;font-size:11.5px}.b-recap{top:auto;bottom:50px;right:10px}.b-chip{top:auto;bottom:10px}.b-play{bottom:10px;left:10px;right:10px;transform:none;width:auto;padding:5px 5px 5px}.b-play .b-pb{gap:3px}.b-play button{font-size:11px;padding:0 2px}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
+.b-arm{margin:0 0 8px;border:1px solid rgba(139,108,246,.38);border-radius:10px;background:rgba(139,108,246,.06);padding:0 10px}
+.b-arm>summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:44px;cursor:pointer;list-style:none;font:600 13px/1.2 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff}
+.b-arm>summary::-webkit-details-marker{display:none}
+.b-arm>summary::before{content:"";width:7px;height:7px;border-right:1.5px solid #B9A6FF;border-bottom:1.5px solid #B9A6FF;transform:rotate(-45deg);transition:transform .18s;flex:none;margin-right:2px}
+.b-arm[open]>summary::before{transform:rotate(45deg)}
+.b-arm>summary:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px;border-radius:8px}
+.b-arm-t{font-size:14px}
+.b-arm-clock{font:600 11.5px/1 var(--font-mono,'IBM Plex Mono',monospace);font-variant-numeric:tabular-nums;padding:5px 9px;border-radius:999px;border:1px solid rgba(139,108,246,.6);background:rgba(139,108,246,.16);color:#D9CCFF;white-space:nowrap}
+.b-arm[data-st="soon"] .b-arm-clock{border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.05);color:#C9D2E6}
+.b-arm[data-st="locked"] .b-arm-clock{border-color:rgba(61,242,255,.5);background:rgba(61,242,255,.1);color:#9FF6FF}
+.b-arm-clock.last{border-color:#FFB347;background:rgba(255,179,71,.14);color:#FFD9A0}   
+.b-arm-bal{margin-left:auto;font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#9A9AA5;white-space:nowrap}.b-arm-bal b{color:#fff;font-weight:600}
+.b-arm-lede{margin:0 0 10px;font-size:12.5px;color:#C9D2E6;max-width:62ch}
+.b-arm>*:last-child{margin-bottom:10px}
+
+.b-bi{display:inline-grid;place-items:center;width:22px;height:22px;flex:none;color:#C9D2E6}.b-bi svg{width:100%;height:100%}
+[data-k="sparkler"] .b-bi,.b-bi[data-k="sparkler"]{color:#FFD24A}
+[data-k="thunderbolt"] .b-bi,.b-bi[data-k="thunderbolt"]{color:#9FD8FF}
+[data-k="inferno"] .b-bi,.b-bi[data-k="inferno"]{color:#FF7A1F}
+[data-k="nova"] .b-bi,.b-bi[data-k="nova"]{color:#B9A6FF}
+
+.b-arm-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;max-width:880px;margin:0 0 10px}
+.b-bc{position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);grid-template-areas:"i n" "i p" "d d" "a a";gap:2px 8px;align-content:start;text-align:left;min-height:112px;padding:10px 10px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#161822;color:#E8EEF8;cursor:pointer;font:12px/1.35 var(--font-sans,'IBM Plex Sans',sans-serif);transition:border-color .15s,background-color .15s}
+.b-bc .b-bi{grid-area:i;align-self:start;margin-top:1px}
+.b-bc-n{grid-area:n;font:600 13.5px/1.2 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff}
+.b-bc-p{grid-area:p;font:600 11.5px/1.2 var(--font-mono,'IBM Plex Mono',monospace);font-variant-numeric:tabular-nums;color:#9A9AA5}
+.b-bc-d{grid-area:d;margin-top:6px;color:#9A9AA5;font-size:11.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.b-bc-add{grid-area:a;margin-top:6px;font:600 12px/1 var(--font-sans,'IBM Plex Sans',sans-serif);color:#B9A6FF}
+.b-bc-c{position:absolute;right:8px;top:8px;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#8B6CF6;color:#fff;font:700 11px/20px var(--font-mono,'IBM Plex Mono',monospace);text-align:center}
+.b-bc:hover{border-color:rgba(139,108,246,.7);background:#1B1D2A}
+.b-bc[data-k="sparkler"]:hover{border-color:rgba(255,210,74,.6)}.b-bc[data-k="thunderbolt"]:hover{border-color:rgba(159,216,255,.6)}.b-bc[data-k="inferno"]:hover{border-color:rgba(255,122,31,.6)}
+.b-bc:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+.b-bc:active{background:#20223A}
+.b-bc[disabled]{cursor:default;opacity:.45;border-style:dashed}.b-bc[disabled]:hover{border-color:rgba(255,255,255,.12);background:#161822}
+.b-bc[disabled] .b-bc-add{color:#9A9AA5}
+
+.b-arm-rows{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px;max-width:880px}
+.b-arm-rows:empty{display:none}
+.b-ar{display:grid;grid-template-columns:22px 116px minmax(0,1fr) minmax(0,1fr) 36px;grid-template-areas:"i n w t x" ". . e e .";align-items:center;gap:4px 8px;padding:4px 4px 4px 8px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
+.b-ar .b-bi{grid-area:i;width:16px;height:16px}
+.b-ar-n{grid-area:n;font:600 12.5px/1.2 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff;white-space:nowrap}.b-ar-n small{font:500 11px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#9A9AA5;margin-left:4px}
+.b-ar-w{grid-area:w;position:relative;min-width:0}.b-ar-t{grid-area:t;min-width:0}
+.b-ar input,.b-ar select{box-sizing:border-box;width:100%;min-height:36px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:#161822;color:#E8EEF8;font:600 13px/1 var(--font-mono,'IBM Plex Mono',monospace);padding:0 44px 0 10px;letter-spacing:.04em;text-transform:uppercase}
+.b-ar select{font:13px var(--font-sans,'IBM Plex Sans',sans-serif);padding:0 8px;letter-spacing:0;text-transform:none}
+.b-ar input::placeholder{color:#6B6E7C;text-transform:none;letter-spacing:0;font-weight:500}
+.b-ar input:focus-visible,.b-ar select:focus-visible{outline:2px solid #3DF2FF;outline-offset:1px}
+.b-ar-cnt{position:absolute;right:8px;top:50%;transform:translateY(-50%);font:500 10.5px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#6B6E7C;pointer-events:none;font-variant-numeric:tabular-nums}
+.b-ar-x{grid-area:x;width:36px;height:36px;border:0;border-radius:50%;background:transparent;color:#9A9AA5;font-size:18px;cursor:pointer}.b-ar-x:hover{background:rgba(255,255,255,.06);color:#fff}.b-ar-x:focus-visible{outline:2px solid #3DF2FF}
+.b-ar-e{grid-area:e;margin:0 0 2px;font-size:12px;line-height:1.4;color:#FF9A9A}
+.b-ar.bad{border-color:rgba(255,154,154,.55);background:rgba(255,154,154,.06)}.b-ar.bad input{border-color:#FF9A9A}
+.b-board li .b-ar-tb,.b-ar-tb{grid-area:t;display:flex;align-items:center;gap:6px;width:100%;min-width:0;min-height:36px;padding:0 10px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:#161822;color:#E8EEF8;font:13px/1 var(--font-sans,'IBM Plex Sans',sans-serif);cursor:pointer;text-align:left}
+.b-ar-tb>span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-ar-tb::after{content:"";flex:none;width:6px;height:6px;border-right:1.5px solid #9A9AA5;border-bottom:1.5px solid #9A9AA5;transform:rotate(45deg) translateY(-2px);transition:transform .18s}
+.b-ar-tb[aria-expanded="true"]{border-color:#3DF2FF}.b-ar-tb[aria-expanded="true"]::after{transform:rotate(-135deg) translateY(-2px)}
+.b-ar-tb:focus-visible{outline:2px solid #3DF2FF;outline-offset:1px}
+.b-un{flex:none;font:600 10px/1 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.06em;text-transform:uppercase;padding:3px 5px;border-radius:4px;border:1px dashed rgba(201,210,230,.55);color:#C9D2E6}
+.b-tp{grid-area:p;display:grid;gap:8px;margin:2px 0 4px;padding:8px;border-radius:10px;border:1px solid rgba(61,242,255,.28);background:#12141D;min-width:0}
+.b-tp-in{position:relative}
+.b-tp-in>span{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9A9AA5;font:600 13px/1 var(--font-mono,'IBM Plex Mono',monospace);pointer-events:none}
+.b-tp-in input{box-sizing:border-box;width:100%;min-height:36px;padding:0 10px 0 25px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:#161822;color:#E8EEF8;font:500 13px/1 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:0;text-transform:none}
+.b-tp-in input::placeholder{color:#8B8E9C;font-family:var(--font-sans,'IBM Plex Sans',sans-serif)}
+.b-tp-in input:focus-visible{outline:2px solid #3DF2FF;outline-offset:1px}
+.b-tp-h{margin:0;padding:2px 8px 0;font:500 10.5px/1 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.08em;text-transform:uppercase;color:#9A9AA5}
+.b-tp-l{list-style:none;margin:0;padding:0;max-height:180px;overflow:auto;display:grid}
+.b-tp-l li{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 8px;border-radius:8px;cursor:pointer;font:13px/1.2 var(--font-sans,'IBM Plex Sans',sans-serif);color:#E8EEF8;min-width:0}
+.b-tp-l li>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-tp-l li small{margin-left:auto;flex:none;color:#9A9AA5;font:500 11px/1 var(--font-mono,'IBM Plex Mono',monospace)}
+.b-tp-l li:hover{background:rgba(255,255,255,.06)}.b-tp-l li[aria-selected="true"]{background:rgba(61,242,255,.14);box-shadow:inset 0 0 0 1px rgba(61,242,255,.5)}
+.b-gh{display:grid;grid-template-columns:36px minmax(0,1fr);gap:2px 10px;align-items:center;padding:8px;border-radius:8px;border:1px dashed rgba(201,210,230,.4);background:rgba(255,255,255,.03);font:12px/1.4 var(--font-sans,'IBM Plex Sans',sans-serif);color:#C9D2E6}
+.b-gh[data-st="bad"]{border:1px solid rgba(255,154,154,.55);background:rgba(255,154,154,.06)}
+.b-gh[data-st="limit"]{border:1px solid rgba(255,179,71,.55);background:rgba(255,179,71,.07)}
+.b-gh[data-st="wait"]{border-style:solid;border-color:rgba(255,255,255,.14)}
+.b-gh-av{grid-row:span 2;width:36px;height:36px;border-radius:8px;background:#23263A;display:grid;place-items:center;color:#C9D2E6;font:600 15px/1 var(--font-mono,'IBM Plex Mono',monospace);overflow:hidden}
+.b-gh-av img{width:100%;height:100%;object-fit:cover;filter:grayscale(1)}
+.b-gh-n{font:600 13px/1.25 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff;min-width:0;overflow-wrap:anywhere}
+.b-gh-n small{font:500 11px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#9A9AA5;margin-left:6px}
+.b-gh-d{min-width:0}
+.b-gh-m{grid-column:1/-1;margin:4px 0 0}
+.b-board li .b-gh-go,.b-gh-go{grid-column:1/-1;justify-self:start;margin-top:6px;font:600 13px/1 var(--font-sans,'IBM Plex Sans',sans-serif);background:#8B6CF6;color:#fff;border:0;border-radius:999px;padding:0 14px;min-height:36px;cursor:pointer}
+.b-board li .b-gh-go:hover,.b-gh-go:hover{background:#7A5BEA}.b-gh-go:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+.b-board li .b-gh-go.ghost,.b-gh-go.ghost{background:transparent;border:1px solid rgba(255,255,255,.25);color:#E8EEF8}
+.b-spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.2);border-top-color:#3DF2FF;border-radius:50%;animation:b-spin .8s linear infinite}
+@keyframes b-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.b-spin{animation:none;border-top-color:rgba(255,255,255,.2);border-right-color:#3DF2FF}.b-ar-tb::after{transition:none}}
+@media (max-width:600px){.b-ar-tb,.b-tp-in input,.b-gh-go{min-height:44px}.b-tp-in input{font-size:16px}.b-tp-l li{min-height:44px}}
+.b-ar{grid-template-areas:"i n w t x" ". . e e ." "p p p p p"}.b-tp-r{display:contents}.b-board li .b-ar-tb[aria-expanded="true"]{border-color:#3DF2FF}
+
+.b-arm-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px;max-width:880px;margin:0 0 6px}
+.b-arm-sum{display:grid;grid-template-columns:repeat(3,auto);grid-auto-flow:column;grid-template-rows:auto auto;gap:0 18px;margin:0;font-variant-numeric:tabular-nums}
+.b-arm-sum dt{font-size:11px;color:#9A9AA5}.b-arm-sum dd{margin:0;font:600 15px/1.3 var(--font-mono,'IBM Plex Mono',monospace);color:#fff}
+.b-arm-sum dd[data-arm="tot"]{color:#FFB347}.b-arm-sum dd.neg{color:#FF9A9A}
+.b-arm-buy{font:600 14px/1 var(--font-sans,'IBM Plex Sans',sans-serif);background:#8B6CF6;color:#fff;border:0;border-radius:999px;padding:0 20px;min-height:44px;cursor:pointer;transition:background-color .15s}
+.b-arm-buy:hover{background:#7A5BEA}.b-arm-buy:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+.b-arm-buy[disabled]{background:rgba(139,108,246,.28);color:rgba(255,255,255,.6);cursor:default}
+.b-arm-buy[aria-busy="true"]{background:#6E4FE0;cursor:progress}
+.b-arm-note{margin:0 0 8px;font-size:11.5px;color:#9A9AA5}
+.b-arm-ok{margin:0 0 10px;padding:8px 10px;border-radius:8px;border:1px solid rgba(61,242,255,.4);background:rgba(61,242,255,.08);color:#C9F8FF;font-size:12.5px}
+
+.b-arm-load{margin:0 0 10px;max-width:880px}
+.b-arm-load h4{margin:0 0 4px;font:600 12.5px/1.3 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff}.b-arm-load h4 span{font:500 11.5px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#9A9AA5;margin-left:6px}
+.b-arm-load ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.b-arm-load li{display:grid;grid-template-columns:16px 90px minmax(0,auto) minmax(0,1fr);align-items:center;gap:8px;min-height:28px;font:12.5px/1.3 var(--font-sans,'IBM Plex Sans',sans-serif);color:#C9D2E6;border-bottom:1px solid rgba(255,255,255,.06)}
+.b-arm-load li .b-bi{width:16px;height:16px}.b-arm-load li b{color:#fff;font-weight:600}
+.b-arm-load q{quotes:none;font:600 12.5px/1 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.04em;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-arm-load li span{color:#9A9AA5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-arm[data-st="locked"] .b-arm-cards,.b-arm[data-st="locked"] .b-arm-rows,.b-arm[data-st="locked"] .b-arm-foot,.b-arm[data-st="locked"] .b-arm-note{display:none}
+
+@media (max-width:600px){
+  .b-arm{padding:0 8px}
+  .b-arm-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .b-bc{min-height:104px;padding:9px 9px 8px}
+  .b-ar{grid-template-columns:22px minmax(0,1fr) minmax(0,1fr) 44px;grid-template-areas:"i n n x" "w w t t" "e e e e" "p p p p";padding:4px 4px 6px 8px}
+  .b-ar-x{width:44px;height:44px}
+  .b-ar input,.b-ar select{min-height:44px;font-size:16px}   
+  .b-arm-foot{flex-direction:column;align-items:stretch}
+  .b-arm-sum{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .b-arm-buy{width:100%;min-height:48px}
+  .b-arm-load li{grid-template-columns:16px minmax(0,auto) minmax(0,1fr);grid-template-areas:"i b q" ". s s"}.b-arm-load li .b-bi{grid-area:i}.b-arm-load li b{grid-area:b}.b-arm-load li q{grid-area:q}.b-arm-load li span{grid-area:s}
+}
+@media (prefers-reduced-motion:reduce){.b-arm>summary::before,.b-bc,.b-arm-buy{transition:none}}
+.b-play .b-pt{grid-template-columns:minmax(0,1fr) auto;align-items:center}.b-play .b-l1{grid-column:1/-1}
+.b-play .b-flag{display:inline-flex;align-items:center;gap:4px;flex:none;min-height:28px!important;min-width:0!important;padding:0 8px!important;border-radius:999px!important;background:transparent!important;border:1px solid rgba(255,154,154,.4)!important;color:#FFB4B4!important;font:500 11px/1 var(--font-mono,'IBM Plex Mono',monospace)!important}
+.b-play .b-flag:hover{background:rgba(255,154,154,.1)!important}
+.b-flagq{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:#F2F2F5;font:500 12px/1.35 var(--font-sans,'IBM Plex Sans',sans-serif)}
+.b-flagq span{flex:1 1 200px;min-width:0}
+.b-play .b-flagq button{flex:0 0 auto;min-height:36px;padding:0 12px}.b-play .b-flagq [data-p="flagyes"]{background:#8B6CF6;border-color:#8B6CF6;color:#fff;font-weight:600}
+.b-arm .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.b-arm .b-arm-note a{color:#B9A6FF}
 `;
 
 export function battleMarkup(): string {

@@ -27,6 +27,8 @@ export interface GhPreviewCtx {
   trackCareer?: (req: http.IncomingMessage, step: "cg-a" | "cg-b") => void;
   track?: (req: http.IncomingMessage, step: "save-a" | "save-b") => void;
   pause?: number;
+  /** a Frontier land hidden by a removal request (or on the do-not-add list): no preview, like removed.txt */
+  hidden?: (login: string) => boolean;
 }
 interface Preview { org?: boolean; login: string; name: string; bio: string; html_url: string; fetched: string; city: CityData; repos: number; commits: number }
 type Got = { ok: true; p: Preview } | { ok: false; status: 404 | 422 | 429 | 502; why: string };
@@ -263,7 +265,7 @@ ${tail}`}`;
       res.writeHead(302, { location: `/@${member}/city.html` }); res.end(); return true;
     }
     if (m[2] === "/") { res.writeHead(301, { location: `/gh/${login}${url.searchParams.get("gf") === "1" ? "?gf=1" : ""}` }); res.end(); return true; }
-    if (removed(login)) {
+    if (removed(login) || c.hidden?.(login)) {
       if (m[2] === "/badge.svg") { send(res, 404, "image/svg+xml; charset=utf-8", badgeSvg({ who: "@" + login, repos: 0, commits: 0, style }), "no-cache"); return true; }
       if (m[2] === "/card.png") { res.writeHead(302, { location: "/world/preview.png" }); res.end(); return true; }
       send(res, m[2] === "/career" ? 404 : 410, "text/html; charset=utf-8", sitePage("GitHub city - Caldera", `<h1>Removed</h1><p class="lede">This preview was removed at its owner's request.</p>`, `<meta name="robots" content="noindex">`), "no-cache", { "content-security-policy": CSP }); return true;
@@ -298,7 +300,14 @@ ${tail}`}`;
     if (cg && c.trackCareer) c.trackCareer(req, cg === "b" ? "cg-b" : "cg-a");
     send(res, 200, "text/html; charset=utf-8", previewPage(g.p, `/gh/${g.p.login}`, !!arm, cg === "b", !!c.googleFirst?.(url)), c.saveArm ? "private, max-age=0" : "public, max-age=600", { "content-security-policy": CSP }); return true;
   }
-  return { route, memberBadge, get, badgeSnippet: (handle: string) => snippet(`${c.hub()}/@${handle}/city.html`, `${c.hub()}/@${handle}/badge.svg?style=card`, "My GitHub city on Caldera") };
+  /** one public GitHub user (Frontier lookup): numeric id, type, name, public repo count. Never the email. */
+  async function user(login: string): Promise<{ status: number; id?: number; login?: string; type?: string; name?: string; repos?: number }> {
+    if (removed(login)) return { status: 404 };
+    const token = await c.token().catch(() => null), u = await gh(token, `/users/${encodeURIComponent(login)}`);
+    if (u.status !== 200 || !u.body?.login) return { status: u.status === 404 ? 404 : 502 };
+    return { status: 200, id: Number(u.body.id), login: String(u.body.login), type: String(u.body.type || ""), name: String(u.body.name || u.body.login).slice(0, 80), repos: Number(u.body.public_repos) || 0 };
+  }
+  return { route, memberBadge, get, user, badgeSnippet: (handle: string) => snippet(`${c.hub()}/@${handle}/city.html`, `${c.hub()}/@${handle}/badge.svg?style=card`, "My GitHub city on Caldera") };
 }
 
 const COPY_JS = `document.addEventListener('click',function(e){var b=e.target.closest('[data-copy],[data-copy-el]');if(!b)return;var t=b.getAttribute('data-copy')||((document.getElementById(b.getAttribute('data-copy-el'))||{}).textContent||'');

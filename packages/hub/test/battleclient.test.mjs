@@ -35,7 +35,7 @@ test("speed persistence: the choice is saved per viewer and read back; 1x for a 
 
 test("battle client script: parses, reads the saved speed at start, starts replays at it, saves a change; one compact bar of 44 px controls", () => {
   const js = M.BATTLE_CLIENT_JS; new Function(js);
-  assert.ok(js.includes("speed = BSPD.load()"), "starts at the viewer's saved speed"); assert.ok(/api\(\)\.replay\(mode, \{ speed(: speed)? \}\)/.test(js), "a replay starts at it");
+  assert.ok(js.includes("speed = BSPD.load()"), "starts at the viewer's saved speed"); assert.ok(/api\(\)\.replay\(mode, \{ speed(: speed)?(, auto: !!auto)? \}\)/.test(js), "a replay starts at it");
   assert.ok(/speed = BSPD\.next\(speed\);\s*BSPD\.save\(speed\);\s*if \(A\(\) && A\(\)\.speed\) A\(\)\.speed\(speed\)/.test(js), "a tap on the speed button cycles, saves and applies at once");
   for (const k of ["prev", "pause", "skip", "speed", "fit", "follow", "stop"]) assert.ok(js.includes(`data-p="${k}"`), `a ${k} control`);
   assert.ok(/data-p="follow"[^>]*hidden/.test(js) && js.includes("fo.hidden = ph.follow !== false"), "Follow shows only once the viewer has moved the camera");
@@ -48,7 +48,7 @@ test("battle client script: parses, reads the saved speed at start, starts repla
 });
 
 test("11-13 pure city: the replay (and the demo) sets html.w-replay while it plays and clears it on End or when it finishes; it never writes the viewer's Labels or Friendships choice", async () => {
-  const js = M.BATTLE_CLIENT_JS, play = js.slice(js.indexOf("function play(mode)"), js.indexOf("function mine()")), stop = js.slice(js.indexOf("function stopPlay()"), js.indexOf("function play(mode)"));
+  const js = M.BATTLE_CLIENT_JS, play = js.slice(js.indexOf("function play(mode, auto)"), js.indexOf("function mine()")), stop = js.slice(js.indexOf("function stopPlay()"), js.indexOf("function play(mode, auto)"));
   assert.ok(play.includes("classList.add('w-replay')") || play.includes('classList.add("w-replay")'), "play() sets the class the city renderer's PURE flag keys on");
   assert.ok(stop.includes("classList.remove('w-replay')") || stop.includes('classList.remove("w-replay")'), "stopPlay() clears it, so labels and rays come back");
   assert.ok(/if \(!p2 \|\| !p2\.replay\) \{\s*stopPlay\(\)/.test(play), "a replay that runs out ends through stopPlay too");
@@ -72,4 +72,20 @@ test("11-15 replay wording: a shielded hit reads 'shield cut it to $X' (never 's
   for (const t of ["Without a shield", "% off: ", " held", "that got through", "A shield cuts a hit down. It never stops it", "damage = what the missile would do x (1 - shield)", "no strike comes to $0"]) assert.ok(js.includes(t), "copy: " + t);
   assert.ok(!js.includes("stops everything for your first 30 days"), "the old beginner-shield line is gone");
   assert.ok(/hb\.classList\.toggle\(["']sh["']/.test(js), "a shielded hit line is styled as a shield cut");
+});
+
+test("11-18 Armory panel: countdown format, Buy label states, CSS present, page script parses", () => {
+  const src = M.battleClient.toString(), grab = name => { const i = src.indexOf("function " + name + "("); assert.ok(i > 0, name); let d = 0, j = src.indexOf("{", i); for (; j < src.length; j++) { if (src[j] === "{") d++; else if (src[j] === "}" && !--d) break; } return src.slice(i, j + 1); };
+  const mk = new Function("me", "cart", "armBusy", ["armSpan", "armCost", "armTotal", "armBuyLabel"].map(grab).join("\n") + ";return {armSpan:armSpan,armBuyLabel:armBuyLabel}");
+  const me = { armory: { balance: 30, cap: 20, kinds: [{ k: "sparkler", cost: 5 }, { k: "inferno", cost: 25 }, { k: "nova", cost: 50 }] } };
+  const f = (cart, busy = false) => mk(me, cart, busy);
+  assert.equal(f([]).armSpan(5 * 3600_000 + 40 * 60_000), "5h 40m"); assert.equal(f([]).armSpan(42 * 60_000), "42m"); assert.equal(f([]).armSpan(30_000), "under 1m");
+  assert.deepEqual(f([]).armBuyLabel(), ["Add a bomb to start", false]);
+  assert.deepEqual(f([{ k: "sparkler", word: "HI" }, { k: "sparkler", word: "" }]).armBuyLabel(), ["Add a word to bomb 2", false]);
+  assert.deepEqual(f([{ k: "nova", word: "GG" }]).armBuyLabel(), ["Need 20 more credits", false]);
+  assert.deepEqual(f([{ k: "sparkler", word: "HI" }]).armBuyLabel(), ["Buy 1 bomb for 5 credits", true]);
+  assert.deepEqual(f([{ k: "sparkler", word: "HI" }, { k: "inferno", word: "SHIPIT" }]).armBuyLabel(), ["Buy 2 bombs for 30 credits", true]);
+  assert.deepEqual(f([{ k: "sparkler", word: "HI" }], true).armBuyLabel(), ["Buying...", false]);
+  for (const c of [".b-arm{", ".b-bc{", ".b-ar{", ".b-arm-buy{", ".b-flag{", ".b-flagq{"]) assert.ok(M.BATTLE_CSS.includes(c), c);
+  assert.doesNotThrow(() => new Function(M.BATTLE_CLIENT_JS));
 });

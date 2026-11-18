@@ -196,7 +196,8 @@ export interface Fighter {
  *  shield took off, cd civil defence (x), st how much of the tower still stood (x), pc team share (x), raw the blast's share
  *  before those. With a shield: pot the blast $ without it, held the blast $ it took off (pot - u). Nights before 11-15: a
  *  blocked shot (100% shield) did nothing and pot was all of it. */
-export interface ShotX { u: number; fi: number; fu: number; sp: 0 | 1; m: number; cep: number; r: number; kpa: number; c: number; fl: number; v: number; sh: number; cd: number; st: number; pc: number; raw: number; pot?: number; held?: number }
+export interface ShotX { u: number; fi: number; fu: number; sp: 0 | 1; m: number; cep: number; r: number; kpa: number; c: number; fl: number; v: number; sh: number; cd: number; st: number; pc: number; raw: number; pot?: number; held?: number;
+  /** an Armory bomb (armory.ts): its type key, the word that rises over the hit, and the bomb's row id */ bk?: string; word?: string; bid?: number }
 /** f = the share of the tower the blast destroyed (1 = the whole tower); ammo = the missile's price, $ (points before 11-14) */
 export interface Shot { k: number; a: string; d: string; w: Weapon; ammo: number; roll: number; f: number; lot: number; t: number; aim: 0 | 1; blocked: 0 | 1; x?: ShotX | null }
 export interface NightIn {
@@ -205,7 +206,13 @@ export interface NightIn {
   /** defender -> towers' worth taken over the previous 6 nights (civil defence) */ week?: Map<string, number>;
   /** attacker -> targets they aimed at tonight, in order (manual fire, at most 3 shots) */ aims?: Map<string, string[]>;
   /** defender -> lot index -> damage still showing from earlier nights (a wrecked tower has less left to wreck) */ open?: Map<string, Map<number, number>>;
+  /** Armory bombs bought for this night (armory.ts). They fly after every normal shot, so a night nobody buys for is unchanged.
+   *  target: a fighter id, or null for a random rival of the buyer */
+  bombs?: NightBomb[];
+  /** Frontier lands (frontier.ts): only an Armory bomb aimed at one can hit it. They fire nothing, have no shield and are
+   *  nobody's rival. Ids are "uc:<login>". */ lands?: Fighter[];
 }
+export interface NightBomb { id: number; a: string; w: Weapon; k: string; word: string; target: string | null }
 export const band = (side: number) => side <= 3 ? 0 : side <= 5 ? 1 : side <= 8 ? 2 : 3;
 export const builtLots = (lots: string) => { const out: number[] = []; for (let i = 0; i < lots.length; i++) if (Number(lots[i]) >= 4) out.push(i); return out; };
 export const targetable = (f: Fighter) => (f.idle === null || f.idle < WAR.idleDays) && (f.towers || 0) > 0;
@@ -259,9 +266,10 @@ export function fallenOf(shots: Shot[]): string | null {
 
 /** Resolve one night. Deterministic for the same input. Raiders stand in for a missing fair rival, with the night's median
  *  budget (at least $500k, rockets at most), and they fire back. */
-export function resolveNight(o: NightIn): { shots: Shot[]; raiders: string[] } {
+export function resolveNight(o: NightIn): { shots: Shot[]; raiders: string[]; fired: { id: number; k: number }[]; unfired: number[] } {
   const R = rng("night:" + o.night), T0 = battleAt(o.night), shots: Shot[] = [];
   const F = [...o.fighters].sort((a, b) => a.id < b.id ? -1 : 1), byId = new Map(F.map(f => [f.id, f] as [string, Fighter]));
+  const landById = new Map((o.lands || []).map(f => [f.id, f] as [string, Fighter]));
   const targets = F.filter(targetable);
   const taken = new Map<string, number>();
   const lotDmg = new Map<string, Map<number, number>>();
@@ -307,8 +315,20 @@ export function resolveNight(o: NightIn): { shots: Shot[]; raiders: string[] } {
       for (const w of shotsFor(med, "rocket")) fire(RAIDERS, 1, 1, w, a, 0);
     }
   }
+  // Armory bombs: after every normal shot (their own random stream, so the normal night is the same with or without them).
+  // A bomb whose buyer is not fighting tonight, or that has no valid target, does not fire: the caller refunds it.
+  const unfired: number[] = [], BR = rng("bombs:" + o.night);
+  for (const bm of o.bombs || []) {
+    const a = byId.get(bm.a); if (!a) { unfired.push(bm.id); continue; }
+    let d: Fighter | null = bm.target ? byId.get(bm.target) || landById.get(bm.target) || null : null;
+    if (d && (d.id === a.id || !targetable(d))) d = null;
+    if (!d && bm.target) { unfired.push(bm.id); continue; }   // a named target that left the battles: refund rather than hit someone else
+    if (!d) { const rv = rivalsOf(a); if (!rv.length) { unfired.push(bm.id); continue; } d = rv[Math.floor(BR() * rv.length)]!; }
+    const n0 = shots.length; fire(a.id, 1 / Math.max(1, a.heads), a.ars.cepX || 1, bm.w, d, bm.target ? 1 : 0);
+    const sh = shots[n0]!; sh.x = { ...(sh.x as ShotX), bk: bm.k, word: bm.word, bid: bm.id };
+  }
   shots.sort((x, y) => x.t - y.t || x.k - y.k); shots.forEach((s, i) => s.k = i);
-  return { shots, raiders: raided };
+  return { shots, raiders: raided, fired: shots.filter(s => s.x?.bid != null).map(s => ({ id: s.x!.bid!, k: s.k })), unfired };
 }
 
 // ---------------------------------------------------------------- 6. regeneration (always, with zero player action)
@@ -343,6 +363,7 @@ export function scoreOf(shots: Shot[], heads: (id: string) => number): Map<strin
 
 // ---------------------------------------------------------------- 8. "What your city did last night"
 export interface Report {
+  /** the Armory (armory-design C): custom bombs that hit you, and how yours did */ bombs?: { k: string; word: string; from: string; hit: number }[]; mine?: { n: number; hit: number; top: { k: string; word: string; on: string } | null } | null;
   night: string; h: string; peace: boolean;
   raids: { from: string; t: number; shots: number; landed: number; f: number }[];
   /** towers' worth taken (blast and fire) */ taken: number; /** towers hit */ tiers: number; rebuilt: number; fired: number; landed: number; on: string[]; /** towers' worth dealt */ dealt: number;
@@ -375,7 +396,12 @@ export function mvpOf(events: GEvent[], day: number): { repo: string; bricks: nu
 // ---------------------------------------------------------------- 9. the battle-report email (opt-in; sending stays off until Mike says go)
 export interface WorldLines { built: [string, number][]; hit: [string, number][]; attackers: [string, number][]; rebuilds: [string, number][]; stacked?: [string, number][]; rivalry: [string, string, number] | null; season: { n: number; week: number } }
 const hhmm = (t: number) => new Date(t).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Los_Angeles" });
+const bName = (k: string) => k.charAt(0).toUpperCase() + k.slice(1), bq = (b: { k: string; word: string }) => `${bName(b.k)} "${b.word}"`;
+const an = (k: string) => (/^[aeiou]/i.test(k) ? "an " : "a ") + bName(k);
 export function battleSubject(r: Report): string {
+  const hb = (r.bombs || []).filter(b => b.hit);
+  if (hb.length >= 2) return `${hb.length} custom bombs hit your city last night`;
+  if (hb.length === 1) return `${hb[0]!.from} hit you with ${an(hb[0]!.k)} ("${hb[0]!.word}")`;
   if (r.peace) return `Your city today: peaceful zone, ${r.built} lot${r.built === 1 ? "" : "s"} built`;
   if (!r.raids.length) return `Your city today: ${r.fired} missile${r.fired === 1 ? "" : "s"} stacked, no hits on your towers`;
   const who = r.raids.map(x => x.from).slice(0, 2).join(" and ");
@@ -393,6 +419,10 @@ export function battleEmail(r: Report, w: WorldLines, o: { name: string; hub: st
     if (r.fired) L.push(`Salvo at 20:00: ${r.fired} fired, ${r.landed} landed${r.on.length ? " on " + r.on.slice(0, 3).join(", ") : ""}${r.dealtUsd > 0 ? `, ${fmtUsd(r.dealtUsd)} of damage` : ""}.`);
     if (!r.raids.length) L.push("No missiles came your way.");
     else L.push(r.taken > 0 ? `Hits on your towers: ${fmtUsd(r.takenUsd)} of damage from ${r.raids.map(x => x.from).join(", ")}${r.tiers ? ` (${n1(r.tiers, "tower")} hit${r.fires ? `, ${r.fires} caught fire` : ""})` : ""}.${r.heldUsd > 0 ? ` Your shield took ${fmtUsd(r.heldUsd)} off.` : ""} Cranes rebuild overnight, whole by noon.` : `Your shield held: ${r.raids.map(x => x.from).join(", ")} fired at you, nothing landed.`);
+    const bs = r.bombs || [];
+    if (bs.length) L.push(`Custom bombs on you: ${bs.length}. ${bs.slice(0, 5).map(b => `${bq(b)} from ${b.from}`).join(", ")}${bs.length > 5 ? `, and ${bs.length - 5} more` : ""}.`);
+    if (r.mine) L.push(`Your bombs: ${r.mine.n} flew, ${r.mine.hit ? `${r.mine.hit} hit.${r.mine.top ? ` ${bq(r.mine.top)} hit ${r.mine.top.on}.` : ""}` : "none hit: shields held."}`);
+    if (bs.length || r.mine) L.push(`Armory for the next battle: ${hub}/world?view=battle#armory`);
     L.push(`Shield ${Math.round(r.shield * 100)}%${r.streak ? ` (${r.streak}-day streak)` : ""}.`);
     if (r.mvp) L.push(`MVP: ${r.mvp.repo}, ${n1(r.mvp.bricks, "brick")} laid.`);
   }

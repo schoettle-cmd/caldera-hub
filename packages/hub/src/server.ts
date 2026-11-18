@@ -47,6 +47,8 @@ import { closenessOrder, buildWorld, foldLive, agentRank, worldPage, type World,
 import { buildLand, landJob, landStore, type LandIn, type LandWorld } from "./land";
 import { growthHub, type GrowthMember } from "./growthhub";
 import { battleHub } from "./battlehub";
+import { frontier } from "./frontier";
+import { FRONTIER_SEED } from "./frontierseed";
 import { leaderboard as leaderboardHub } from "./leaderboard";
 import { sysPosts, SYSTEM_AGENT } from "./sysposts";
 import { citySnapshot, applyPrivateMode, rewriteCityPage, upgradeCityScript, type CityData } from "../../../../caldera/packages/plugin/src/city";
@@ -1024,6 +1026,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     for (const t of ["land_gh", "land_side", "land_hist"]) del(`DELETE FROM ${t} WHERE profile=?`, id);   // the World's Expansion view
     GROWTH?.erase(id);   // the World's growth views
     BATTLE?.erase(id);   // the World's battles
+    FR?.erase(id);   // Frontier lands they added stay, credited to Caldera
   }
 
   // ---------------------------------------------------------------- one person, one profile: merging duplicates
@@ -1685,6 +1688,9 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
       return null;
     },
     send: m => mail.sendRaw(m), emailOn: () => process.env.CALDERA_BATTLE_EMAIL === "1",
+    // the Armory (armory.ts): bell alerts always; the "Armory open" email only with CALDERA_ARMORY_EMAIL=1 (Mike's rule: no email without his OK)
+    alertPost: o => { try { alerts.post(o); } catch (e: any) { console.error("[armory] alert", e?.message); } }, unsubAll: id => mail.unsubUrlOf(id), armoryEmailOn: () => process.env.CALDERA_ARMORY_EMAIL === "1",
+    lands: () => FR ? FR.store.live().map(l => ({ login: l.login, repos: l.city })) : [],
     systemPost: (k, t, l) => SYS.systemPost(k, t, l) });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
 
   const autoOff = (pr: any) => { const b = body(pr); return b.autoConnectGithub === false || b.autoConnectRepos === false; };
@@ -1707,7 +1713,7 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   q("CREATE TABLE IF NOT EXISTS email_clicks (owner TEXT, day TEXT, src TEXT, PRIMARY KEY (owner, day, src))").run();
   // the sign-in standard's shared event names, next to the GitHub funnel steps they mirror
   const AUTH_OF: Record<string, "auth_start" | "auth_ok" | "auth_fail"> = { click: "auth_start", signin: "auth_ok", created: "auth_ok", fail: "auth_fail" };   // click-ext (scripts, crawlers, other sites) is not a start
-  const GH = github({ firstValue: (o) => FLOWS.firstValue(o), listings: () => LISTINGS, track: (req, step, detail, owner) => { FUNNEL.track(req, step, detail); if (step === "created") JOIN?.signup(req);
+  const GH = github({ battleSettings: id => { try { return BATTLE?.settingsHtml(id) || ""; } catch { return ""; } }, firstValue: (o) => FLOWS.firstValue(o), listings: () => LISTINGS, track: (req, step, detail, owner) => { FUNNEL.track(req, step, detail); if (step === "created") JOIN?.signup(req);
     if (step === "click") { let u: URL | undefined; try { u = new URL(req.url || "/", "http://x"); } catch { /* none */ } FLOWS.start(req, "github", doorOf(req, u)); } else if (step === "fail") FLOWS.fail(req, "github"); else if (step === "signin" || step === "created") { FLOWS.ok(req, "github", owner, step === "created"); if (step === "created") FLOWS.firstValue(owner); }
     const a = AUTH_OF[step]; if (a) FUNNEL.track(req, a, step === "fail" ? detail : "github"); }, accountOk: ext.githubAccountOk, privateMode: PM, searchPref: { on: searchable, set: (o: string, on: boolean) => q("INSERT OR REPLACE INTO search_prefs VALUES (?,?,?)").run(o, on ? 1 : 0, now()) }, q, seal, unseal, accept, erase, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", privateUrl: opts.privateUrl,
     json, readBody, allowNewProfile, byHandle, reserved: TAKEN, fetch: opts.githubFetch,
@@ -2384,7 +2390,26 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   const GHP = ghPreview({ googleFirst: (u) => !!EMP?.googleFirst(u), dataDir: opts.dataDir, hub: () => hubUrl(), fetch: opts.githubFetch || fetch, token: () => GH.anyToken(), header: HEADER_MARK, tooMany, ipOf,
     saveArm: (req) => { const v = FUNNEL.vid(req); return v ? saveArm(v) : null; }, track: (req, step) => FUNNEL.track(req, step, SAVE_TEST),
     careerArm: (req) => { const v = FUNNEL.vid(req); return v ? careerArm(v) : null; }, trackCareer: (req, step) => { FUNNEL.track(req, step, CAREER_TEST); if (humanClick(req)) FUNNEL.track(req, step === "cg-b" ? "cg-b-h" : "cg-a-h", CAREER_TEST); },
-    memberOf: memberOfLogin, memberCity: (h: string) => { const pr = byHandle(h); return pr && !modOf(pr.handle, pr.id) ? publicCityOf(h) : null; }, pause: opts.githubFetch ? 0 : 150 });
+    memberOf: memberOfLogin, memberCity: (h: string) => { const pr = byHandle(h); return pr && !modOf(pr.handle, pr.id) ? publicCityOf(h) : null; }, pause: opts.githubFetch ? 0 : 150,
+    hidden: (login: string) => { const l = FR?.store.get(login); return !!l && (l.state === "hidden" || l.state === "removed") || !!FR?.store.blocked(login); } });
+
+  // ---------------------------------------------------------------- the Frontier (frontier.ts): unclaimed GitHub lands on the world's edge
+  const FR: ReturnType<typeof frontier> | null = process.env.CALDERA_FRONTIER === "0" ? null : frontier({ q, hub: () => opts.publicUrl || "https://caldera.social",
+    memberOf: r => memberOf(r), handleOf: id => profile(id)?.handle || null,
+    memberByName: login => { const h = memberOfLogin(login) || (byHandle(login.toLowerCase()) ? login.toLowerCase() : null); const pr = h ? byHandle(h) : null; return pr ? { id: pr.id, handle: pr.handle } : null; },
+    ghAccount: r => { const a = GH.account(r); return a ? { gh_id: Number(a.gh_id), login: String(a.login || ""), profile_id: a.profile_id || null, handle: a.handle || (a.profile_id ? profile(a.profile_id)?.handle || null : null) } : null; },
+    ghUser: login => GHP.user(login),
+    ghRepos: async login => { const g = await GHP.get(login, null); return g.ok ? g.p.city.districts.flatMap((d: any) => d.repos || []) : null; },
+    sameOrigin: r => sameOrigin(r), readBody: r => readBody(r), json: (r, s2, b) => json(r, s2, b), tooMany, ipOf,
+    alertPost: o => { try { alerts.post(o); } catch (e: any) { console.error("[frontier] alert", e?.message); } },
+    landGone: login => { try { BATTLE?.landGone(login); } catch (e: any) { console.error("[frontier] refunds", e?.message); } },
+    leaveBattles: id => BATTLE?.leave(id),
+    changed: () => { worldCache = null; worldPng = null; } });
+  (admin as any).frontier = FR;
+  // the seed list: a few lands every 2 minutes, from 3 minutes after start, until the list is done (CALDERA_FRONTIER_SEED=0: off)
+  if (FR && !opts.githubFetch && process.env.CALDERA_FRONTIER_SEED !== "0") {
+    const t0 = setTimeout(() => { const t = setInterval(() => { FR.seedSome(FRONTIER_SEED, 2).then(n => { if (n) console.log(`[frontier] seeded ${n}`); }).catch(e => console.error("[frontier] seed", e?.message)); }, 120_000); t.unref(); }, 180_000); t0.unref();
+  }
 
   // the big footer from the site build (assets/footer.html), re-read when the site is redeployed
   let footerAt = 0, footerChecked = 0;
@@ -2483,7 +2508,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           return res.end(navify(groupPage({ slug: g[1], hub: opts.publicUrl || "https://caldera.social", members: groupMembers(g[1]) })));
         } }
       if (req.method === "GET" && p === "/v1/world") { res.setHeader("cache-control", "public, max-age=60"); const w = worldNow(); return json(res, 200, { at: w.at, members: w.members, links: w.links, city: w.city }); }
-      if (BATTLE && (p.startsWith("/v1/world/battle") || p === "/u/battle") && await BATTLE.route(req, res, p, url)) return;
+      if (BATTLE && (p.startsWith("/v1/world/battle") || p === "/u/battle" || p === "/u/armory") && await BATTLE.route(req, res, p, url)) return;
+      if (FR && (p.startsWith("/v1/frontier/") || p.startsWith("/claim/")) && await FR.route(req, res, url)) return;
       if (GROWTH && (p.startsWith("/v1/world/") || p === "/hooks/github") && await GROWTH.route(req, res, p, url)) return;
       if (LB && (p === "/leaderboard" || p === "/leaderboard/" || p === "/v1/leaderboard/rows") && await LB.route(req, res, p, url)) return;
       if (req.method === "GET" && p === "/v1/world/land") { res.setHeader("cache-control", "public, max-age=120"); return json(res, 200, landNow()); }
@@ -2491,7 +2517,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (req.method === "GET" && (p === "/world" || p === "/world/")) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache",
           "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" });
-        return res.end(worldPage(worldNow(), { hub: opts.publicUrl || "https://caldera.social", nav: worldNav(), tools: TOOLS ? TOOLS.mapData() : [], growth: GROWTH ? (() => { try { return GROWTH.state("day"); } catch (e: any) { console.error("growth state", e?.message); return null; } })() : null,
+        return res.end(worldPage(worldNow(), { frontier: FR ? (() => { try { return { districts: FR.districts(), meta: FR.meta() }; } catch (e: any) { console.error("frontier", e?.message); return null; } })() : null, hub: opts.publicUrl || "https://caldera.social", nav: worldNav(), tools: TOOLS ? TOOLS.mapData() : [], growth: GROWTH ? (() => { try { return GROWTH.state("day"); } catch (e: any) { console.error("growth state", e?.message); return null; } })() : null,
           battle: BATTLE ? (() => { try { return BATTLE.state(); } catch (e: any) { console.error("battle state", e?.message); return null; } })() : null }));
       }
       if (req.method === "GET" && /^\/gh\/[A-Za-z0-9-]+\/?$/.test(p)) FUNNEL.track(req, "preview");
@@ -2659,6 +2685,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           if (prS && !privCity) html = privatePage(prS, rel, html);   // private repos: anonymous or hidden, whatever version built the page
           html = rewriteFriendLinks(html, m[1], viewer, !!own);
           if (prS && rel === "index.html") html = realLeaderboard(html, prS, !!own);
+          if (FR && prS && own && rel === "index.html") html = FR.profileSection(html, prS.id);   // the Frontier: "Put a friend on the map", owner only
           if (rel === "index.html") html = dropHelpExchange(html);
           if (prS && (rel === "index.html" || rel === "city.html")) void GH.freshen(prS.id);   // new GitHub repos: rebuilt in the background, on the map by the next load
           (headers as any)["content-security-policy"] = cityCsp(originOf(opts.publicUrl));   // connect-src to this hub only (inline kudos/friends, city feeds); still sandboxed
