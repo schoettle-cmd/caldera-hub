@@ -72,6 +72,13 @@ export function remindAt(night: number, tz: string): number | null {
   return t - openAlertAt(night, tz) < 3 * 3600_000 || t <= w.open ? null : t;
 }
 /** a clock time in the player's zone: "5:00 AM" */
+/** When a night's salvo plays on the map for a viewer in tz: 20:00 local on the day of the first local noon at or after the
+ *  battle time (citybattle.ts bPlan/bPick: a local day shows the night whose battle time falls in the 24 h before its noon). */
+export function salvoAt(battle: number, tz: string): number {
+  const off = tzOffset(battle, tz), wall = battle + off, noonWall = Math.floor(wall / 86_400_000) * 86_400_000 + 12 * 3_600_000;
+  const pick = wall <= noonWall ? noonWall : noonWall + 86_400_000;
+  return wallToUtc(pick + 8 * 3_600_000, tz);
+}
 export function clockIn(t: number, tz: string, locale = "en-US"): string {
   try { return new Intl.DateTimeFormat(locale, { timeZone: tz, hour: "numeric", minute: "2-digit" }).format(new Date(t)).replace(/ /g, " "); }
   catch { return clockIn(t, "America/Los_Angeles", "en-US"); }
@@ -90,12 +97,13 @@ export function checkWord(raw: unknown, _handles: Iterable<string> = []): WordCh
 
 // ---------------------------------------------------------------- the store
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
-export interface BombRow { id: number; night: number; p: string; kind: BombKind; word: string; target: string | null; cost: number; ts: number; state: "paid" | "fired" | "refunded"; k: number | null; hidden: 0 | 1; reports: number }
-const rowOf = (r: any): BombRow => ({ id: r.id, night: r.night, p: r.p, kind: r.kind, word: r.word, target: r.target || null, cost: r.cost, ts: r.ts, state: r.state, k: r.k ?? null, hidden: r.hidden ? 1 : 0, reports: r.reports || 0 });
+export interface BombRow { id: number; night: number; p: string; kind: BombKind; word: string; target: string | null; cost: number; ts: number; state: "paid" | "fired" | "refunded"; k: number | null; hidden: 0 | 1; reports: number; named: 0 | 1 }
+const rowOf = (r: any): BombRow => ({ id: r.id, night: r.night, p: r.p, kind: r.kind, word: r.word, target: r.target || null, cost: r.cost, ts: r.ts, state: r.state, k: r.k ?? null, hidden: r.hidden ? 1 : 0, reports: r.reports || 0, named: r.named ? 1 : 0 });
 /** The bombs and the credit ledger. The ledger is the hub's help-credit table (who, delta, reason, ref, ts ISO). */
 export function armoryStore(q: Q) {
   q(`CREATE TABLE IF NOT EXISTS armory_bombs (id INTEGER PRIMARY KEY AUTOINCREMENT, night INTEGER, p TEXT, kind TEXT, word TEXT, target TEXT, cost INTEGER, ts INTEGER, state TEXT, k INTEGER, hidden INTEGER DEFAULT 0, reports INTEGER DEFAULT 0)`).run();
   q(`CREATE INDEX IF NOT EXISTS armory_bombs_n ON armory_bombs (night, p)`).run();
+  try { q(`ALTER TABLE armory_bombs ADD COLUMN named INTEGER DEFAULT 0`).run(); } catch { /* already there: 1 = the buyer showed their name to the target (gift email) */ }
   q(`CREATE TABLE IF NOT EXISTS armory_reports (bomb INTEGER, who TEXT, ts INTEGER, PRIMARY KEY (bomb, who))`).run();
   q(`CREATE TABLE IF NOT EXISTS ledger (who TEXT, delta INTEGER, reason TEXT, ref TEXT, ts TEXT)`).run();
   const balance = (p: string) => Number((q("SELECT COALESCE(SUM(delta),0) AS s FROM ledger WHERE who=?").get(p) as any).s) || 0;
@@ -107,7 +115,7 @@ export function armoryStore(q: Q) {
     /** the bombs that fly tonight (paid; fired too, when a night is resolved again) */
     live: (night: number): BombRow[] => (q("SELECT * FROM armory_bombs WHERE night=? AND state IN ('paid','fired') ORDER BY id").all(night) as any[]).map(rowOf),
     /** Buy: all or nothing, inside one transaction (the balance is read and spent under the same lock). */
-    buy: (p: string, night: number, items: { kind: BombKind; word: string; target: string | null }[], at: number): { ok: true; ids: number[]; balance: number } | { ok: false; error: string; balance: number } => {
+    buy: (p: string, night: number, items: { kind: BombKind; word: string; target: string | null; named?: boolean }[], at: number): { ok: true; ids: number[]; balance: number } | { ok: false; error: string; balance: number } => {
       const cost = priceOf(items.map(i => i.kind));
       if (cost === null || !items.length) return { ok: false, error: "pick a bomb", balance: balance(p) };
       q("BEGIN IMMEDIATE").run();
@@ -116,7 +124,7 @@ export function armoryStore(q: Q) {
         if (held + items.length > ARMORY.perNight) { q("ROLLBACK").run(); return { ok: false, error: `at most ${ARMORY.perNight} bombs a night (you have ${held})`, balance: have }; }
         if (cost > have) { q("ROLLBACK").run(); return { ok: false, error: `not enough credits: ${cost} needed, ${have} left`, balance: have }; }
         const ids: number[] = [];
-        for (const it of items) { const r = q("INSERT INTO armory_bombs (night, p, kind, word, target, cost, ts, state) VALUES (?,?,?,?,?,?,?,'paid')").run(night, p, it.kind, it.word, it.target, bombOf(it.kind)!.cost, at); ids.push(Number(r.lastInsertRowid)); }
+        for (const it of items) { const r = q("INSERT INTO armory_bombs (night, p, kind, word, target, cost, ts, state, named) VALUES (?,?,?,?,?,?,?,'paid',?)").run(night, p, it.kind, it.word, it.target, bombOf(it.kind)!.cost, at, it.named && it.target ? 1 : 0); ids.push(Number(r.lastInsertRowid)); }
         credit(p, -cost, `armory: ${items.length} bomb${items.length === 1 ? "" : "s"}`, "night:" + night, at);
         q("COMMIT").run();
         return { ok: true, ids, balance: balance(p) };

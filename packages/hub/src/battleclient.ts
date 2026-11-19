@@ -268,6 +268,16 @@ export function battleClient() {
   function bIcon(k) { return '<i class="b-bi" data-k="' + esc(k) + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (BICON[k] || '') + '</svg></i>'; }
   var cart = [], armSkew = 0, armT = 0, armBusy = false, armOk = '', armErr = '', armTzSent = false;
   // the target picker (frontier-design D): a button per bomb row, an inline list of battle cities, and a GitHub lookup that can add an unclaimed land
+  var armShow = true; try { armShow = localStorage.getItem('caldera.armory.showName') !== '0'; } catch (e) {}
+  /* Show my name (frontier-design K6): one switch for the order, only when a bomb aims at a member; the target gets a gift email */
+  function armWho() {
+    var hs = []; cart.forEach(function (r) { if (r.target && !isLand(r.target)) { var h = '@' + String(r.target).replace(/^@/, ''); if (hs.indexOf(h) < 0) hs.push(h); } });
+    if (!hs.length) return '';
+    var mine = '@' + String((me && me.h) || '').replace(/^@/, ''), d = hs.length === 1 ? '<b>' + esc(hs[0]) + '</b> gets an email about this bomb.' : hs.length === 2 ? '<b>' + esc(hs[0]) + '</b> and <b>' + esc(hs[1]) + '</b> each get an email about their bomb.' : hs.length + ' members each get an email about their bomb.';
+    return '<div class="b-arm-who"><label class="b-arm-who-l" for="b-arm-sw">Show my name</label><button type="button" class="b-arm-sw" id="b-arm-sw" role="switch" aria-checked="' + armShow + '" aria-describedby="b-arm-who-d"></button>'
+      + '<p class="b-arm-who-d" id="b-arm-who-d">' + d + ' <span data-arm="say">' + armSay(mine) + '</span></p></div>';
+  }
+  function armSay(mine) { return armShow ? (mine.length > 1 ? 'It says the bomb is from <b>' + esc(mine) + '</b>.' : 'It shows your name.') : 'It says the bomb is from "Someone".'; }
   var pick = -1, pq = '', pAct = 0, gl = null, glT = 0, glX = null, armAim = '', GHL = /^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
   function isLand(h) { return !!(h && me && me.armory && (me.armory.lands || []).indexOf(h) >= 0); }
   function pOpts() {
@@ -400,7 +410,7 @@ export function battleClient() {
     return '<summary><span class="b-arm-t">Armory</span><span class="b-arm-clock" data-arm="clock" role="timer" aria-live="off"></span><span class="b-arm-bal"><b data-arm="bal">' + A2.balance + '</b> credits</span></summary>'
       + '<p class="b-arm-lede">Custom bombs for the next battle. Each one carries a word that rises over the hit in the replay, for everyone to see.</p>' + load
       + '<div class="b-arm-cards" role="group" aria-label="Add a bomb">' + cards + '</div><ol class="b-arm-rows" data-arm="rows" aria-label="Bombs to buy">' + rows + '</ol>'
-      + '<div class="b-arm-foot"><dl class="b-arm-sum"><dt>Balance</dt><dd data-arm="bal2">' + A2.balance + '</dd><dt>This order</dt><dd data-arm="tot">' + (tot ? '-' + tot : '0') + '</dd><dt>Left after</dt><dd data-arm="left"' + (left < 0 ? ' class="neg"' : '') + '>' + left + '</dd></dl>'
+      + '<div class="b-arm-foot">' + armWho() + '<dl class="b-arm-sum"><dt>Balance</dt><dd data-arm="bal2">' + A2.balance + '</dd><dt>This order</dt><dd data-arm="tot">' + (tot ? '-' + tot : '0') + '</dd><dt>Left after</dt><dd data-arm="left"' + (left < 0 ? ' class="neg"' : '') + '>' + left + '</dd></dl>'
       + '<button type="button" class="b-arm-buy" data-arm="buy"' + (bl[1] ? '' : ' disabled') + (armBusy ? ' aria-busy="true"' : '') + '>' + esc(bl[0]) + '</button></div>'
       + (armErr ? '<p class="b-ar-e" role="alert">' + esc(armErr) + '</p>' : '')
       + '<p class="b-arm-note" data-arm="note">' + (A2.balance < 5 && !cart.length ? 'You have ' + A2.balance + ' credits. Each city that fires in a battle gets +10. Earn more by answering asks in the <a href="/gardens">gardens</a>. ' : '') + 'Credits are spent when you tap Buy. Up to ' + A2.cap + ' bombs per night. Help credits have no cash value.</p>'
@@ -428,13 +438,15 @@ export function battleClient() {
       li.querySelector('.b-ar-x').onclick = function () { pick = -1; cart.splice(i, 1); armRender(cart.length ? '#b-ar-w-' + Math.min(i + 1, cart.length) : '.b-bc:not([disabled])'); };
     });
     var buy = d.querySelector('[data-arm="buy"]'); if (buy) buy.onclick = armBuy;
+    var sw = d.querySelector('#b-arm-sw'); if (sw) sw.onclick = function () { armShow = !armShow; sw.setAttribute('aria-checked', String(armShow)); try { localStorage.setItem('caldera.armory.showName', armShow ? '1' : '0'); } catch (e) {}
+      var say = d.querySelector('[data-arm="say"]'); if (say) say.innerHTML = armSay('@' + String((me && me.h) || '').replace(/^@/, '')); };
     pWire();
   }
   function armBuy() {
     if (armBusy || !armBuyLabel()[1]) return;
     pick = -1; armBusy = true; armErr = ''; armRender();
     var key = Date.now().toString(36) + Math.random().toString(36).slice(2), n = cart.length;
-    fetch('/v1/world/battle/armory', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: key, bombs: cart.map(function (r) { return { k: r.k, word: r.word, target: r.target || null }; }) }) })
+    fetch('/v1/world/battle/armory', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: key, showName: armShow, bombs: cart.map(function (r) { return { k: r.k, word: r.word, target: r.target || null }; }) }) })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; }); })
       .then(function (x) {
         armBusy = false;
@@ -695,6 +707,16 @@ html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, c
 .b-arm-sum dt{font-size:11px;color:#9A9AA5}.b-arm-sum dd{margin:0;font:600 15px/1.3 var(--font-mono,'IBM Plex Mono',monospace);color:#fff}
 .b-arm-sum dd[data-arm="tot"]{color:#FFB347}.b-arm-sum dd.neg{color:#FF9A9A}
 .b-arm-buy{font:600 14px/1 var(--font-sans,'IBM Plex Sans',sans-serif);background:#8B6CF6;color:#fff;border:0;border-radius:999px;padding:0 20px;min-height:44px;cursor:pointer;transition:background-color .15s}
+.b-arm-who{flex:1 1 100%;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 14px;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04)}
+.b-arm-who-l{font:600 13px/1.3 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff;cursor:pointer}
+.b-arm-who-d{grid-column:1;margin:0;font-size:11.5px;line-height:1.4;color:#9A9AA5}.b-arm-who-d b{color:#C9D2E6;font-weight:600}
+.b-arm-sw{grid-column:2;grid-row:1/span 2;position:relative;width:44px;height:26px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);padding:0;cursor:pointer;transition:background-color .15s,border-color .15s}
+.b-arm-sw::before{content:"";position:absolute;inset:-9px -4px}
+.b-arm-sw::after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#9A9AA5;transition:transform .15s,background-color .15s}
+.b-arm-sw[aria-checked="true"]{background:#8B6CF6;border-color:#8B6CF6}.b-arm-sw[aria-checked="true"]::after{transform:translateX(18px);background:#fff}
+.b-arm-sw:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+@media (min-width:430px) and (max-width:520px){.b-arm-who{padding:6px 8px}.b-arm-who-l{font-size:12px}.b-arm-who-d{font-size:11px}}
+@media (prefers-reduced-motion:reduce){.b-arm-sw,.b-arm-sw::after{transition:none}}
 .b-arm-buy:hover{background:#7A5BEA}.b-arm-buy:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
 .b-arm-buy[disabled]{background:rgba(139,108,246,.28);color:rgba(255,255,255,.6);cursor:default}
 .b-arm-buy[aria-busy="true"]{background:#6E4FE0;cursor:progress}

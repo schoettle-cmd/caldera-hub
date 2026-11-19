@@ -13,9 +13,10 @@
 import crypto from "node:crypto";
 import type http from "node:http";
 import { DAY, dayOf, dayKey, type GEvent, type SimOut } from "./growth";
-import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, towersOf, dmgAt, dmgAll, usdOf, fallenOf, heldOf, restrike, fmtUsd, scaledDistance, isBeginner, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
+import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, towersOf, dmgAt, dmgAll, usdOf, fallenOf, heldOf, restrike, fmtUsd, summaryNames, scaledDistance, isBeginner, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
   type Fighter, type Shot, type Report, type ReportFreq } from "./battle";
 import type { GrowthMember } from "./growthhub";
+import { giftMail } from "./giftmail";
 import { ARMORY, bombOf, armoryNow, armoryStore, armoryPrefs, alertDue, alertText, armoryEmail, checkWord, cleanTz, clockIn, openAlertAt, remindAt, type BombKind } from "./armory";
 
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
@@ -36,6 +37,8 @@ export interface BattleHubCtx {
   /** the one-click unsubscribe-from-all link for a member */ unsubAll?: (profileId: string) => string | null;
   /** CALDERA_ARMORY_EMAIL=1: the once-a-day "Armory open" email may go out (off until Mike approves sending) */ armoryEmailOn?: () => boolean;
   /** Frontier lands (frontier.ts) on the map now: Armory bombs can aim at them */ lands?: () => { login: string; repos: any[] }[];
+  /** the feed post id written for a sysposts key ("battle:<day>"), for the gift email's summary link */ sysPosted?: (key: string) => string | null;
+  /** SVG -> PNG (cards.ts toPng), for the bomb images in the gift email */ png?: (svg: string, width: number) => Promise<Buffer>;
   now?: () => number;
 }
 
@@ -48,6 +51,13 @@ export function battleHub(c: BattleHubCtx) {
   let cache: { at: number; v: any } | null = null;
   const A = armoryStore(c.q), PR = armoryPrefs(c.q, () => crypto.randomBytes(18).toString("base64url"));
   const idem = new Map<string, { at: number; v: any }>();   // Buy taps by idempotency key (10 minutes)
+  // the Armory gift emails (giftmail.ts): a bomb aimed at a member's city tells them; the summary names them the next day
+  const G = giftMail({ q: c.q, hub: c.hub, now: () => now(), postal: c.postal, A, battleAt, ran: n => S.hasNight(n),
+    summary: n => { const id = c.sysPosted?.("battle:" + dayKey(n)); if (!id) return null; const s = summaryNames(S.shots(n));
+      return { postId: id, top: s.top, hit: s.hit.map(([k, h]) => [k, { f: h.f, towers: h.towers.size }] as [string, { f: number; towers: number }]) }; },
+    emailOf: id => c.emailOf(id), prefs: id => { const p = PR.ensure(id); return { tz: p.tz, mail: !!p.mail, token: p.token }; },
+    mailOn: () => !!c.armoryEmailOn?.(), handle: id => ctxFor().handle(id), nameOf: id => { const m = ctxFor().byId.get(id); return String(m?.name || m?.handle || ""); },
+    send: m => c.send(m), unsubAll: id => c.unsubAll?.(id) || null, fmtUsd, png: c.png });
 
   // ---------------------------------------------------------------- inputs from the growth simulation
   function ctxFor() {
@@ -122,6 +132,7 @@ export function battleHub(c: BattleHubCtx) {
       if (c.emailOn()) { try { await sendReports(); } catch (e: any) { console.error("[battle] email", e?.message); } }
       if (c.systemPost) { try { postSummary(); } catch (e: any) { console.error("[battle] summary", e?.message); } }
     }
+    try { await G.tick(); } catch (e: any) { console.error("[gift] tick", e?.message); }   // gift email 2: the morning after, if the summary names them
   }
   c.growth.onTick(tick);
 
@@ -283,6 +294,7 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
 
   // ---------------------------------------------------------------- routes
   async function route(req: http.IncomingMessage, res: http.ServerResponse, p: string, url: URL): Promise<boolean> {
+    if (p.startsWith("/email/")) return G.route(req, res, p, url);
     if (req.method === "GET" && p === "/v1/world/battle") { res.setHeader("cache-control", "public, max-age=60"); c.json(res, 200, state()); return true; }
     if (p === "/u/battle" && (req.method === "GET" || req.method === "POST")) {
       const t = (url.searchParams.get("t") || "").replace(/[^\w-]/g, "");
@@ -344,18 +356,20 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
     const x = ctxFor(), on = warSet(Infinity, x); if (!on.has(id)) return done(409, { error: "Join the battles first." });
     const list = Array.isArray(b.bombs) ? b.bombs.slice(0, ARMORY.perNight + 1) : []; if (!list.length) return done(400, { error: "Add a bomb to start." });
     const lands = landsNow(), handles = [...x.ms.map(m => m.handle), ...lands.map(l => l.h)], byH = new Map(x.ms.map(m => [m.handle.toLowerCase(), m.id] as [string, string]));
-    const rows: { i: number; error: string }[] = [], items: { kind: BombKind; word: string; target: string | null }[] = [];
+    const rows: { i: number; error: string }[] = [], items: { kind: BombKind; word: string; target: string | null; named?: boolean }[] = [];
     list.forEach((it: any, i: number) => {
       const kind = String(it?.k || ""); if (!bombOf(kind)) { rows.push({ i, error: "Pick a bomb." }); return; }
       const w = checkWord(String(it?.word || "").toUpperCase(), handles); if (!w.ok) { rows.push({ i, error: w.why }); return; }
       let target: string | null = null; const th = String(it?.target || "").replace(/^@/, "").toLowerCase();
       if (th) { const tid = byH.get(th) || lands.find(l => l.h.toLowerCase() === th && (l.towers || 0) > 0)?.id; if (!tid || tid === id || (!tid.startsWith("uc:") && !on.has(tid))) { rows.push({ i, error: "That city isn't in the next battle. Pick another target." }); return; } target = tid; }
-      items.push({ kind: kind as BombKind, word: w.word.toUpperCase(), target });
+      items.push({ kind: kind as BombKind, word: w.word.toUpperCase(), target, named: !!(b.showName ?? b.show) && !!target && !target.startsWith("uc:") });
     });
     if (rows.length) return done(422, { error: "Nothing was charged. Change the marked word and tap Buy again.", rows });
     const w = armoryNow(at), r = A.buy(id, w.night, items, at);
     if (!r.ok) { const cap = /at most/.test(r.error); return done(cap ? 409 : 402, { error: cap ? `You have ${ARMORY.perNight} bombs for tonight. That is the most per night.` : `Your balance is now ${r.balance} credits. Remove a bomb or pick a smaller one.`, balance: r.balance, cap }); }
     console.log(`[armory] ${x.handle(id)} bought ${items.length} for night ${w.night} (${items.map(i => i.kind).join(",")})`);
+    // gift emails go after the reply: a slow mail service never holds up the Buy tap
+    try { const rows = r.ids.map(i => A.get(i)).filter(Boolean) as any[]; G.afterBuy(id, w.night, rows).catch((e: any) => console.error("[gift] after buy", e?.message)); } catch (e: any) { console.error("[gift] after buy", e?.message); }
     return done(200, { ok: true, ids: r.ids, balance: r.balance, me: me(id) });
   }
   /** operator check: a night's stored shots run again through today's strike math (same geometry, shields and order). save:
@@ -375,7 +389,7 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
   }
   /** a member who just claimed a Frontier land is not put in the battles (frontier-design H5) */
   const leave = (id: string) => { S.setWar(id, false, now()); cache = null; };
-  return { route, tick, resolve, restrikeNight, state, me, postSummary, sendReports, store: S, armory: A, prefs: PR, armoryAlerts, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
+  return { route, tick, resolve, restrikeNight, state, me, postSummary, sendReports, store: S, armory: A, prefs: PR, armoryAlerts, gift: G, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
     /** operator: opt a member in; since (ms) backdates it so a seed night can include them */
     optIn: (id: string, o: { waive?: boolean; since?: number } = {}) => { S.setWar(id, true, o.since ?? now()); if (o.waive !== undefined) S.setWaive(id, o.waive); cache = null; } };
 }

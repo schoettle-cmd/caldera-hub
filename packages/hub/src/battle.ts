@@ -444,16 +444,21 @@ export function battleEmail(r: Report, w: WorldLines, o: { name: string; hub: st
 }
 /** The daily feed post, in Caldera's own voice (no sign-off): who stacked the most, the salvo, the towers hit, the cranes,
  *  the replay and the leaderboard. null when there was no battle that day. */
+/** Who the daily summary names, from the same numbers it prints: the top 3 by ammo stacked, the top 4 cities hit. */
+export function summaryNames(shots: Shot[]): { top: [string, number][]; hit: [string, { f: number; towers: Set<number> }][] } {
+  const stacked = new Map<string, number>(), hit = new Map<string, { f: number; towers: Set<number> }>();
+  for (const s of shots) { if (s.a !== RAIDERS) stacked.set(s.a, (stacked.get(s.a) || 0) + 1); if (s.f > 0 && s.d !== RAIDERS) { const h = hit.get(s.d) || { f: 0, towers: new Set<number>() }; h.f += usdOf(s); if (s.lot >= 0) h.towers.add(s.lot); hit.set(s.d, h); } }
+  return { top: [...stacked.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 3), hit: [...hit.entries()].sort((a, b) => b[1].f - a[1].f).slice(0, 4) };
+}
 export function battleSummary(shots: Shot[], o: { night: string; handle: (id: string) => string; hub: string }): string | null {
   if (!shots.length) return null;
   const hub = o.hub.replace(/\/$/, ""), n1 = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`, d = new Date(o.night + "T12:00:00Z"), MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const stacked = new Map<string, number>(), hit = new Map<string, { f: number; towers: Set<number> }>(), total = shots.reduce((t, s) => t + usdOf(s), 0);
-  for (const s of shots) { if (s.a !== RAIDERS) stacked.set(s.a, (stacked.get(s.a) || 0) + 1); if (s.f > 0 && s.d !== RAIDERS) { const h = hit.get(s.d) || { f: 0, towers: new Set<number>() }; h.f += usdOf(s); if (s.lot >= 0) h.towers.add(s.lot); hit.set(s.d, h); } }
-  const top = [...stacked.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 3), landed = shots.filter(s => s.f > 0).length, raiders = shots.filter(s => s.a === RAIDERS).length, held = shots.reduce((t, s) => t + heldOf(s), 0);
+  const total = shots.reduce((t, s) => t + usdOf(s), 0), named = summaryNames(shots), top = named.top, hitTop = named.hit;
+  const landed = shots.filter(s => s.f > 0).length, raiders = shots.filter(s => s.a === RAIDERS).length, held = shots.reduce((t, s) => t + heldOf(s), 0);
   const L = [`Battle day, ${MON[d.getUTCMonth()]} ${d.getUTCDate()}.`];
   L.push(top.length ? `Most ammo stacked: ${top.map(([id, n]) => `${o.handle(id)} ${n1(n, "missile")}`).join(", ")}${raiders ? `; raiders from the sea brought ${raiders}` : ""}.` : `Only raiders from the sea fired today (${n1(raiders, "missile")}).`);
   L.push(`The 20:00 salvo: ${n1(shots.length, "missile")}, ${landed} landed${total > 0 ? `, ${fmtUsd(total)} of damage` : ""}${landed && held > 0 ? ` (shields took ${fmtUsd(held)} off)` : ""}.`);
-  L.push(hit.size ? `Towers hit: ${[...hit.entries()].sort((a, b) => b[1].f - a[1].f).slice(0, 4).map(([id, h]) => `${o.handle(id)} (${n1(h.towers.size, "tower")}, ${fmtUsd(h.f)})`).join("; ")}.` : "No towers hit: every shield held.");
+  L.push(hitTop.length ? `Towers hit: ${hitTop.map(([id, h]) => `${o.handle(id)} (${n1(h.towers.size, "tower")}, ${fmtUsd(h.f)})`).join("; ")}.` : "No towers hit: every shield held.");
   L.push("Cranes rebuild overnight; by noon every tower stands as it did.", `Replay: ${hub}/world?view=battle&replay=1`, `Leaderboard: ${hub}/leaderboard`);
   return L.join("\n").replace(/[^\x09\x0a\x0d\x20-\x7e]/g, "");
 }

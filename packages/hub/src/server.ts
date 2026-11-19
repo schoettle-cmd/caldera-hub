@@ -1691,7 +1691,7 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
     // the Armory (armory.ts): bell alerts always; the "Armory open" email only with CALDERA_ARMORY_EMAIL=1 (Mike's rule: no email without his OK)
     alertPost: o => { try { alerts.post(o); } catch (e: any) { console.error("[armory] alert", e?.message); } }, unsubAll: id => mail.unsubUrlOf(id), armoryEmailOn: () => process.env.CALDERA_ARMORY_EMAIL === "1",
     lands: () => FR ? FR.store.live().map(l => ({ login: l.login, repos: l.city })) : [],
-    systemPost: (k, t, l) => SYS.systemPost(k, t, l) });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
+    systemPost: (k, t, l) => SYS.systemPost(k, t, l), sysPosted: k => SYS.posted(k)?.post_id || null, png: (svg, w) => toPng(svg, w) });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
 
   const autoOff = (pr: any) => { const b = body(pr); return b.autoConnectGithub === false || b.autoConnectRepos === false; };
   const circleHooks: { joined?: (id: string) => void; signedIn?: (id: string) => void } = {};
@@ -2508,7 +2508,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           return res.end(navify(groupPage({ slug: g[1], hub: opts.publicUrl || "https://caldera.social", members: groupMembers(g[1]) })));
         } }
       if (req.method === "GET" && p === "/v1/world") { res.setHeader("cache-control", "public, max-age=60"); const w = worldNow(); return json(res, 200, { at: w.at, members: w.members, links: w.links, city: w.city }); }
-      if (BATTLE && (p.startsWith("/v1/world/battle") || p === "/u/battle" || p === "/u/armory") && await BATTLE.route(req, res, p, url)) return;
+      if (BATTLE && (p.startsWith("/v1/world/battle") || p === "/u/battle" || p === "/u/armory" || p.startsWith("/email/")) && await BATTLE.route(req, res, p, url)) return;
       if (FR && (p.startsWith("/v1/frontier/") || p.startsWith("/claim/") || p === "/add") && await FR.route(req, res, url)) return;
       if (GROWTH && (p.startsWith("/v1/world/") || p === "/hooks/github") && await GROWTH.route(req, res, p, url)) return;
       if (LB && (p === "/leaderboard" || p === "/leaderboard/" || p === "/v1/leaderboard/rows") && await LB.route(req, res, p, url)) return;

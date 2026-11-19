@@ -104,9 +104,9 @@ ${LOGO(1062, 538, 44)}<text x="1110" y="606" text-anchor="end" font-family="${se
 
 let resvg: any;
 /** SVG -> PNG with resvg (loaded on first use; optional dependency on the server). */
-export async function toPng(svg: string): Promise<Buffer> {
+export async function toPng(svg: string, width = 1200): Promise<Buffer> {
   resvg ||= await import("@resvg/resvg-js");
-  const r = new resvg.Resvg(svg, { fitTo: { mode: "width", value: 1200 }, font: { loadSystemFonts: true, defaultFontFamily: "DejaVu Sans" } });
+  const r = new resvg.Resvg(svg, { fitTo: { mode: "width", value: width }, font: { loadSystemFonts: true, defaultFontFamily: "DejaVu Sans" } });
   return Buffer.from(r.render().asPng());
 }
 
