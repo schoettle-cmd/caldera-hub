@@ -1,18 +1,20 @@
 // @ts-nocheck
 /**
  * The World page's Battle view in the browser (Mike 2026-11-07): the Battle button in the Now | Day | Week | Month switcher,
- * the legend chip on the map ("Firing until midnight" / "Rebuilding until noon" with a countdown on the viewer's clock), the
- * battle bar under the map (last night's numbers, the layer toggles Damage / Attacks / Shields / Replay, the member's own
- * panel: join or leave, tonight's arsenal, shield, optional manual fire, the report email), the season board, and the morning
- * card "What your city did last night". The map is drawn by the city renderer (citybattle.ts), driven through
- * window.CALDERA_BATTLE_API: supply drop at noon local, one salvo at 20:00, cranes rebuild from midnight to noon (Mike 11-07).
+ * the status chip on the map ("Battle starts in 12h 36m", the one clock: the Armory lock time), and the deck under the map
+ * (map-audit PAGE.md, Mike 11-20 "yes do all"): a "Tonight" card (countdown, credits, firepower tiles, targets, the Armory,
+ * the Battle settings popover behind the gear), a "Last night" card (three numbers, your city's rows, Replay, Copy link,
+ * All shots; "Watch a demo battle" when there was no battle), and one tab panel: Shot by shot, Season ranking, Arming today
+ * (#shots, #season, #arsenals open their tab; the choice is kept per viewer in localStorage). The map is drawn by the city
+ * renderer (citybattle.ts), driven through window.CALDERA_BATTLE_API: supply drop at noon local, the battle at 20:00, cranes
+ * rebuild from midnight to noon (Mike 11-07).
  * Replay (Mike 11-08) is cinematic: one strike beat per city, the camera zooms to the pad, follows the missiles into the hit and
  * resets to the next city, then the wide shot, the cranes, home. It runs 2.5x slower than the first cut (Mike 11-08: "moves too fast on
  * battle and user needs to be able to zoom out and control camera"): about 60 s for the demo at 1x, 35 to 100 s in all. One compact control bar on the map: Strike n
  * of m with the damage tier of the last hit, Prev, Pause / Play, Next, speed (0.5x / 1x / 2x, remembered per viewer in localStorage),
  * Fit (the whole battlefield), Follow (shown once the viewer has panned or zoomed: gives the camera back to the auto camera), End.
  * The viewer's camera: wheel, trackpad pinch (ctrl+wheel) or pinch to zoom, drag to pan (citybattle.ts and city.ts clamp both); a tap on
- * the map still skips to the next strike. "Demo replay" plays a sample battle between the biggest cities (synthetic shots, labelled demo).
+ * the map still skips to the next strike. "Watch a demo battle" plays a sample battle between the biggest cities (synthetic shots, labelled demo).
  * Shareable: /world?view=battle, &layers=damage,attacks,shields,replay, &replay=1 or &replay=demo.
  * Shipped as the source of battleClient() (self-contained).
  */
@@ -71,7 +73,7 @@ export function battleClient() {
       ['Blast share', pct(x.raw) + ' of the building']];
     if (x.st < 1) rows.push(['Already wrecked', 'x ' + x.st + ' (only what still stands can break)']);
     if (x.cd < 1) rows.push(['Civil defence', 'x ' + x.cd + ' (each hit on a city makes the next one count less)']);
-    if (x.pc < 1) rows.push(['Team size', 'x ' + x.pc + ' (a team hits per head)']);
+    if (x.pc < 1) rows.push(['Team size', 'x ' + x.pc + ' (a team hits per person)']);
     var pre = x.raw * x.st * x.cd * x.pc;
     if (r.floor && pre < r.floor && !s[6]) rows.push(['Least a hit does', pct(r.floor) + ' of the building (no missile does nothing)']);
     if (s[6]) { if (x.sh > 0) rows.push(['Shield', 'stopped ' + Math.round(x.sh * 100) + '%']); rows.push(['Result', 'Shield held (the rules before Nov 15). Without it: ' + usd(x.pot) + ' of damage']); }
@@ -106,67 +108,141 @@ export function battleClient() {
     var pts = [0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4].map(function (t) { return (10 + t * 55) + ',' + (70 - 60 * (1 - Math.exp(-t / r.fire.tauH))).toFixed(1); }).join(' ');
     return '<h2 id="b-how-t">How damage works</h2><p class="b-lede">These are the numbers the 2am battle runs on. Every missile does damage: nothing is rounded to zero, no shield stops a hit outright, and nothing is capped.</p>'
       + '<section id="b-how-shot"><h3>' + (howShot ? 'This shot' : ex ? (mine ? 'Your city last night' : 'From last night') : 'A worked example') + '</h3>' + (ex ? shotHtml(ex) : sampleHtml()) + '</section>'
-      + '<section><h3>1. Your day of code is the budget</h3>' + tbl(['Work that day', 'Munitions budget'], [['Commit', usd(r.usd)], ['Merged pull request', usd(r.usd * r.w.pr) + ' (' + usd(r.usd * r.w.pr_self) + ' if you merged your own)'], ['Release', usd(r.usd * r.w.release)], ['Green CI run', usd(r.usd * r.w.ci_green)]])
+      + '<section><h3>1. Your day of code is the budget</h3>' + tbl(['Work that day', 'Firepower'], [['Commit', usd(r.usd)], ['Merged pull request', usd(r.usd * r.w.pr) + ' (' + usd(r.usd * r.w.pr_self) + ' if you merged your own)'], ['Release', usd(r.usd * r.w.release)], ['Green CI run', usd(r.usd * r.w.ci_green)]])
       + '<p>AI work multiplies a repo by up to 1.6 and a streak multiplies the day by up to 1.5. There is no cap: twice the work buys twice the missiles. Bot, empty, merge and fork commits earn nothing, and a revert cancels the commit it reverts.</p></section>'
       + '<section><h3>2. The budget buys missiles</h3>' + tbl(['Size', 'Weapon', 'Price', 'TNT', 'Half land within', 'Fire spreads'], W.map(function (w) { return ['<b class="b-szl">' + w.size + '</b>', esc(w.name) + '<br><small>' + esc(w.like) + '</small>', usd(w.cost), w.tnt + ' kg', w.cep + ' m', Math.round(w.fire * 100) + '%']; }).reverse())
       + '<p>The battle buys the biggest size your city has unlocked, then spends the change on smaller ones.</p></section>'
-      + '<section><h3>3. What unlocks bigger missiles</h3><ul><li><b>Tallest building.</b> ' + W.slice().reverse().map(function (w) { return w.size + ': ' + unlock[w.tech]; }).join(', ') + '. A tall repo tower counts like the lot.</li><li><b>A release in the last ' + r.relDays + ' days:</b> one size up.</li><li><b>A green CI run that day:</b> one size up.</li><li><b>Streak:</b> ' + r.guide.slice().reverse().map(function (g) { return (g.streak ? g.streak + ' days: ' : '') + g.name + (g.x < 1 ? ' (misses x ' + g.x + ')' : ''); }).join(', ') + '.</li><li><b>AI work:</b> tightens the aim by up to 1.6 times.</li><li><b>Merged pull requests:</b> each puts one more rival in reach, from ' + r.reach + ' up to ' + r.reachMax + '.</li></ul></section>'
+      + '<section><h3>3. What unlocks bigger missiles</h3><ul><li><b>Tallest building.</b> ' + W.slice().reverse().map(function (w) { return w.size + ': ' + unlock[w.tech]; }).join(', ') + '. A tall repo tower counts like the lot.</li><li><b>A release in the last ' + r.relDays + ' days:</b> one size up.</li><li><b>A green CI run that day:</b> one size up.</li><li><b>Streak:</b> ' + r.guide.slice().reverse().map(function (g) { return (g.streak ? g.streak + ' days: ' : '') + aimOf(g.x) + ' aim' + (g.x < 1 ? ' (' + Math.round((1 - g.x) * 100) + '% fewer misses)' : ''); }).join(', ') + '.</li><li><b>AI work:</b> tightens the aim by up to 1.6 times.</li><li><b>Merged pull requests:</b> each puts one more rival in reach, from ' + r.reach + ' up to ' + r.reachMax + '.</li></ul></section>'
       + '<section><h3>4. Blast against the building</h3><p>A warhead wrecks what is inside its blast radius. The radius grows with the cube root of the TNT (8 times the TNT, twice the radius) and is shorter against tougher construction. This is Hopkinson-Cranz scaling with the Mills overpressure curve.</p>'
       + tbl(['Construction', 'Fails at', 'Worth per m2'].concat(W.slice().reverse().map(function (w) { return w.size + ' radius'; })), r.classes.map(function (c) { return [esc(c.name), c.kpa + ' kPa', usd(c.sqm)].concat(W.slice().reverse().map(function (w) { return r1(c.z * Math.pow(w.tnt, 1 / 3)) + ' m'; })); }))
       + '<p>A building is ' + (r.half * 2) + ' m by ' + (r.half * 2) + ' m with ' + r.floorM + ' m floors, so its value is floors x ' + r.footprint + ' m2 x the price per m2. Damage is the wrecked volume as a share of the building, times its value. A miss past the wall wrecks less and a far miss still breaks glass and cladding (up to ' + pct(r.light) + '). Every missile does at least ' + pct(r.floor || .001) + ' of the building before the shield, so no strike comes to $0.</p></section>'
-      + '<section><h3>5. Shields and tired defenders</h3><p>A shield cuts a hit down. It never stops it: what gets through lands as blast and fire.</p><ul><li><b>Beginner shield:</b> takes ' + Math.round((r.dome || .99) * 100) + '% off every hit for your first 30 days and until you have 7 active days.</li><li><b>Streak shield:</b> takes 50% off at a 7-day streak, rising to 95% at 30 days.</li><li><b>The math:</b> damage = what the missile would do x (1 - shield). A cruise missile that would do $30.4M to a tower does ' + usd(30.4e6 * (1 - (r.dome || .99))) + ' through a beginner shield and $15.2M through a 50% one. The fire burns on what got through.</li><li>A shielded hit flashes on the dome, then lands smaller, with less fire and smoke. The breakdown shows what it would have cost and what the shield held.</li><li>Each missile coming in makes the next one count a little less (civil defence turns out for every siren, shielded or not), wrecked floors cannot be wrecked twice, and a team hits per head. None of these ever takes a hit to zero.</li></ul></section>'
+      + '<section><h3>5. Shields and tired defenders</h3><p>A shield cuts a hit down. It never stops it: what gets through lands as blast and fire.</p><ul><li><b>Beginner shield:</b> takes ' + Math.round((r.dome || .99) * 100) + '% off every hit for your first 30 days and until you have 7 active days.</li><li><b>Streak shield:</b> takes 50% off at a 7-day streak, rising to 95% at 30 days.</li><li><b>The math:</b> damage = what the missile would do x (1 - shield). A cruise missile that would do $30.4M to a tower does ' + usd(30.4e6 * (1 - (r.dome || .99))) + ' through a beginner shield and $15.2M through a 50% one. The fire burns on what got through.</li><li>A shielded hit flashes on the dome, then lands smaller, with less fire and smoke. The breakdown shows what it would have cost and what the shield held.</li><li>Each missile coming in makes the next one count a little less (civil defence turns out for every siren, shielded or not), wrecked floors cannot be wrecked twice, and a team hits per person. None of these ever takes a hit to zero.</li></ul></section>'
       + '<section><h3>6. Fire and smoke</h3><p>Every hit starts a fire. A contained fire adds ' + Math.round(r.fire.small * 100) + '% of the blast damage and a fire that spreads adds ' + Math.round(r.fire.spread * 100) + '%, both scaled by how well the building burns (timber most, concrete least). It burns down as 1 - e^(-t / ' + r.fire.tauH + ' h): 63% in the first hour, out after about ' + r.fire.outH + ' hours, smoke until ' + r.fire.emberH + '.</p>'
       + '<svg class="b-curve" viewBox="0 0 240 86" role="img" aria-label="Share of the fire damage done over four hours: 63% after one hour, 86% after two, 98% after four"><path d="M10 70H232M10 70V8" fill="none" stroke="currentColor" stroke-opacity=".35"/><polyline points="' + pts + '" fill="none" stroke="#FFB347" stroke-width="2"/><circle cx="65" cy="' + (70 - 60 * (1 - Math.exp(-1))).toFixed(1) + '" r="3" fill="#FFB347"/><text x="71" y="' + (70 - 60 * (1 - Math.exp(-1)) + 12).toFixed(1) + '" font-size="9" fill="currentColor">63% at 1 h</text><text x="10" y="82" font-size="8" fill="currentColor" fill-opacity=".7">0 h</text><text x="222" y="82" font-size="8" fill="currentColor" fill-opacity=".7">4 h</text></svg></section>'
       + '<section><h3>7. Rebuilding</h3><p>Cranes rebuild ' + Math.round(r.autoRepair * 100) + '% a day on their own and ' + Math.round(r.repairPerPt * 100) + '% more for every point of new work. A city is whole again within 4 days with no action at all.</p></section>'
       + '<p class="b-ad">Run more agents, ship more commits, get more ammo. <b>Orpheus</b> shows each Claude account\'s weekly and 5-hour limit and when it resets, and moves idle agents to the account with the most room. <a href="https://useorpheus.com/app?utm_source=caldera&utm_medium=battle_explainer" target="_blank" rel="noopener">Start 14-day trial</a></p>';
   }
-  function closeHow() { if (howEl) { howEl.hidden = true; } howShot = null; var b = q('[data-bhow]'); if (b) b.setAttribute('aria-expanded', 'false'); }
+  function closeHow() { if (howEl) { howEl.hidden = true; } howShot = null; Array.prototype.slice.call(document.querySelectorAll('[data-bhow]')).forEach(function (b) { b.setAttribute('aria-expanded', 'false'); }); }
   function openHow(shot) {
     howShot = shot || null;
     if (!howEl) { howEl = document.createElement('aside'); howEl.className = 'b-how'; howEl.setAttribute('role', 'dialog'); howEl.setAttribute('aria-labelledby', 'b-how-t'); howEl.tabIndex = -1; document.body.appendChild(howEl);
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && howEl && !howEl.hidden) closeHow(); }); }
     howEl.innerHTML = '<button type="button" class="b-hx" aria-label="Close">&times;</button><div class="b-hb">' + howHtml() + '</div>'; howEl.hidden = false; howEl.querySelector('.b-hx').onclick = closeHow; howEl.querySelector('.b-hb').scrollTop = 0;
-    var b = q('[data-bhow]'); if (b) b.setAttribute('aria-expanded', 'true'); try { howEl.focus({ preventScroll: true }); } catch (e) {}
+    Array.prototype.slice.call(document.querySelectorAll('[data-bhow]')).forEach(function (b) { b.setAttribute('aria-expanded', 'true'); }); try { howEl.focus({ preventScroll: true }); } catch (e) {}
   }
-  var howBtn = q('[data-bhow]'); if (howBtn) howBtn.addEventListener('click', function () { if (howEl && !howEl.hidden) closeHow(); else openHow(null); });
+  // any [data-bhow] on the page opens the sheet (the header link "How battles work" lives in world.ts)
+  document.addEventListener('click', function (e) { var b = e.target && e.target.closest ? e.target.closest('[data-bhow]') : null; if (!b) return; e.preventDefault(); if (howEl && !howEl.hidden) closeHow(); else openHow(null); });
   if (U && U.searchParams.has('how')) setTimeout(function () { openHow(null); }, 0);
-  /** the lists under the bar: every city's arsenal by size, and last night's shots (tap one for its math) */
+  // the header link "How battles work" (world.ts) calls this when it exists; opens the sheet, never toggles it shut
+  window.CALDERA_BATTLE_HOW = function () { openHow(null); return true; };
+  // ---------------------------------------------------------------- small icons (the mockups' set, 24px grid, stroke 1.75)
+  var ICO = {
+    play: '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>',
+    copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',
+    layers: '<path d="M12 4 3 9l9 5 9-5-9-5Z"/><path d="m3 14 9 5 9-5"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
+    target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>'
+  };
+  function ic(n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICO[n] || '') + '</svg>'; }
+  try { if (!document.getElementById('b-font')) { var fl = document.createElement('link'); fl.id = 'b-font'; fl.rel = 'stylesheet'; fl.href = 'https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&display=swap'; document.head.appendChild(fl); } } catch (e) {}
+  /** the Aim tile's word for a miss multiplier (PAGE.md 5a): 1 or more Standard, 0.75 to 0.99 Steady, 0.5 to 0.74 Sharp, under 0.5 Pinpoint */
+  function aimOf(cep) { cep = cep == null ? 1 : +cep; return cep >= 1 ? 'Standard' : cep >= 0.75 ? 'Steady' : cep >= 0.5 ? 'Sharp' : 'Pinpoint'; }
+  function aimLine(cep) { cep = cep == null ? 1 : +cep; return cep >= 1 ? 'normal misses' : Math.round((1 - cep) * 100) + '% fewer misses'; }
+  /** the line under the firepower tiles: "88 commits, 1 release, +27% streak bonus" */
+  function workLine(a) {
+    if (!a || !(a.shots > 0)) return 'Push code today to load missiles.';
+    var p = [], pl = function (n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); };
+    if (a.c) p.push(pl(a.c, 'commit')); if (a.pr) p.push(pl(a.pr, 'pull request')); if (a.rel) p.push(pl(a.rel, 'release')); if (a.ci) p.push('green CI');
+    if (a.ai > 1) p.push('+' + Math.round((a.ai - 1) * 100) + '% AI bonus'); if (a.streak > 1) p.push('+' + Math.round((a.streak - 1) * 100) + '% streak bonus');
+    return p.join(', ') || 'Push code today to load missiles.';
+  }
+  var SZN = { S: 'small', M: 'medium', L: 'large', XL: 'extra large' };
+  /** the Missiles tile's line: the sizes with a count, biggest first; the unlock hint while a bigger size is locked */
+  function missLine(a) {
+    var why = a.why || {}, W = rules() ? rules().weapons : [];
+    if ((a.tech || 0) < 3) return !why.rel ? 'Ship a release for the next size' : !why.ci ? 'A green CI run today unlocks the next size' : 'A taller building unlocks the next size';
+    return W.slice().reverse().filter(function (w) { return a.n && a.n[w.k]; }).map(function (w) { return a.n[w.k] + ' ' + (SZN[w.size] || w.size); }).join(', ');
+  }
+  // ---------------------------------------------------------------- the tabs under the deck (PAGE.md 5c): Shot by shot, Season ranking, Arming today
+  var TKEY = 'caldera.world.tab', TABS = ['shots', 'season', 'arsenals'], tab = 'shots', more = { shots: false, season: false, arsenals: false }, openShot = -1;
+  try { var tv = localStorage.getItem(TKEY); if (TABS.indexOf(tv) >= 0) tab = tv; } catch (e) {}
+  if (TABS.indexOf(location.hash.slice(1)) >= 0) tab = location.hash.slice(1);
+  function setTab(k, focus, save) {
+    if (TABS.indexOf(k) < 0) return; tab = k;
+    TABS.forEach(function (t) { var b = q('[data-tab="' + t + '"]'), p = bar ? bar.querySelector('#' + t) : null; if (b) { b.setAttribute('aria-selected', String(t === k)); b.tabIndex = t === k ? 0 : -1; if (t === k && focus) b.focus(); } if (p) p.hidden = t !== k; });
+    if (save) try { localStorage.setItem(TKEY, k); } catch (e) {}
+  }
+  function moreBtn(k, n) { return n > 8 && !more[k] ? '<button type="button" class="b-more" data-more="' + k + '">Show all ' + n + '</button>' : ''; }
+  function shotRow(s, i) {
+    var w = wOf(s[2]), x = s[8], word = x && x.bk ? x.word : '', open = openShot === i, blk = !!s[6];
+    return '<li' + (open ? ' class="open"' : '') + '><button type="button" data-shot="' + i + '" aria-expanded="' + open + '"><time>' + (s[4] ? hhmm(s[4]) : '') + '</time>'
+      + '<span class="b-p"><span class="a">' + esc(s[0].charAt(0) === '@' ? s[0] : 'Raiders') + '</span> → <span class="d">' + esc(nameOf(s[1])) + '</span>' + (word ? '<q>' + esc(word) + '</q>' : '') + '</span>'
+      + '<span class="b-szc">' + esc(w ? w.size : '') + '</span><span class="b-r' + (blk ? ' h' : '') + '">' + (blk ? 'Blocked ' + usd(x && x.pot != null ? x.pot : shotUsd(s)) : '−' + usd(shotUsd(s))) + '</span><span class="b-cv" aria-hidden="true">›</span></button>'
+      + (open ? '<div class="b-shot">' + shotHtml(s) + '</div>' : '') + '</li>';
+  }
   function lists() {
-    var ar = q('[data-b="arsenals"]'), M = data.members || {}, keys = Object.keys(M).sort(function (a, b) { return (M[b].usd || 0) - (M[a].usd || 0) || (a < b ? -1 : 1); });
-    if (ar) { var armed = keys.filter(function (k) { return M[k].usd > 0; }).length; var sm = q('[data-b="arsum"]'); if (sm) sm.textContent = 'Arsenals building today: ' + armed + ' of ' + keys.length + ' cit' + (keys.length === 1 ? 'y' : 'ies') + ' armed so far';
-      var show = keys.filter(function (k) { return M[k].usd > 0; }).slice(0, 40), rest = keys.length - show.length, idle = keys.length - armed;
-      ar.innerHTML = keys.length ? (show.length ? '<ul class="b-al">' : '') + show.map(function (k) { var m = M[k]; return '<li><button type="button" data-fly="' + esc(k) + '">' + esc(k) + '</button><b>' + usd(m.usd || 0) + '</b><span class="b-szs">' + sizeChips(m.n, m.tech || 0) + '</span><i>' + esc(m.guide || 'Inertial') + ', shield ' + Math.round((m.sh || 0) * 100) + '%</i></li>'; }).join('') + (show.length ? '</ul>' : '') + (rest > 0 ? '<p class="b-small">' + (armed > show.length ? (armed - show.length) + ' more armed with smaller budgets. ' : '') + (idle ? idle + ' cit' + (idle === 1 ? 'y has' : 'ies have') + ' no budget yet today: no judged commits, pull requests, releases or green CI so far.' : '') + '</p>' : '') : '<p>No cities in the battles yet.</p>'; }
-    var sl = q('[data-b="shotlist"]'), S = data.shots || [];
-    if (sl) { var ord = S.map(function (s, i) { return i; }).sort(function (a, b) { return shotUsd(S[b]) - shotUsd(S[a]) || a - b; }); var ss = q('[data-b="shotsum"]'); if (ss) ss.textContent = 'Last night, shot by shot (' + S.length + '): tap one for the math';
-      sl.innerHTML = S.length ? '<ul class="b-sl">' + ord.slice(0, 80).map(function (i) { var s = S[i], w = wOf(s[2]); return '<li><button type="button" data-shot="' + i + '"><span>' + esc(s[0].charAt(0) === '@' ? s[0] : 'Raiders') + ' → ' + esc(nameOf(s[1])) + '</span><i>' + esc(w ? w.size + ' ' + w.name.toLowerCase() : wName(s[2])) + '</i><b>' + (s[6] ? 'shield held' : '-' + usd(shotUsd(s)) + (s[8] && s[8].sp ? ' +fire' : '') + (s[8] && s[8].sh > 0 ? '<small class="b-cut"> shield ' + Math.round(s[8].sh * 100) + '%</small>' : '')) + '</b></button></li>'; }).join('') + '</ul>' : '<p>No missiles last night.</p>';
-      Array.prototype.slice.call(sl.querySelectorAll('[data-shot]')).forEach(function (b) { b.onclick = function () { openHow(S[+b.getAttribute('data-shot')]); }; }); }
+    var S = data.shots || [], M = data.members || {}, keys = Object.keys(M), mh = me && me.h ? String(me.h).replace(/^@?/, '@') : null;
+    var landed = S.filter(function (x) { return x[3] > 0; }).length, armed = keys.filter(function (k) { return M[k].usd > 0; }).sort(function (a, b) { return (M[b].usd || 0) - (M[a].usd || 0) || (a < b ? -1 : 1); });
+    setText('nshots', String(S.length)); setText('narmed', armed.length + ' of ' + keys.length); setText('narmeds', String(armed.length));
+    setText('shotsum', S.length ? S.length + ' fired · ' + landed + ' landed · ' + (data.fires || 0) + ' fire' + (data.fires === 1 ? '' : 's') + ' spread. Biggest hits first. Open a shot to see how its damage was worked out.' : 'No missiles last night.');
+    var sl = q('[data-b="shotlist"]');
+    if (sl) { var ord = S.map(function (s, i) { return i; }).sort(function (a, b) { return shotUsd(S[b]) - shotUsd(S[a]) || a - b; });
+      sl.innerHTML = S.length ? '<ul class="b-sl">' + (more.shots ? ord : ord.slice(0, 8)).map(function (i) { return shotRow(S[i], i); }).join('') + '</ul>' + moreBtn('shots', S.length) : ''; }
+    setText('seasonsum', 'Season ' + data.season.n + ' · week ' + data.season.week + '. Score = damage you dealt + half of what your shield blocked, per person.');
+    var bd = q('[data-b="board"]'), Bd = data.board || [];
+    if (bd) bd.innerHTML = Bd.length ? '<ol class="b-rk">' + (more.season ? Bd : Bd.slice(0, 8)).map(function (r, i) { var you = r[0] === mh; return '<li' + (you ? ' class="you"' : '') + '><span class="b-rn">' + (i + 1) + '</span><button type="button" data-fly="' + esc(r[0]) + '">' + esc(r[0]) + '</button>' + (you ? '<i class="b-yq" aria-hidden="true"></i><small>Your city</small>' : '') + '<b>' + usd(r[1]) + '</b></li>'; }).join('') + '</ol>' + moreBtn('season', Bd.length) : '<p class="b-empty">No scores yet. The first battle sets the ranking.</p>';
+    setText('armsum', armed.length + ' of ' + keys.length + ' cit' + (keys.length === 1 ? 'y has' : 'ies have') + ' missiles so far today.');
+    var ar = q('[data-b="arsenals"]');
+    if (ar) ar.innerHTML = armed.length ? '<ul class="b-al">' + (more.arsenals ? armed : armed.slice(0, 8)).map(function (k) { var m = M[k]; return '<li><button type="button" data-fly="' + esc(k) + '">' + esc(k) + '</button><span>' + (m.shots || 0) + ' missile' + (m.shots === 1 ? '' : 's') + '</span><b>' + usd(m.usd || 0) + '</b></li>'; }).join('') + '</ul>' + moreBtn('arsenals', armed.length)
+      : '<p class="b-empty">' + (keys.length ? 'No city has missiles yet today. Code pushed today loads them.' : 'No cities in the battles yet.') + '</p>';
+  }
+  // ---------------------------------------------------------------- the Last night card (PAGE.md 5b)
+  function yourCity() {
+    if (!me || !me.war || !me.last) return '';
+    var L = me.last, rows = [], raids = L.raids || [], hits = raids.reduce(function (t, r) { return t + (r.landed || 0); }, 0);
+    var bq = function (b) { return (BNAME[b.k] || b.k) + ' "' + b.word + '"'; };
+    rows.push(['Hits on you', hits ? '<span class="gd">' + hits + '</span> · ' + esc(usd(L.takenUsd)) + ' damage' : raids.length ? 'none: your shield blocked them' : 'none']);
+    if (L.heldUsd > 0) rows.push(['Your shield blocked', '<span class="cy">' + esc(usd(L.heldUsd)) + '</span>']);
+    if (L.bombs && L.bombs.length) rows.push(['Custom bombs on you', esc(L.bombs.length + ': ' + L.bombs.slice(0, 2).map(function (b) { return bq(b) + ' from ' + b.from; }).join(', ') + (L.bombs.length > 2 ? ', +' + (L.bombs.length - 2) + ' more' : ''))]);
+    rows.push(['You hit', !L.fired ? 'You had no missiles' : L.landed ? esc((L.on || []).slice(0, 2).join(', ') || L.landed + ' hit' + (L.landed === 1 ? '' : 's')) + (L.dealtUsd ? ' · <span class="gd">' + esc(usd(L.dealtUsd)) + '</span>' : '') : 'No hits: shields blocked them']);
+    if (L.mine) rows.push(['Your bombs', esc(L.mine.n + ' flew, ' + (L.mine.hit || 0) + ' hit')]);
+    if (L.mvp) rows.push(['Top builder', esc(L.mvp.repo + ', ' + L.mvp.bricks + ' brick' + (L.mvp.bricks === 1 ? '' : 's'))]);
+    if (L.taken > 0) rows.push(['Rebuilt so far', '<span class="gr">' + (L.rebuilt || 0) + '%</span>']);
+    if (L.reward > 0) rows.push(['Reward', '+' + L.reward + ' credits']);
+    return '<h3 class="b-ych"><i aria-hidden="true"></i>Your city</h3><dl class="b-yc">' + rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + r[1] + '</dd>'; }).join('') + '</dl>';
+  }
+  function lastRender() {
+    var el = q('[data-b="last"]'); if (!el) return;
+    var S = data.shots || [], landed = S.filter(function (x) { return x[3] > 0; }).length, eb = '<p class="b-eb">Last night · ' + esc(dLabel(data.night)) + '</p>';
+    var lay = '<button type="button" class="b-gb" data-pop="layers" aria-haspopup="dialog" aria-expanded="' + (popKind === 'layers') + '">' + ic('layers') + 'Layers</button>';
+    if (!S.length) { el.innerHTML = eb + '<h2 class="b-big b-none">No battle last night</h2><p class="b-sub">No city had missiles. Watch a demo to see how a battle looks.</p><div class="b-lbtn"><button type="button" class="b-gb" data-bdemo aria-pressed="false">' + ic('play') + 'Watch a demo battle</button>' + lay + '</div>'; popRefresh(); return; }
+    var dmg = data.usd != null ? data.usd : S.reduce(function (t, x) { return t + shotUsd(x); }, 0);
+    el.innerHTML = eb + '<div class="b-nums"><div><b>' + (data.cities || 0) + '</b><span>' + (data.cities === 1 ? 'city fought' : 'cities fought') + '</span></div><div><b>' + landed + '</b><span>missile' + (landed === 1 ? '' : 's') + ' hit</span></div><div class="g"><b>' + esc(usd(dmg)) + '</b><span>damage</span></div></div>' + yourCity()
+      + '<div class="b-lbtn"><button type="button" class="b-gb" data-bl="replay" aria-pressed="' + !!(layers.replay && playing) + '">' + ic('play') + 'Replay</button><button type="button" class="b-gb b-share">' + ic('copy') + '<span>Copy link</span></button>' + lay
+      + '<a class="b-allshots" href="#shots" data-ball>All ' + S.length + ' shot' + (S.length === 1 ? '' : 's') + '</a></div>';
+    popRefresh();
   }
   function post(path, body) {
     return fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j && j.error || r.status); return j; }); });
   }
   function load() { return fetch('/v1/world/battle', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) { if (d) { data = d; if (api()) api().view(on, d); stats(); } return d; }).catch(function () {}); }
-  function stats() {
-    var s = data.shots || [], landed = s.filter(function (x) { return x[3] > 0; }).length;
-    setText('date', 'Last night, ' + dLabel(data.night));
-    setText('cities', String(data.cities || 0)); setText('cl', data.cities === 1 ? 'city in the battles' : 'cities in the battles');
-    setText('shots', String(s.length)); setText('landed', String(landed)); setText('dmg', usd(data.usd != null ? data.usd : s.reduce(function (t, x) { return t + shotUsd(x); }, 0))); setText('fires', String(data.fires || 0));
-    setText('season', 'Season ' + data.season.n + ', week ' + data.season.week);
-    setText('next', 'Next night resolves ' + hhmm(data.next) + ' (in ' + until(data.next) + '), fires from noon');
-    var bd = q('[data-b="board"]');
-    if (bd) bd.innerHTML = (data.board || []).length ? '<ol>' + data.board.map(function (r) { return '<li><button type="button" data-fly="' + esc(r[0]) + '">' + esc(r[0]) + '</button> <b>' + usd(r[1]) + '</b></li>'; }).join('') + '</ol>' : '<p>No scores yet. The first battle sets the board.</p>';
-    lists();
-    Array.prototype.slice.call(bar.querySelectorAll('[data-fly]')).forEach(function (b) { b.onclick = function () { if (api()) api().fly(b.getAttribute('data-fly')); }; });
-  }
+  function stats() { lastRender(); lists(); setTab(tab); if (meLoaded && !me) render(); }
   // ---------------------------------------------------------------- the view: shown and hidden by the switcher (growthclient.ts)
   var chip = null, chipT = 0, pollT = 0;
+  /** the one clock (PAGE.md P1): the Armory lock time, which is the next battle; the server's clock when the member panel told us its skew */
+  function lockAt() { return me && me.armory ? me.armory.locksAt : data.next; }
+  function leftMs() { return (lockAt() || 0) - (Date.now() + armSkew); }
   function chipTick() {
-    if (!on || !api() || !api().phase) return; var ph = api().phase(), left = Math.max(0, ph.until - Date.now()), h = Math.floor(left / 3600000), m = Math.floor(left % 3600000 / 60000), sec = Math.floor(left / 1000);
-    if (!chip) { chip = document.createElement('div'); chip.className = 'b-chip'; chip.setAttribute('role', 'status'); chip.setAttribute('aria-live', 'polite'); chip.innerHTML = '<i></i><b></b><span></span>'; if (stage) stage.appendChild(chip); }
-    if (ph.replay) { chip.classList.toggle('rebuild', ph.stage === 'rebuild'); chip.querySelector('b').textContent = ph.demo ? 'Demo replay' : 'Replay'; chip.querySelector('span').textContent = (ph.stage === 'beat' || ph.stage === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats + (ph.label ? ' \u00b7 ' + ph.label : '') : ph.label || '') + (ph.paused ? ' \u00b7 paused' : ''); hud(ph); return; }
-    var reb = ph.seg === 'rebuild', left2 = h + 'h ' + (m < 10 ? '0' : '') + m + 'm', L = { idle: 'Quiet', supply: 'Supply drop', loading: 'Loading', countdown: 'Salvo', salvo: 'Salvo', damage: 'Hit', rebuild: 'Rebuilding until noon' }[ph.seg] || 'Battle';
-    var tail = ph.seg === 'supply' || ph.seg === 'loading' ? 'salvo ' + (ph.replay ? 'in ' + left2 : 'at ' + hhmm(ph.salvoAt)) + ' \u00b7 ' + ph.landed + ' of ' + ph.total + ' stacked' : ph.seg === 'countdown' ? 'in ' + Math.max(1, Math.ceil(left / 1000)) : ph.seg === 'salvo' || ph.seg === 'damage' ? ph.fired + ' missile' + (ph.fired === 1 ? '' : 's') + ' \u00b7 cranes ' + (ph.replay ? 'in ' + left2 : 'at midnight') : reb ? left2 + ' \u00b7 ' + Math.round(ph.rebuilt * 100) + '% rebuilt' : ph.total + ' missile' + (ph.total === 1 ? '' : 's') + ' today';
-    chip.classList.toggle('rebuild', reb); chip.querySelector('b').textContent = L; chip.querySelector('span').textContent = tail;
+    if (!on || !api() || !api().phase) return; var ph = api().phase();
+    if (!chip) { chip = document.createElement('div'); chip.className = 'b-chip'; chip.setAttribute('role', 'timer'); chip.setAttribute('aria-live', 'off'); chip.innerHTML = '<i></i><span class="b-ct"></span>'; if (stage) stage.appendChild(chip); }
+    var ct = chip.querySelector('.b-ct'), t;
+    if (ph.replay) { chip.classList.toggle('rebuild', ph.stage === 'rebuild'); t = '<b>' + (ph.demo ? 'Demo replay' : 'Replay') + '</b> ' + esc((ph.stage === 'beat' || ph.stage === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats + (ph.label ? ' · ' + ph.label : '') : ph.label || '') + (ph.paused ? ' · paused' : '')); if (ct.innerHTML !== t) ct.innerHTML = t; hud(ph); return; }
+    var left = leftMs(), reb = ph.seg === 'rebuild' && left > 0, n = ph.total || 0;
+    if (reb) t = 'Cranes rebuild until <b>12:00</b>';
+    else if (left <= 0) t = '<b>Battle running</b>';
+    else { var sp = esc(armSpan(left)); t = '<span class="b-cw">Battle starts in <b>' + sp + '</b> · <b>' + n + '</b> missile' + (n === 1 ? '' : 's') + ' loaded</span><span class="b-cn">Starts in <b>' + sp + '</b></span>'; }
+    chip.classList.toggle('rebuild', reb); if (ct.innerHTML !== t) ct.innerHTML = t;
   }
   // the replay controls on the map, one compact bar: Strike n of m + the last hit's damage tier, then Prev, Pause / Play, Next, speed, Fit, Follow (only after the viewer moved the camera), End. 44 px targets.
   var hudEl = null, hudHit = null;
@@ -227,11 +303,10 @@ export function battleClient() {
     if (layers.replay) play(replayMode, true);
   }
   function hide() {
-    on = false; stopPlay(); closeHow(); if (bar) bar.hidden = true; document.documentElement.classList.remove('w-battle'); if (api()) api().view(false); clearInterval(chipT); clearInterval(pollT); if (chip) { chip.remove(); chip = null; }
+    on = false; stopPlay(); closeHow(); popClose(false); if (bar) bar.hidden = true; document.documentElement.classList.remove('w-battle'); if (api()) api().view(false); clearInterval(chipT); clearInterval(pollT); if (chip) { chip.remove(); chip = null; }
     try { var u = new URL(location.href); if (u.searchParams.has('layers') || u.searchParams.has('replay')) { u.searchParams.delete('layers'); u.searchParams.delete('replay'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); } } catch (e) {}
   }
   window.CALDERA_BATTLE_UI = { show: show, hide: hide, play: function (mode) { if (mode === 'demo') play('demo'); else setLayer('replay', true); } };
-  var demoBtn = q('[data-bdemo]'); if (demoBtn) demoBtn.addEventListener('click', function () { play('demo'); });
   function saveLayers() {
     try { localStorage.setItem(LKEY, JSON.stringify(layers)); } catch (e) {}
     try { var u = new URL(location.href), def = layers.damage && layers.attacks && layers.shields && !layers.replay; if (def) u.searchParams.delete('layers'); else u.searchParams.set('layers', LAYERS.filter(function (k) { return layers[k]; }).join(',') || 'none'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); } catch (e) {}
@@ -241,10 +316,76 @@ export function battleClient() {
     if (k === 'replay') { if (v) play(); else stopPlay(); } else if (api()) api().layers(layers);
     saveLayers();
   }
-  Array.prototype.slice.call(bar ? bar.querySelectorAll('[data-bl]') : []).forEach(function (b) {
-    var k = b.getAttribute('data-bl'); b.setAttribute('aria-pressed', String(!!layers[k]));
-    b.addEventListener('click', function () { setLayer(k, b.getAttribute('aria-pressed') !== 'true'); });
+  // ---------------------------------------------------------------- popovers (PAGE.md 5a): Layers, Choose a target, Battle settings. One at a time;
+  // anchored under the opener (right aligned), a bottom sheet under 700 px; Esc or a tap outside closes; focus goes back to the opener.
+  var popEl = null, popKind = '', popFrom = null;
+  function popHtml(k) {
+    if (k === 'layers') return '<h4 id="b-pop-t">Layers</h4>'
+      + '<div class="b-prow"><span id="b-ly-d">Damage<small>Hits on the towers, smoke and the cranes</small></span><button type="button" class="b-sw" data-bl="damage" aria-pressed="' + !!layers.damage + '" aria-labelledby="b-ly-d"></button></div>'
+      + '<div class="b-prow"><span id="b-ly-a">Attacks<small>Missile pads, launch centers and missiles in flight</small></span><button type="button" class="b-sw" data-bl="attacks" aria-pressed="' + !!layers.attacks + '" aria-labelledby="b-ly-a"></button></div>'
+      + '<div class="b-prow"><span id="b-ly-s">Shields<small>Each city\'s shield (white: beginner shield)</small></span><button type="button" class="b-sw" data-bl="shields" aria-pressed="' + !!layers.shields + '" aria-labelledby="b-ly-s"></button></div>';
+    if (k === 'aim') return aimHtml();
+    if (k === 'set') return setHtml();
+    return '';
+  }
+  function popWire(k) {
+    if (!popEl) return;
+    if (k === 'aim') {
+      var da = popEl.querySelector('.b-doaim'); if (da) da.onclick = function () { var s = popEl.querySelector('.b-aimsel'); if (s) act('/v1/world/battle/aim', { target: s.value }); };
+      Array.prototype.slice.call(popEl.querySelectorAll('.b-unaim')).forEach(function (b) { b.onclick = function () { act('/v1/world/battle/aim', { target: b.getAttribute('data-h'), off: true }); }; });
+    }
+    if (k === 'set') {
+      Array.prototype.slice.call(popEl.querySelectorAll('[data-rep]')).forEach(function (b) { b.onclick = function () { act('/v1/world/battle/report', { freq: b.getAttribute('data-rep') }); }; });
+      var wv = popEl.querySelector('.b-waive'); if (wv) wv.onclick = function () { act('/v1/world/battle/opt', { waive: !me.waive }); };
+      var lv = popEl.querySelector('.b-leave'); if (lv) lv.onclick = function () { act('/v1/world/battle/opt', { war: false }); };
+    }
+  }
+  function popPlace() {
+    if (!popEl || !bar) return; var sheet = window.innerWidth < 700; popEl.classList.toggle('sheet', sheet);
+    if (sheet || !popFrom || !document.contains(popFrom)) { popEl.style.left = ''; popEl.style.top = ''; return; }
+    var br = bar.getBoundingClientRect(), r = popFrom.getBoundingClientRect(), w = popEl.offsetWidth;
+    popEl.style.left = Math.max(0, Math.min(r.right - br.left - w, br.width - w)) + 'px'; popEl.style.top = Math.round(r.bottom - br.top + 6) + 'px';
+  }
+  function popOpen(k, btn) {
+    popClose(false); var h = popHtml(k); if (!h || !bar) return;
+    popKind = k; popFrom = btn || null; popEl = document.createElement('div'); popEl.className = 'b-pop'; popEl.setAttribute('role', 'dialog'); popEl.setAttribute('aria-labelledby', 'b-pop-t'); popEl.setAttribute('data-k', k); popEl.innerHTML = h; bar.appendChild(popEl);
+    if (popFrom) popFrom.setAttribute('aria-expanded', 'true'); popPlace(); popWire(k);
+    var f = popEl.querySelector('button:not([disabled]),select,input,a[href]'); if (f) try { f.focus({ preventScroll: true }); } catch (e) {}
+  }
+  function popClose(back) {
+    if (!popEl) return; popEl.remove(); popEl = null; popKind = '';
+    if (popFrom) { popFrom.setAttribute('aria-expanded', 'false'); if (back && document.contains(popFrom)) try { popFrom.focus({ preventScroll: true }); } catch (e) {} } popFrom = null;
+  }
+  /** after the deck re-renders: the open popover shows the new state and stays anchored to the new opener */
+  function popRefresh() {
+    if (!popEl || !popKind) return; var k = popKind, h = popHtml(k); if (!h) { popClose(false); return; }
+    var had = popEl.contains(document.activeElement); popEl.innerHTML = h; popFrom = bar.querySelector('[data-pop="' + k + '"]'); if (popFrom) popFrom.setAttribute('aria-expanded', 'true'); popPlace(); popWire(k);
+    if (had || document.activeElement === document.body) { var f = popEl.querySelector('button:not([disabled]),select'); if (f) try { f.focus({ preventScroll: true }); } catch (e) {} }
+  }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && popEl) { e.preventDefault(); popClose(true); } });
+  document.addEventListener('pointerdown', function (e) { if (popEl && !popEl.contains(e.target) && !(popFrom && popFrom.contains(e.target))) popClose(false); });
+  addEventListener('resize', popPlace);
+  // ---------------------------------------------------------------- one click handler for the deck's buttons (the cards re-render, the handler stays)
+  if (bar) bar.addEventListener('click', function (e) {
+    var t = e.target && e.target.closest ? e.target : null, b; if (!t) return;
+    if ((b = t.closest('[data-bl]'))) { setLayer(b.getAttribute('data-bl'), b.getAttribute('aria-pressed') !== 'true'); return; }
+    if ((b = t.closest('[data-bdemo]'))) { play('demo'); return; }
+    if ((b = t.closest('[data-pop]'))) { var pk = b.getAttribute('data-pop'); if (popKind === pk) popClose(true); else popOpen(pk, b); return; }
+    if ((b = t.closest('[data-ball]'))) { e.preventDefault(); setTab('shots', false, true); var tb = q('[data-tab="shots"]'); if (tb) { try { tb.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } catch (e2) {} try { tb.focus({ preventScroll: true }); } catch (e2) {} } return; }
+    if ((b = t.closest('.b-share'))) {
+      var u = location.origin + '/world?view=battle&replay=1', lb = b.querySelector('span') || b, done = function () { lb.textContent = 'Copied'; setTimeout(function () { lb.textContent = 'Copy link'; }, 2000); };
+      try { navigator.clipboard.writeText(u).then(done, function () { prompt('Link to last night', u); }); } catch (e3) { prompt('Link to last night', u); } return; }
+    if ((b = t.closest('[data-tab]'))) { setTab(b.getAttribute('data-tab'), false, true); return; }
+    if ((b = t.closest('[data-more]'))) { more[b.getAttribute('data-more')] = true; lists(); return; }
+    if ((b = t.closest('[data-shot]'))) { var i = +b.getAttribute('data-shot'); openShot = openShot === i ? -1 : i; lists(); var nb = q('[data-shot="' + i + '"]'); if (nb) try { nb.focus({ preventScroll: true }); } catch (e4) {} return; }
+    if ((b = t.closest('[data-fly]'))) { if (api()) api().fly(b.getAttribute('data-fly')); return; }
   });
+  // the tab row: arrow keys, Home and End move between the tabs (role="tablist")
+  var trow = q('[role="tablist"]'); if (trow) trow.addEventListener('keydown', function (e) {
+    var i = TABS.indexOf(tab), k = e.key === 'ArrowRight' ? (i + 1) % 3 : e.key === 'ArrowLeft' ? (i + 2) % 3 : e.key === 'Home' ? 0 : e.key === 'End' ? 2 : -1;
+    if (k < 0) return; e.preventDefault(); setTab(TABS[k], true, true);
+  });
+  addEventListener('hashchange', function () { var h = location.hash.slice(1); if (TABS.indexOf(h) >= 0) setTab(h); });
   // ---------------------------------------------------------------- replay: the cinematic strike-by-strike replay (or the demo)
   var cap = q('[data-b="cap"]'), hudT = 0;
   function stopPlay() { if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); document.documentElement.classList.remove('fb-hide'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); }
@@ -252,7 +393,7 @@ export function battleClient() {
     if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0;
     closeHow();
     var n = on && api() && api().replay ? api().replay(mode, { speed: speed, auto: !!auto }) : 0;
-    if (!n) { if (cap) cap.textContent = mode === 'demo' ? 'The demo needs two cities with repo towers on the map.' : 'No missiles today: nothing to replay. Try the demo replay.'; playing = setTimeout(stopPlay, 3500); return; }
+    if (!n) { if (cap) cap.textContent = mode === 'demo' ? 'The demo needs two cities with repo towers on the map.' : 'No battle to replay. Watch a demo battle instead.'; playing = setTimeout(stopPlay, 3500); return; }
     var ph = api().phase(), b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', String(mode !== 'demo')); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', String(mode === 'demo')); layers.replay = mode !== 'demo';
     if (cap) cap.textContent = (mode === 'demo' ? 'Demo: a sample battle between the biggest cities on the map, synthetic shots. ' : 'Replay: ') + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ', ' + n + ' missile' + (n === 1 ? '' : 's') + ', about ' + Math.round(ph.dur / 1000 / (ph.speed || 1)) + ' s at ' + BSPD.label(ph.speed || 1) + '. Scroll, pinch or drag to look around; Fit shows the whole map; Next or the right arrow key goes to the next strike.';
     chipTick(); hud(ph); document.documentElement.classList.add('w-replay'); document.documentElement.classList.add('fb-hide');   // the feedback-hub widgets hide while the replay runs (html.fb-hide, any device)
@@ -277,11 +418,11 @@ export function battleClient() {
   function armWho() {
     var hs = []; cart.forEach(function (r) { if (r.target && !isLand(r.target)) { var h = '@' + String(r.target).replace(/^@/, ''); if (hs.indexOf(h) < 0) hs.push(h); } });
     if (!hs.length) return '';
-    var mine = '@' + String((me && me.h) || '').replace(/^@/, ''), d = hs.length === 1 ? '<b>' + esc(hs[0]) + '</b> gets an email about this bomb.' : hs.length === 2 ? '<b>' + esc(hs[0]) + '</b> and <b>' + esc(hs[1]) + '</b> each get an email about their bomb.' : hs.length + ' members each get an email about their bomb.';
-    return '<div class="b-arm-who"><label class="b-arm-who-l" for="b-arm-sw">Show my name</label><button type="button" class="b-arm-sw" id="b-arm-sw" role="switch" aria-checked="' + armShow + '" aria-describedby="b-arm-who-d"></button>'
-      + '<p class="b-arm-who-d" id="b-arm-who-d">' + d + ' <span data-arm="say">' + armSay(mine) + '</span></p></div>';
+    var d = hs.length === 1 ? esc(hs[0]) + ' gets an email about this bomb.' : hs.length === 2 ? esc(hs[0]) + ' and ' + esc(hs[1]) + ' each get an email about their bomb.' : hs.length + ' members each get an email about their bomb.';
+    return '<div class="b-arm-who"><button type="button" class="b-sw b-arm-sw" id="b-arm-sw" role="switch" aria-checked="' + armShow + '" aria-labelledby="b-arm-who-l" aria-describedby="b-arm-who-d"></button>'
+      + '<p class="b-arm-who-d" id="b-arm-who-d"><b id="b-arm-who-l">Show my name.</b> ' + d + ' <span data-arm="say">' + armSay() + '</span></p></div>';
   }
-  function armSay(mine) { return armShow ? (mine.length > 1 ? 'It says the bomb is from <b>' + esc(mine) + '</b>.' : 'It shows your name.') : 'It says the bomb is from "Someone".'; }
+  function armSay() { return armShow ? '' : 'It says the bomb is from "Someone".'; }
   var pick = -1, pq = '', pAct = 0, gl = null, glT = 0, glX = null, armAim = '', GHL = /^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
   function isLand(h) { return !!(h && me && me.armory && (me.armory.lands || []).indexOf(h) >= 0); }
   function pOpts() {
@@ -341,16 +482,16 @@ export function battleClient() {
       }).catch(function () { gl = { st: 'github', login: login }; pPaint(); });
   }
   function pPaint() {   // the list and the lookup card only: the input keeps its caret
-    var d = panel && panel.querySelector('#armory'), r = d && d.querySelector('.b-tp-r'), inp = d && d.querySelector('.b-tp-in input'); if (!r) return;
+    var d = armEl(), r = d && d.querySelector('.b-tp-r'), inp = d && d.querySelector('.b-tp-in input'); if (!r) return;
     r.innerHTML = pList(pick + 1); if (inp) inp.setAttribute('aria-activedescendant', 'b-tp-o-' + (pick + 1) + '-' + pAct); pWireList();
   }
   function pWireList() {
-    var d = panel && panel.querySelector('#armory'); if (!d || pick < 0) return; var i = pick;
+    var d = armEl(); if (!d || pick < 0) return; var i = pick;
     Array.prototype.slice.call(d.querySelectorAll('.b-tp-l li')).forEach(function (li) { li.onclick = function () { pSet(i, li.getAttribute('data-h')); }; });
     var g = d.querySelector('.b-gh-go'); if (g) g.onclick = function () { var a = g.getAttribute('data-gh'); if (a === 'add') pAdd(i); else if (a === 'aim') { var h = '@' + gl.login; if (!isLand(h)) (me.armory.lands = me.armory.lands || []).push(h); pSet(i, h); } else pLook(gl.login); };
   }
   function pWire() {
-    var d = panel && panel.querySelector('#armory'); if (!d || pick < 0) return; var i = pick, inp = d.querySelector('.b-tp-in input'); if (!inp) return;
+    var d = armEl(); if (!d || pick < 0) return; var i = pick, inp = d.querySelector('.b-tp-in input'); if (!inp) return;
     inp.oninput = function () {
       pq = inp.value.replace(/^@/, '').trim(); pAct = 0; gl = null; clearTimeout(glT); if (glX) { try { glX.abort(); } catch (e) {} glX = null; }
       var q = pq.toLowerCase(), known = pOpts().some(function (o) { return o.h.toLowerCase() === '@' + q; });
@@ -369,11 +510,10 @@ export function battleClient() {
   window.CALDERA_ARMORY_TARGET = function (h) {
     if (!me || !me.armory) return false; if (h === null) return true;
     if (!isLand(h) && me.armory.targets.indexOf(h) < 0) (me.armory.lands = me.armory.lands || []).push(h);
-    var d = panel && panel.querySelector('#armory'); if (d) d.open = true;
     var r = cart.filter(function (x) { return !x.target; })[0];
     if (r) { r.target = h; armOk = 'Bomb ' + (cart.indexOf(r) + 1) + ' now aims at ' + h + '.'; armRender('#b-ar-t-' + (cart.indexOf(r) + 1)); }
     else { armAim = h; armOk = 'Pick a bomb. It aims at ' + h + '.'; armRender('.b-bc:not([disabled])'); }
-    if (d && d.scrollIntoView) d.scrollIntoView({ block: 'nearest' });
+    if (panel && panel.scrollIntoView) panel.scrollIntoView({ block: 'nearest' });
     return true;
   };
   function armClock(t) { try { return new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch (e) { return hhmm(t); } }
@@ -383,59 +523,66 @@ export function battleClient() {
   function armBuyLabel() {
     var A2 = me.armory, tot = armTotal();
     if (armBusy) return ['Buying...', false];
-    if (!cart.length) return ['Add a bomb to start', false];
+    if (!cart.length) return ['Pick a bomb', false];
     for (var i = 0; i < cart.length; i++) if (!cart[i].word) return ['Add a word to bomb ' + (i + 1), false];
     if (tot > A2.balance) return ['Need ' + (tot - A2.balance) + ' more credits', false];
     return ['Buy ' + cart.length + ' bomb' + (cart.length === 1 ? '' : 's') + ' for ' + tot + ' credits', true];
   }
-  function armoryHtml() {
-    var A2 = me && me.armory; if (!A2) return '';
-    var open = !A2.bought.length; try { var sv = localStorage.getItem('caldera.world.armory'); if (sv === '1') open = true; else if (sv === '0') open = false; } catch (e) {}
-    if (location.hash === '#armory') open = true;
-    return '<details class="b-board b-arm" id="armory" data-st="open"' + (open ? ' open' : '') + '>' + armBody() + '</details>';
+  /** the order line left of the Buy button: Balance 315 / Order 17 credits · 298 left / Order 60 credits · 12 short */
+  function armSum() {
+    var A2 = me.armory, tot = armTotal(), left = A2.balance - tot;
+    if (!cart.length) return 'Balance <b>' + A2.balance + '</b>';
+    return 'Order <b>' + tot + '</b> credits · ' + (left < 0 ? '<b class="neg">' + (-left) + '</b> short' : '<b>' + left + '</b> left');
   }
-  function armBody() {
+  function armEl() { return panel ? panel.querySelector('.b-arm') : null; }
+  function armLocked() { return !(leftMs() > 0); }
+  /** the Armory column of the Tonight card (PAGE.md 5a): bomb cards, one row per bomb, Show my name, the order line and Buy */
+  function armoryHtml(locked) {
+    var A2 = me && me.armory; if (!A2) return '';
+    return '<div class="b-arm" data-st="' + (locked ? 'locked' : 'open') + '">' + armBody(locked) + '</div>';
+  }
+  function armBody(locked) {
     var A2 = me.armory, tot = armTotal(), left = A2.balance - tot, room = A2.cap - A2.bought.length - cart.length;
     var spent = A2.bought.reduce(function (t, b) { return t + armCost(b.k); }, 0);
-    var load = A2.bought.length ? '<div class="b-arm-load"><h4>Loaded for tonight <span>' + A2.bought.length + ' bomb' + (A2.bought.length === 1 ? '' : 's') + ', ' + spent + ' credits</span></h4><ul>'
-      + A2.bought.map(function (b) { return '<li>' + bIcon(b.k) + '<b>' + esc(BNAME[b.k] || b.k) + '</b><q>' + esc(b.word) + '</q><span>' + (b.target ? 'at ' + esc(b.target) : 'at a random rival') + '</span></li>'; }).join('') + '</ul></div>' : '';
+    var load = A2.bought.length ? '<div class="b-arm-load"><h3 class="b-hh">Loaded for tonight <small>' + A2.bought.length + ' bomb' + (A2.bought.length === 1 ? '' : 's') + ', ' + spent + ' credits</small></h3><ul>'
+      + A2.bought.map(function (b) { return '<li data-k="' + esc(b.k) + '">' + bIcon(b.k) + '<b>' + esc(BNAME[b.k] || b.k) + '</b><q>' + esc(b.word) + '</q><span>' + (b.target ? 'at ' + esc(b.target) : 'at a random rival') + '</span></li>'; }).join('') + '</ul></div>' : '';
+    if (locked) return (load || '<h3 class="b-hh">Loaded for tonight</h3><p class="b-fine">No custom bombs tonight.</p>') + '<p class="b-fine">The Armory opens again after the battle.</p>';
     var cards = A2.kinds.map(function (t) {
       var n = cart.filter(function (r) { return r.k === t.k; }).length, need = t.cost - left, dis = room <= 0 || need > 0;
-      return '<button type="button" class="b-bc" data-k="' + esc(t.k) + '" aria-describedby="b-bc-' + esc(t.k) + '-d"' + (dis ? ' disabled' : '') + '>' + bIcon(t.k)
+      return '<button type="button" class="b-bc' + (n ? ' in' : '') + '" data-k="' + esc(t.k) + '" aria-describedby="b-bc-' + esc(t.k) + '-d"' + (dis ? ' disabled' : '') + '>' + bIcon(t.k)
         + '<span class="b-bc-n">' + esc(t.name) + '</span><span class="b-bc-p">' + t.cost + ' credits</span><span class="b-bc-d" id="b-bc-' + esc(t.k) + '-d">' + esc(t.line) + '</span>'
-        + '<span class="b-bc-add" aria-hidden="true">' + (room <= 0 ? A2.cap + ' per night reached' : need > 0 ? 'Need ' + need + ' more credits' : '+ Add') + '</span>'
+        + '<span class="b-bc-add" aria-hidden="true">' + (room <= 0 ? A2.cap + ' a night reached' : need > 0 ? 'Need ' + need + ' more credits' : '+ Add') + '</span>'
         + '<span class="b-bc-c"' + (n ? '' : ' hidden') + '>' + n + '</span></button>';
     }).join('');
     var rows = cart.map(function (r, i) {
-      var n = i + 1;
-      return '<li class="b-ar' + (r.err ? ' bad' : '') + '" data-k="' + esc(r.k) + '" data-i="' + i + '">' + bIcon(r.k) + '<span class="b-ar-n">' + esc(BNAME[r.k] || r.k) + ' <small>' + armCost(r.k) + '</small></span>'
-        + '<label class="b-ar-w"><span class="sr">Word for bomb ' + n + '</span><input id="b-ar-w-' + n + '" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="' + A2.wordMax + '" placeholder="Your word" aria-describedby="b-ar-e-' + n + '" value="' + esc(r.word) + '"' + (r.err ? ' aria-invalid="true"' : '') + '><span class="b-ar-cnt" aria-hidden="true">' + r.word.length + '/' + A2.wordMax + '</span></label>'
-        + '<button type="button" class="b-ar-tb" id="b-ar-t-' + n + '" aria-haspopup="listbox" aria-expanded="' + (pick === i) + '" aria-label="Target for bomb ' + n + ': ' + esc(r.target || 'Random') + (isLand(r.target) ? ', unclaimed land' : '') + '"><span>' + esc(r.target || 'Random') + '</span>' + (isLand(r.target) ? '<i class="b-un">Unclaimed</i>' : '') + '</button>'
+      var n = i + 1, tl = r.target || 'Random rival';
+      return '<li class="b-ar' + (r.err ? ' bad' : '') + '" data-k="' + esc(r.k) + '" data-i="' + i + '">' + bIcon(r.k)
+        + '<label class="b-ar-w"><span class="sr">Word for bomb ' + n + ', ' + esc(BNAME[r.k] || r.k) + '</span><input id="b-ar-w-' + n + '" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="' + A2.wordMax + '" placeholder="Your word" aria-describedby="b-ar-e-' + n + '" value="' + esc(r.word) + '"' + (r.err ? ' aria-invalid="true"' : '') + '><span class="b-ar-cnt" aria-hidden="true">' + Array.from(r.word).length + '/' + A2.wordMax + '</span></label>'
+        + '<button type="button" class="b-ar-tb" id="b-ar-t-' + n + '" aria-haspopup="listbox" aria-expanded="' + (pick === i) + '" aria-label="Target for bomb ' + n + ': ' + esc(tl) + (isLand(r.target) ? ', unclaimed land' : '') + '"><span>' + esc(tl) + '</span>' + (isLand(r.target) ? '<i class="b-un">Unclaimed</i>' : '') + '</button>'
         + '<button type="button" class="b-ar-x" aria-label="Remove bomb ' + n + '">&times;</button><p class="b-ar-e" id="b-ar-e-' + n + '" role="alert"' + (r.err ? '' : ' hidden') + '>' + esc(r.err || '') + '</p>' + (pick === i ? pHtml(n) : '') + '</li>';
     }).join('');
     var bl = armBuyLabel();
-    return '<summary><span class="b-arm-t">Armory</span><span class="b-arm-clock" data-arm="clock" role="timer" aria-live="off"></span><span class="b-arm-bal"><b data-arm="bal">' + A2.balance + '</b> credits</span></summary>'
-      + '<p class="b-arm-lede">Custom bombs for the next battle. Each one carries a word that rises over the hit in the replay, for everyone to see.</p>' + load
-      + '<div class="b-arm-cards" role="group" aria-label="Add a bomb">' + cards + '</div><ol class="b-arm-rows" data-arm="rows" aria-label="Bombs to buy">' + rows + '</ol>'
-      + '<div class="b-arm-foot">' + armWho() + '<dl class="b-arm-sum"><dt>Balance</dt><dd data-arm="bal2">' + A2.balance + '</dd><dt>This order</dt><dd data-arm="tot">' + (tot ? '-' + tot : '0') + '</dd><dt>Left after</dt><dd data-arm="left"' + (left < 0 ? ' class="neg"' : '') + '>' + left + '</dd></dl>'
-      + '<button type="button" class="b-arm-buy" data-arm="buy"' + (bl[1] ? '' : ' disabled') + (armBusy ? ' aria-busy="true"' : '') + '>' + esc(bl[0]) + '</button></div>'
-      + (armErr ? '<p class="b-ar-e" role="alert">' + esc(armErr) + '</p>' : '')
-      + '<p class="b-arm-note" data-arm="note">' + (A2.balance < 5 && !cart.length ? 'You have ' + A2.balance + ' credits. Each city that fires in a battle gets +10. Earn more by answering asks in the <a href="/gardens">gardens</a>. ' : '') + 'Credits are spent when you tap Buy. Up to ' + A2.cap + ' bombs per night. Help credits have no cash value.</p>'
+    return '<h3 class="b-hh">Armory <small>Add a bomb with your word on it. Everyone sees the word in the replay.</small></h3>' + load
+      + '<div class="b-arm-cards" role="group" aria-label="Add a bomb">' + cards + '</div><ol class="b-arm-rows" data-arm="rows" aria-label="Bombs to buy">' + rows + '</ol>' + armWho()
+      + '<div class="b-arm-foot"><span class="b-arm-sum" data-arm="sum">' + armSum() + '</span><button type="button" class="b-arm-buy" data-arm="buy"' + (bl[1] ? '' : ' disabled') + (armBusy ? ' aria-busy="true"' : '') + '>' + esc(bl[0]) + '</button></div>'
+      + (armErr ? '<p class="b-arm-err" role="alert">' + esc(armErr) + '</p>' : '')
+      + (A2.balance < 5 && !cart.length ? '<p class="b-fine" data-arm="low">You have ' + A2.balance + ' credits. Each city that fires gets +10. Answer asks in the <a href="/gardens">gardens</a> to earn more.</p>' : '')
+      + '<p class="b-fine" data-arm="note">Up to ' + A2.cap + ' bombs a night. Credits have no cash value.</p>'
       + '<p class="b-arm-ok" data-arm="ok" role="status"' + (armOk ? '' : ' hidden') + '>' + esc(armOk) + '</p>';
   }
   function armRender(focus) {
-    var d = panel && panel.querySelector('#armory'); if (!d || !me || !me.armory) return;
-    d.innerHTML = armBody(); armWire(); armTick();
+    var d = armEl(); if (!d || !me || !me.armory) return; var lk = armLocked();
+    d.setAttribute('data-st', lk ? 'locked' : 'open'); d.innerHTML = armBody(lk); armWire();
+    var cb = panel.querySelector('[data-arm="bal"]'); if (cb) cb.textContent = String(me.armory.balance);
     if (focus) { var f = d.querySelector(focus); if (f) f.focus(); }
   }
-  function armFoot() {   // typing: update the counters and the Buy button without rebuilding the rows (keeps the caret)
-    var d = panel && panel.querySelector('#armory'); if (!d) return; var bl = armBuyLabel(), b = d.querySelector('[data-arm="buy"]');
+  function armFoot() {   // typing: update the Buy button without rebuilding the rows (keeps the caret)
+    var d = armEl(); if (!d) return; var bl = armBuyLabel(), b = d.querySelector('[data-arm="buy"]'); if (!b) return;
     b.textContent = bl[0]; b.disabled = !bl[1];
     if (armOk) { armOk = ''; var ok = d.querySelector('[data-arm="ok"]'); if (ok) ok.hidden = true; }
   }
   function armWire() {
-    var d = panel && panel.querySelector('#armory'); if (!d) return;
-    d.ontoggle = function () { try { localStorage.setItem('caldera.world.armory', d.open ? '1' : '0'); } catch (e) {} };
+    var d = armEl(); if (!d) return;
     Array.prototype.slice.call(d.querySelectorAll('.b-bc')).forEach(function (b) { b.onclick = function () { if (b.disabled) return; cart.push({ k: b.getAttribute('data-k'), word: '', target: armAim, err: '' }); armAim = ''; armOk = ''; armErr = ''; pick = -1; armRender('#b-ar-w-' + cart.length); }; });
     Array.prototype.slice.call(d.querySelectorAll('.b-ar')).forEach(function (li) {
       var i = +li.getAttribute('data-i'), inp = li.querySelector('.b-ar-w input'), tb = li.querySelector('.b-ar-tb'), cnt = li.querySelector('.b-ar-cnt');
@@ -446,7 +593,7 @@ export function battleClient() {
     });
     var buy = d.querySelector('[data-arm="buy"]'); if (buy) buy.onclick = armBuy;
     var sw = d.querySelector('#b-arm-sw'); if (sw) sw.onclick = function () { armShow = !armShow; sw.setAttribute('aria-checked', String(armShow)); try { localStorage.setItem('caldera.armory.showName', armShow ? '1' : '0'); } catch (e) {}
-      var say = d.querySelector('[data-arm="say"]'); if (say) say.innerHTML = armSay('@' + String((me && me.h) || '').replace(/^@/, '')); };
+      var say = d.querySelector('[data-arm="say"]'); if (say) say.textContent = armSay(); };
     pWire();
   }
   function armBuy() {
@@ -457,132 +604,108 @@ export function battleClient() {
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; }); })
       .then(function (x) {
         armBusy = false;
-        if (x.status === 200) { cart = []; me = x.j.me && x.j.me.h ? x.j.me : me; armOk = 'Loaded: ' + n + ' bomb' + (n === 1 ? '' : 's') + ' for the next battle. They fly at ' + armClock(me.armory.locksAt) + '. Watch them hit in the morning replay.'; armRender(); return; }
+        if (x.status === 200) { cart = []; me = x.j.me && x.j.me.h ? x.j.me : me; armOk = 'Loaded: ' + n + ' bomb' + (n === 1 ? '' : 's') + '. They fly at ' + armClock(me.armory.locksAt) + '. Watch them hit in the morning replay.'; armRender(); return; }
         if (x.status === 422 && x.j.rows) { x.j.rows.forEach(function (r) { if (cart[r.i]) cart[r.i].err = r.error || 'Write a word for this bomb.'; }); armErr = x.j.error; armRender('.b-ar.bad input'); return; }
         if (x.status === 402 && typeof x.j.balance === 'number') me.armory.balance = x.j.balance;
         armErr = x.j && x.j.error ? x.j.error : 'Could not buy right now. Nothing was charged. Try again.'; armRender();
       }).catch(function () { armBusy = false; armErr = 'Could not buy right now. Nothing was charged. Try again.'; armRender(); });
   }
+  /** the Tonight title's countdown, every 15 s (role="timer", aria-live off). At the lock the card turns to "Battle running" and the
+   *  member panel reloads a minute later (the next Armory window). */
   function armTick() {
-    var d = panel && panel.querySelector('#armory'); if (!d || !me || !me.armory) return;
-    var left = me.armory.locksAt - (Date.now() + armSkew), c = d.querySelector('[data-arm="clock"]'); if (!c) return;
-    if (left <= 0) { c.textContent = 'Battle running'; clearInterval(armT); armT = 0; setTimeout(mine, 60000); return; }
-    c.textContent = 'Locks in ' + armSpan(left); c.classList.toggle('last', left < 3600000);
+    if (!panel || !meLoaded) return; var left = leftMs(), c = panel.querySelector('[data-arm="clock"]');
+    if (left <= 0) { if (c || panel.querySelector('.b-arm[data-st="open"]')) { clearInterval(armT); armT = 0; render(); setTimeout(me ? mine : load, 60000); } return; }
+    if (!c) return; c.textContent = armSpan(left); var last = left < 3600000;
+    if (c.classList.contains('last') !== last) { c.classList.toggle('last', last); var s = panel.querySelector('[data-arm="sub"]'); if (s && me) s.textContent = openSub(left); }
   }
+  function armClockGo() { clearInterval(armT); armT = setInterval(armTick, 15000); }
   function armStart() {
     if (!me || !me.armory) return;
-    armSkew = me.armory.now - Date.now(); clearInterval(armT); armT = setInterval(armTick, 15000); armWire(); armTick();
+    armWire();
     if (!armTzSent) { armTzSent = true; try { var z = Intl.DateTimeFormat().resolvedOptions().timeZone; if (z && z !== me.armory.tz) post('/v1/world/battle/tz', { tz: z }).catch(function () {}); } catch (e) {} }
-    if (location.hash === '#armory') { var d = panel.querySelector('#armory'); if (d && d.scrollIntoView) d.scrollIntoView({ block: 'nearest' }); }
   }
   // the report flag on a custom bomb's word in the replay (armory-design D1)
   function bombOf(s) { return s && s[8] && s[8].bk ? s[8] : null; }
   function bombTail(s) { var x = bombOf(s); return x ? ' · ' + (BNAME[x.bk] || x.bk) + ' "' + x.word + '" from ' + s[0] : ''; }
   function flagHtml(s) { return '<button type="button" data-p="flag" class="b-flag" aria-label="Report the word ' + esc(s[8].word) + '"><svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M5 21V4m0 0h11l-2 4 2 4H5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Report</button>'; }
-  // ---------------------------------------------------------------- the member's panel
-  var panel = q('[data-b="me"]');
+  // ---------------------------------------------------------------- the Tonight card (PAGE.md 5a and 8): the member's own panel
+  var panel = q('[data-b="me"]'), meLoaded = false;
   function mine() {
-    return fetch('/v1/world/battle/me', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (m) { me = m && m.h ? m : null; render(); recap(); return me; }).catch(function () { render(); });
+    return fetch('/v1/world/battle/me', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (m) { me = m && m.h ? m : null; meLoaded = true; if (me && me.armory) armSkew = me.armory.now - Date.now(); render(); lastRender(); lists(); return me; })
+      .catch(function () { meLoaded = true; render(); });
+  }
+  function tnHead(title, sub, right) { return '<div class="b-ch1"><div><p class="b-eb">Tonight</p><h2 class="b-big" id="b-tn-t">' + title + '</h2>' + (sub ? '<p class="b-sub" data-arm="sub">' + sub + '</p>' : '') + '</div>' + (right || '') + '</div>'; }
+  function gearBtn() { return '<button type="button" class="b-gear" data-pop="set" aria-haspopup="dialog" aria-expanded="' + (popKind === 'set') + '" aria-label="Battle settings" title="Battle settings">' + ic('gear') + '</button>'; }
+  function clockTitle(left) { return left > 0 ? 'Battle starts in <b data-arm="clock" role="timer" aria-live="off"' + (left < 3600000 ? ' class="last"' : '') + '>' + esc(armSpan(left)) + '</b>' : 'Battle running'; }
+  function openSub(left) { return left < 3600000 ? 'Last hour. Your bombs lock at ' + armClock(lockAt()) + '.' : 'Your bombs lock then. Your city fires by itself.'; }
+  /** the four firepower tiles, the work line and (while the Armory is open) the Targets row; m null: the loading state */
+  function fireHtml(m, locked) {
+    var tiles;
+    if (!m) tiles = ['Firepower', 'Missiles', 'Aim', 'Shield'].map(function (l) { return [l, '–', ' ']; });
+    else { var a = m.arsenal || { usd: 0, shots: 0, n: {}, tech: 0, why: {}, cep: 1, reach: 3 };
+      tiles = [['Firepower', usd(a.usd || 0), 'to spend on missiles'], ['Missiles', String(a.shots || 0), missLine(a)], ['Aim', aimOf(a.cep), aimLine(a.cep)],
+        ['Shield', Math.round((m.shield || 0) * 100) + '%', m.beginner ? 'beginner shield, first 30 days' : 'blocked from each hit', 'cy']]; }
+    var aims = m ? m.aims || [] : [];
+    return '<div class="b-fp"><h3 class="b-hh">Your firepower <small>from today\'s code</small></h3><div class="b-tiles">'
+      + tiles.map(function (t) { return '<div class="b-tile"><span>' + t[0] + '</span><b' + (t[3] ? ' class="' + t[3] + '"' : '') + '>' + esc(t[1]) + '</b><i>' + esc(t[2]) + '</i></div>'; }).join('') + '</div>'
+      + (m ? '<p class="b-from">' + esc(workLine(m.arsenal)) + '</p>' : '')
+      + (m && !locked ? '<div class="b-trow"><span><b>Targets:</b> ' + (aims.length ? esc(aims.join(', ')) : 'auto, a fair rival') + '</span><button type="button" class="b-gb" data-pop="aim" aria-haspopup="dialog" aria-expanded="' + (popKind === 'aim') + '">' + ic('target') + 'Choose a target</button></div>' : '')
+      + '</div>';
   }
   function render() {
-    if (!panel) return;
-    if (!me) { panel.innerHTML = '<p>Every city is in the battles. Each one fights on its own overnight with that day\'s real code; damage shows only on this map and always rebuilds itself. <a href="/signin?next=%2Fworld%3Fview%3Dbattle">Sign in</a> to see your city\'s arsenal and shield.</p>'; return; }
+    if (!panel) return; var left = leftMs();
+    if (!meLoaded) { panel.setAttribute('aria-busy', 'true'); panel.innerHTML = tnHead(clockTitle(left), '') + '<div class="b-tnb">' + fireHtml(null) + '</div>'; return; }
+    panel.removeAttribute('aria-busy');
+    if (!me) {
+      panel.innerHTML = tnHead(clockTitle(left), '') + '<p class="b-txt">Put your city in the fight. Your GitHub becomes a city, and today\'s code becomes missiles. Damage shows only on this map.</p>'
+        + '<div class="b-cta-row"><a class="b-cta2" href="/#start">Add your city</a><a class="b-lnk" href="/signin?next=%2Fworld%3Fview%3Dbattle">Sign in</a></div>';
+      armClockGo(); popClose(false); return; }
     if (!me.war) {
-      panel.innerHTML = '<p><b>Your city has left the battles.</b> No shots in or out while it is out. Rejoin and it fights on its own overnight with that day\'s real code: no one has to do anything, damage is only on this map, and it always rebuilds itself.</p><button type="button" class="b-join">Rejoin the battles</button>' + reportHtml();
+      panel.innerHTML = tnHead('Your city is out of the battles', 'No shots in or out. Rejoin and it fights by itself each night.', gearBtn()) + '<button type="button" class="b-cta2 b-join">Rejoin the battles</button>';
       panel.querySelector('.b-join').onclick = function () { act('/v1/world/battle/opt', { war: true }); };
-      wireReport(); return;
-    }
-    var a = me.arsenal || { ammo: 0, usd: 0, c: 0, pr: 0, shots: 0, best: 'shell', ai: 1, n: {}, tech: 0, why: { base: 0, rel: 0, ci: 0 }, guide: 'Inertial', cep: 1, reach: 3, left: 0 };
-    var parts = [a.c + ' commit' + (a.c === 1 ? '' : 's')]; if (a.pr) parts.push(a.pr + ' PR' + (a.pr === 1 ? '' : 's')); if (a.rel) parts.push(a.rel + ' release' + (a.rel === 1 ? '' : 's')); if (a.ci) parts.push(a.ci + ' green CI'); if (a.ai > 1) parts.push('x' + a.ai + ' AI'); if (a.streak > 1) parts.push('x' + a.streak + ' streak');
-    var bw = wOf(a.best), why = a.why || {}, up = (a.tech || 0) >= 3 ? 'top size unlocked' : !why.rel ? 'ship a release for the next size' : !why.ci ? 'a green CI run today unlocks the next size' : 'a taller building unlocks the next size';
-    var aims = (me.aims || []).map(function (h) { return '<li>' + esc(h) + ' <button type="button" class="b-unaim" data-h="' + esc(h) + '" aria-label="Stop aiming at ' + esc(h) + '">&times;</button></li>'; }).join('');
-    var opts = (me.rivals || []).map(function (r) { return '<option value="' + esc(r.h) + '">' + esc(r.h) + ' (shield ' + Math.round(r.sh * 100) + '%' + (r.beg ? ', beginner' : '') + ')</option>'; }).join('');
-    panel.innerHTML = '<div class="b-ars"><div><span>Today\'s budget so far</span><b>' + usd(a.usd || 0) + '</b><i>' + esc(parts.join(', ')) + '</i></div>'
-      + '<div><span>Missiles</span><b>' + a.shots + ' missile' + (a.shots === 1 ? '' : 's') + '</b><span class="b-szs">' + sizeChips(a.n, a.tech || 0) + '</span></div>'
-      + '<div><span>Biggest size</span><b>' + esc(bw ? bw.size + ', ' + bw.name.toLowerCase() : 'S') + '</b><i>' + esc(up) + '</i></div>'
-      + '<div><span>Guidance</span><b>' + esc(a.guide || 'Inertial') + '</b><i>misses x ' + (a.cep == null ? 1 : a.cep) + ', ' + (a.reach || 3) + ' rivals in reach</i></div>'
-      + '<div><span>Shield</span><b>' + Math.round((me.shield || 0) * 100) + '%</b><i>' + (me.beginner ? 'beginner shield' : 'from your daily streak') + '</i></div></div>'
-      + '<details class="b-fire"><summary>Fire at a rival (optional, up to ' + me.aimCap + ' shots tonight)</summary>'
-      + (opts ? '<div class="b-aim"><select aria-label="Rival to aim at">' + opts + '</select><button type="button" class="b-doaim"' + ((me.aims || []).length >= me.aimCap ? ' disabled' : '') + '>Aim a shot</button></div>' : '<p>No rivals in range yet. Auto-fire finds a fair match, or raiders from the sea.</p>')
-      + (aims ? '<ul class="b-aims">' + aims + '</ul>' : '') + '</details>'
-      + armoryHtml()
-      + reportHtml()
-      + '<p class="b-small">' + (me.beginner || me.waive ? '<button type="button" class="b-link b-waive">' + (me.waive ? 'Turn my beginner shield back on' : 'Drop my beginner shield') + '</button> &middot; ' : '') + '<button type="button" class="b-link b-leave">Leave the battles</button> (your city rebuilds instantly)</p>';
-    panel.querySelector('.b-leave').onclick = function () { act('/v1/world/battle/opt', { war: false }); };
-    var wv = panel.querySelector('.b-waive'); if (wv) wv.onclick = function () { act('/v1/world/battle/opt', { waive: !me.waive }); };
-    var da = panel.querySelector('.b-doaim'); if (da) da.onclick = function () { act('/v1/world/battle/aim', { target: panel.querySelector('.b-aim select').value }); };
-    Array.prototype.slice.call(panel.querySelectorAll('.b-unaim')).forEach(function (b) { b.onclick = function () { act('/v1/world/battle/aim', { target: b.getAttribute('data-h'), off: true }); }; });
-    wireReport(); armStart();
+      popRefresh(); return; }
+    var A2 = me.armory, locked = !(left > 0);
+    panel.innerHTML = tnHead(clockTitle(left), locked ? 'Bombs are locked. The replay is ready in the morning.' : openSub(left), '<div class="b-tools">' + (A2 ? '<span class="b-cred"><b data-arm="bal">' + A2.balance + '</b> credits</span>' : '') + gearBtn() + '</div>')
+      + '<div class="b-tnb">' + fireHtml(me, locked) + armoryHtml(locked) + '</div>';
+    armStart(); armClockGo(); popRefresh();
+    if (location.hash === '#armory' && !render.did) { render.did = 1; try { panel.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
+    if (location.hash === '#reports' && !render.rep) { render.rep = 1; var g = panel.querySelector('[data-pop="set"]'); if (g) setTimeout(function () { popOpen('set', panel.querySelector('[data-pop="set"]')); }, 0); }
+  }
+  /** Choose a target (PAGE.md 5a): up to aimCap missiles at a rival in reach */
+  function aimHtml() {
+    if (!me || !me.war) return '';
+    var a = me.arsenal || {}, aims = me.aims || [], cap = me.aimCap || 3, full = aims.length >= cap, R = me.rivals || [];
+    return '<h4 id="b-pop-t">Choose a target</h4><p>Aim up to ' + cap + ' missiles at one rival. You can reach ' + (a.reach || 3) + ' rivals tonight.</p>'
+      + (R.length ? '<label class="sr" for="b-aim-s">Rival to aim at</label><select id="b-aim-s" class="b-aimsel">' + R.map(function (r) { return '<option value="' + esc(r.h) + '">' + esc(r.h) + ' · shield ' + Math.round((r.sh || 0) * 100) + '%' + (r.beg ? ' · beginner' : '') + '</option>'; }).join('') + '</select>'
+        + '<button type="button" class="b-pbuy b-doaim"' + (full ? ' disabled' : '') + '>' + (full ? cap + ' of ' + cap + ' aimed' : 'Aim a missile') + '</button>'
+        : '<p>No rivals in reach yet. Your missiles find a fair match by themselves.</p>')
+      + (aims.length ? '<ul class="b-aims">' + aims.map(function (h) { return '<li><b>Aimed:</b> ' + esc(h) + ' <button type="button" class="b-unaim" data-h="' + esc(h) + '" aria-label="Stop aiming at ' + esc(h) + '">Remove</button></li>'; }).join('') + '</ul>' : '');
+  }
+  /** Battle settings (PAGE.md 5a): the report email, the beginner shield, Leave the battles */
+  function setHtml() {
+    if (!me) return '';
+    var dome = Math.round(((rules() && rules().dome) || 0.99) * 100);
+    return '<h4 id="b-pop-t">Battle settings</h4>' + reportHtml()
+      + (me.war && (me.beginner || me.waive) ? '<hr><div class="b-prow"><span id="b-beg-l">Beginner shield<small>Blocks ' + dome + '% of each hit for your first 30 days.</small></span><button type="button" class="b-sw b-waive" role="switch" aria-checked="' + !me.waive + '" aria-labelledby="b-beg-l"></button></div>' : '')
+      + (me.war ? '<hr><button type="button" class="b-dz b-leave">Leave the battles</button><p>Your city rebuilds at once. You can rejoin at any time.</p>' : '');
   }
   function reportHtml() {
     var f = me.report || 'off';
-    return '<div class="b-rep" id="reports" role="group" aria-label="Battle report email"><span>Battle report email</span>' + ['daily', 'weekly', 'off'].map(function (k) { return '<button type="button" data-rep="' + k + '" aria-pressed="' + (f === k) + '">' + k.charAt(0).toUpperCase() + k.slice(1) + '</button>'; }).join('')
-      + (!me.email ? '<i>Confirm an email in <a href="/settings">Settings</a> first.</i>' : !me.emailLive && f !== 'off' ? '<i>Saved. Reports start soon.</i>' : '') + '</div>';
+    return '<div class="b-rep" id="reports"><p class="b-pl" id="b-rep-l">Battle report email</p><div class="b-seg" role="group" aria-labelledby="b-rep-l">' + ['daily', 'weekly', 'off'].map(function (k) { return '<button type="button" data-rep="' + k + '" aria-pressed="' + (f === k) + '">' + k.charAt(0).toUpperCase() + k.slice(1) + '</button>'; }).join('') + '</div>'
+      + (!me.email ? '<p class="b-pnote">Confirm an email in <a href="/settings">Settings</a> first.</p>' : !me.emailLive && f !== 'off' ? '<p class="b-pnote">Saved. Reports start soon.</p>' : '') + '</div>';
   }
-  function wireReport() { Array.prototype.slice.call(panel.querySelectorAll('[data-rep]')).forEach(function (b) { b.onclick = function () { act('/v1/world/battle/report', { freq: b.getAttribute('data-rep') }); }; }); }
   function act(path, body) {
-    var msg = q('[data-b="msg"]'); if (msg) msg.textContent = '';
-    post(path, body).then(function (m) { me = m && m.h ? m : me; render(); load(); }).catch(function (e) { if (msg) msg.textContent = String(e.message || e); });
+    var msg = q('[data-b="msg"]'); if (msg) msg.textContent = ''; var pe = popEl && popEl.querySelector('.b-perr'); if (pe) pe.remove();
+    post(path, body).then(function (m) { me = m && m.h ? m : me; render(); lastRender(); load(); })
+      .catch(function (e) { var t = String(e && e.message || e); if (popEl) popEl.insertAdjacentHTML('beforeend', '<p class="b-perr" role="alert">' + esc(t) + '</p>'); else if (msg) msg.textContent = t; });
   }
-  // ---------------------------------------------------------------- "What your city did last night": the morning card, once per night
-  function recap() {
-    if (!me || !me.war || !me.last || !stage) return;
-    var L = me.last, seen = null; try { seen = localStorage.getItem('caldera.world.recap'); } catch (e) {}
-    if (seen === L.night && !replayNight) return;
-    var old = document.querySelector('.b-recap'); if (old) old.remove();
-    var t = document.querySelector('.g-today'); if (t) t.remove();
-    var raids = L.raids.length ? L.raids.map(function (r) { return esc(r.from) + ', ' + hhmm(r.t); }).join('; ') : 'none';
-    var rows = [['Raids on you', L.raids.length ? L.raids.length + ' (' + raids + ')' : 'none'], ['Damage taken', L.taken > 0 ? usd(L.takenUsd) + (L.tiers ? ', ' + L.tiers + ' tower' + (L.tiers === 1 ? '' : 's') + ' hit' : '') + (L.fires ? ', ' + L.fires + ' caught fire' : '') : (L.raids.length ? 'none: your shield held' : 'none')]];
-    var bq = function (b) { return (BNAME[b.k] || b.k) + ' "' + b.word + '"'; };
-    if (L.bombs && L.bombs.length) rows.push(['Custom bombs on you', L.bombs.length + ': ' + L.bombs.slice(0, 2).map(function (b) { return bq(b) + ' from ' + b.from; }).join(', ') + (L.bombs.length > 2 ? ', +' + (L.bombs.length - 2) + ' more' : '')]);
-    if (L.mine) rows.push(['Your bombs', L.mine.n + ' flew, ' + (L.mine.hit ? L.mine.hit + ' hit. ' + (L.mine.top ? bq(L.mine.top) + ' hit ' + L.mine.top.on : '') : 'none hit: shields held')]);
-    if (L.reward > 0) rows.push(['Battle reward', '+' + L.reward + ' credits for the Armory']);
-    if (L.heldUsd > 0 && L.taken > 0) rows.push(['Your shield held', usd(L.heldUsd) + ' of blast off those hits']);
-    if (L.taken > 0) rows.push(['Rebuilt so far', L.rebuilt + '%']);
-    rows.push(['Your towers fired', L.fired + ' shot' + (L.fired === 1 ? '' : 's') + ', ' + L.landed + ' hit' + (L.landed === 1 ? '' : 's') + (L.on.length ? ' on ' + L.on.slice(0, 2).join(', ') : '') + (L.dealtUsd ? ', ' + usd(L.dealtUsd) + ' of damage' : '')]);
-    if (L.mvp) rows.push(['MVP', L.mvp.repo + ', ' + L.mvp.bricks + ' brick' + (L.mvp.bricks === 1 ? '' : 's') + ' laid']);
-    rows.push(['Shield now', Math.round(L.shield * 100) + '%' + (L.streak ? ' (' + L.streak + '-day streak)' : '')]);
-    var card = document.createElement('div'); card.className = 'b-recap'; card.setAttribute('role', 'dialog'); card.setAttribute('aria-label', 'What your city did last night');
-    card.innerHTML = '<button type="button" class="g-x" aria-label="Dismiss">&times;</button><b>What your city did last night</b><dl>' + rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('') + '</dl>'
-      + '<div class="b-rbtn"><button type="button" class="g-go">&#9654; Watch the replay</button><button type="button" class="b-share">Copy link</button>' + (me.armory ? '<a class="b-share b-toarm" href="#armory">Armory</a>' : '') + '</div>';
-    stage.appendChild(card);
-    var done = function () { card.remove(); try { localStorage.setItem('caldera.world.recap', L.night); } catch (e) {} };
-    card.querySelector('.g-x').onclick = done;
-    var ta = card.querySelector('.b-toarm'); if (ta) ta.onclick = function (ev) { ev.preventDefault(); done(); var d = panel && panel.querySelector('#armory'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); var s2 = d.querySelector('summary'); if (s2) s2.focus(); } };
-    card.querySelector('.g-go').onclick = function () { done(); var b = document.querySelector('[data-gview="battle"]'); if (!on && b) b.click(); setLayer('replay', true); };
-    card.querySelector('.b-share').onclick = function () { var u = location.origin + '/world?view=battle&replay=1'; try { navigator.clipboard.writeText(u); card.querySelector('.b-share').textContent = 'Copied'; } catch (e) { prompt('Link to last night', u); } };
-  }
+  render(); setTab(tab);
   mine();
-  if (bar) { var hash = location.hash; if (hash === '#season') { var d = bar.querySelector('.b-board'); if (d) d.open = true; } }
 }
 export const BATTLE_CLIENT_JS = "(function(BSPD){return (" + battleClient.toString() + ")();})((" + battleSpeedLib.toString() + ")());";
 
 export const BATTLE_CSS = `
-.b-bar{display:grid;gap:8px;margin-top:8px;padding:8px 12px 10px;border-radius:var(--radius-md,10px);border:1px solid rgba(61,242,255,.28);background:#0F1016;color:#E8EEF8;min-width:0}
-.b-bar[hidden]{display:none}
-.b-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;min-width:0}
-.b-date{font:600 14px/1.3 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff}
-.b-stats{display:flex;flex-wrap:wrap;gap:2px 14px;font:500 12px/1.4 var(--font-mono,'IBM Plex Mono',monospace);color:#9A9AA5;min-width:0}.b-stats b{color:#F2F2F5;font-weight:600}
-.b-row button,.b-rep button{font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(10,14,26,.72);border:1px solid rgba(61,242,255,.4);border-radius:999px;padding:0 11px;min-height:32px;cursor:pointer}
-.b-row button[aria-pressed="true"],.b-rep button[aria-pressed="true"]{background:rgba(61,242,255,.18);border-color:#3DF2FF}
-.b-bar button:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
-.b-cap{font:12px/1.4 var(--font-sans,'IBM Plex Sans',sans-serif);color:#C9D2E6;min-width:0}
-.b-me{font:13px/1.5 var(--font-sans,'IBM Plex Sans',sans-serif);color:#C9D2E6;min-width:0}.b-me p{margin:0 0 6px}.b-me a{color:#B9A6FF}
-.b-join,.b-doaim{font:600 13px/1 var(--font-sans,'IBM Plex Sans',sans-serif)!important;background:#8B6CF6!important;color:#fff!important;border:0!important;border-radius:999px;padding:0 14px!important;min-height:36px;cursor:pointer}
-.b-doaim[disabled]{opacity:.45;cursor:default}
-.b-ars{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px;margin:0 0 8px}.b-ars div{display:grid;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);min-width:0}
-.b-ars span{font-size:11.5px;color:#9A9AA5}.b-ars b{color:#fff;font-size:15px}.b-ars i{font-style:normal;font-size:11.5px;color:#9A9AA5;overflow-wrap:anywhere}
-.b-fire{margin:0 0 8px}.b-fire summary{cursor:pointer;color:#E8EEF8;min-height:32px;display:flex;align-items:center}.b-aim{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.b-aim select{font:13px var(--font-sans,'IBM Plex Sans',sans-serif);background:#161822;color:#E8EEF8;border:1px solid rgba(255,255,255,.18);border-radius:8px;min-height:36px;padding:0 8px;max-width:100%}
-.b-aims{margin:4px 0;padding-left:18px}.b-aims button{background:transparent;border:0;color:#9A9AA5;font-size:16px;min-width:32px;min-height:32px;cursor:pointer}
-.b-rep{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 6px}.b-rep span{font-size:12.5px;color:#C9D2E6;margin-right:4px}.b-rep i{font-style:normal;font-size:12px;color:#9A9AA5}
-.b-small{font-size:12px;color:#9A9AA5}.b-link{background:none;border:0;padding:0;color:#B9A6FF;font:inherit;cursor:pointer;text-decoration:underline;min-height:32px}
-.b-msg{color:#FF9A9A;font-size:12.5px}.b-msg:empty{display:none}
-.b-board summary{cursor:pointer;font:500 12.5px/1 var(--font-sans,'IBM Plex Sans',sans-serif);color:#E8EEF8;min-height:32px;display:flex;align-items:center}.b-board ol{margin:4px 0 0;padding-left:22px;columns:2 180px;font-size:12.5px;color:#C9D2E6}.b-board li button{background:none;border:0;color:#B9A6FF;font:inherit;cursor:pointer;padding:0;min-height:28px}.b-board p{margin:4px 0;font-size:12.5px;color:#9A9AA5}
-.b-recap{position:absolute;right:10px;top:52px;z-index:7;width:min(320px,calc(100% - 20px));background:rgba(17,20,32,.96);color:#F2F2F5;border:1px solid rgba(61,242,255,.45);border-radius:12px;padding:10px 12px;font:13px/1.45 var(--font-sans,'IBM Plex Sans',sans-serif);box-shadow:0 18px 40px -16px rgba(0,0,0,.8)}
-.b-recap b{display:block;font-size:14px;margin-right:30px}.b-recap dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:6px 0 10px}.b-recap dt{color:#9A9AA5}.b-recap dd{margin:0;color:#F2F2F5;overflow-wrap:anywhere}
-.b-rbtn{display:flex;flex-wrap:wrap;gap:6px}.b-recap .g-go{font:600 13px/1 var(--font-sans,'IBM Plex Sans',sans-serif);background:#8B6CF6;color:#fff;border:0;border-radius:999px;padding:0 14px;min-height:36px;cursor:pointer}
-.b-share{font:500 13px/1 var(--font-sans,'IBM Plex Sans',sans-serif);background:transparent;color:#E8EEF8;border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:0 12px;min-height:36px;cursor:pointer}
-.b-recap .g-x{position:absolute;right:4px;top:4px;width:36px;height:36px;border:0;background:transparent;color:#C9D2E6;font-size:20px;cursor:pointer;border-radius:50%}
 .b-chip{position:absolute;left:10px;top:10px;z-index:6;display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(15,16,22,.92);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:6px 11px 6px 9px;font-variant-numeric:tabular-nums;pointer-events:none;max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .b-play{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;display:grid;gap:4px;width:min(470px,calc(100% - 20px));padding:6px 6px 6px;border-radius:14px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);font:500 12px/1.2 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;font-variant-numeric:tabular-nums;box-sizing:border-box}
 .b-play .b-pt{display:grid;gap:1px;min-width:0;padding:0 4px}.b-play .b-l1{display:flex;gap:7px;min-width:0;align-items:baseline}.b-play .b-pt b{color:#fff;font-weight:600;white-space:nowrap;flex:none}.b-play .b-pt span{color:#C9D2E6;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.b-play .b-pt span:empty{display:none}.b-play .b-pt span[data-p="hit"]{color:#FFB347}
@@ -592,15 +715,8 @@ export const BATTLE_CSS = `
 .b-play button[aria-pressed="true"]{background:rgba(61,242,255,.18);border-color:#3DF2FF}.b-play button:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
 .b-chip i{width:7px;height:7px;border-radius:50%;background:#FFB347;box-shadow:0 0 8px #FFB347;flex:none}.b-chip.rebuild i{background:#4FD1C5;box-shadow:0 0 8px #4FD1C5}.b-chip b{font-weight:600;color:#fff}.b-chip span{color:#C9D2E6}
 @media (prefers-reduced-motion: reduce){.b-chip i{box-shadow:none}}
-.b-howb{border-color:rgba(255,179,71,.6)!important;color:#FFD9A0!important}.b-howb[aria-expanded="true"]{background:rgba(255,179,71,.16)!important;border-color:#FFB347!important}
 .b-szs{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}.b-sz{display:inline-flex;align-items:center;gap:4px;font:600 11.5px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#9A9AA5;border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:3px 6px 3px 3px;font-variant-numeric:tabular-nums}
 .b-sz i{font-style:normal;font-size:10px;min-width:18px;text-align:center;padding:2px 3px;border-radius:4px;background:rgba(255,255,255,.08);color:#C9D2E6}.b-sz.has{color:#fff;border-color:rgba(255,179,71,.55)}.b-sz.has i{background:#FFB347;color:#1A1206}.b-sz.lock{opacity:.45;border-style:dashed}
-.b-list ul{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:2px;max-height:260px;overflow:auto}
-.b-al li{display:grid;grid-template-columns:minmax(0,1.2fr) 64px minmax(0,1.6fr) minmax(0,1.4fr);align-items:center;gap:8px;padding:3px 0;font:12.5px/1.3 var(--font-sans,'IBM Plex Sans',sans-serif);color:#C9D2E6;border-bottom:1px solid rgba(255,255,255,.06)}
-.b-al li>b{color:#fff;font:600 12.5px/1 var(--font-mono,'IBM Plex Mono',monospace);text-align:right}.b-al li>i{font-style:normal;font-size:11.5px;color:#9A9AA5}.b-al .b-szs{margin:0}
-.b-al button,.b-sl button{background:none;border:0;color:#B9A6FF;font:inherit;cursor:pointer;text-align:left;min-height:32px;padding:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.b-sl button{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1.2fr) auto;gap:8px;align-items:center;width:100%;color:#E8EEF8;font:12.5px/1.3 var(--font-sans,'IBM Plex Sans',sans-serif);border-bottom:1px solid rgba(255,255,255,.06);border-radius:0}
-.b-sl button:hover{background:rgba(255,255,255,.05)}.b-sl span,.b-sl i{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.b-sl i{font-style:normal;color:#9A9AA5;font-size:11.5px}.b-sl b{font:600 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#FFB347;white-space:nowrap}.b-sl b .b-cut{font:500 10.5px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#3DF2FF;margin-left:2px}
 .b-play .b-hit{background:none!important;border:0!important;color:#FFD9A0!important;text-align:left;padding:0!important;min-height:0!important;font:inherit!important;cursor:pointer;text-decoration:underline;text-decoration-color:rgba(255,217,160,.45);text-underline-offset:2px}
 .b-play .b-hit.sh{color:#9FF6FF!important;text-decoration-color:rgba(61,242,255,.5)}
 .b-how{position:fixed;z-index:80;right:12px;top:12px;bottom:12px;width:min(520px,calc(100% - 24px));background:#0F1016;color:#D7DDEA;border:1px solid rgba(255,179,71,.45);border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;font:13.5px/1.55 var(--font-sans,'IBM Plex Sans',sans-serif)}
@@ -616,67 +732,12 @@ export const BATTLE_CSS = `
 .b-curve{display:block;width:100%;max-width:300px;height:auto;color:#C9D2E6;margin:2px 0 8px}
 .b-ad{margin:14px 0 0!important;padding:10px 12px;border-radius:10px;background:rgba(139,108,246,.1);border:1px solid rgba(139,108,246,.35);font-size:12.5px;color:#C9D2E6}.b-ad a{color:#B9A6FF;font-weight:600;white-space:nowrap}
 html.w-replay .b-how{top:auto;height:min(46vh,420px)}
-@media (max-width:700px){.b-how{left:0;right:0;top:auto;bottom:0;width:auto;max-height:72vh;border-radius:16px 16px 0 0;border-width:1px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}.b-al li{grid-template-columns:minmax(0,1fr) 58px;gap:2px 8px}.b-al .b-szs{grid-column:1}.b-al li>i{grid-column:2;grid-row:2;text-align:right}.b-sl button{grid-template-columns:minmax(0,1fr) auto}.b-sl i{display:none}}
+@media (max-width:700px){.b-how{left:0;right:0;top:auto;bottom:0;width:auto;max-height:72vh;border-radius:16px 16px 0 0;border-width:1px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}}
 html.w-replay #drRail,html.w-replay .cal-nb{display:none!important}
 html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, cities, last hit) and the chip would sit on the Labels chip at the top left */
 .w-main .c-stage.c-full{height:100%;min-height:0}
 .w-battle-only{display:none}html.w-battle .w-battle-only{display:revert}html.w-battle .w-now-only,html.w-battle .w-grow-only{display:none}
-@media (max-width:600px){.b-bar{padding:8px 10px}.b-stats{gap:2px 10px;font-size:11.5px}.b-recap{top:auto;bottom:50px;right:10px}.b-chip{top:auto;bottom:10px}.b-play{bottom:10px;left:10px;right:10px;transform:none;width:auto;padding:5px 5px 5px}.b-play .b-pb{gap:3px}.b-play button{font-size:11px;padding:0 2px}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
-.b-arm{margin:0 0 8px;border:1px solid rgba(139,108,246,.38);border-radius:10px;background:rgba(139,108,246,.06);padding:0 10px}
-.b-arm>summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:44px;cursor:pointer;list-style:none;font:600 13px/1.2 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff}
-.b-arm>summary::-webkit-details-marker{display:none}
-.b-arm>summary::before{content:"";width:7px;height:7px;border-right:1.5px solid #B9A6FF;border-bottom:1.5px solid #B9A6FF;transform:rotate(-45deg);transition:transform .18s;flex:none;margin-right:2px}
-.b-arm[open]>summary::before{transform:rotate(45deg)}
-.b-arm>summary:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px;border-radius:8px}
-.b-arm-t{font-size:14px}
-.b-arm-clock{font:600 11.5px/1 var(--font-mono,'IBM Plex Mono',monospace);font-variant-numeric:tabular-nums;padding:5px 9px;border-radius:999px;border:1px solid rgba(139,108,246,.6);background:rgba(139,108,246,.16);color:#D9CCFF;white-space:nowrap}
-.b-arm[data-st="soon"] .b-arm-clock{border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.05);color:#C9D2E6}
-.b-arm[data-st="locked"] .b-arm-clock{border-color:rgba(61,242,255,.5);background:rgba(61,242,255,.1);color:#9FF6FF}
-.b-arm-clock.last{border-color:#FFB347;background:rgba(255,179,71,.14);color:#FFD9A0}   
-.b-arm-bal{margin-left:auto;font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#9A9AA5;white-space:nowrap}.b-arm-bal b{color:#fff;font-weight:600}
-.b-arm-lede{margin:0 0 10px;font-size:12.5px;color:#C9D2E6;max-width:62ch}
-.b-arm>*:last-child{margin-bottom:10px}
-
-.b-bi{display:inline-grid;place-items:center;width:22px;height:22px;flex:none;color:#C9D2E6}.b-bi svg{width:100%;height:100%}
-[data-k="sparkler"] .b-bi,.b-bi[data-k="sparkler"]{color:#FFD24A}
-[data-k="thunderbolt"] .b-bi,.b-bi[data-k="thunderbolt"]{color:#9FD8FF}
-[data-k="inferno"] .b-bi,.b-bi[data-k="inferno"]{color:#FF7A1F}
-[data-k="nova"] .b-bi,.b-bi[data-k="nova"]{color:#B9A6FF}
-
-.b-arm-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;max-width:880px;margin:0 0 10px}
-.b-bc{position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);grid-template-areas:"i n" "i p" "d d" "a a";gap:2px 8px;align-content:start;text-align:left;min-height:112px;padding:10px 10px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#161822;color:#E8EEF8;cursor:pointer;font:12px/1.35 var(--font-sans,'IBM Plex Sans',sans-serif);transition:border-color .15s,background-color .15s}
-.b-bc .b-bi{grid-area:i;align-self:start;margin-top:1px}
-.b-bc-n{grid-area:n;font:600 13.5px/1.2 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff}
-.b-bc-p{grid-area:p;font:600 11.5px/1.2 var(--font-mono,'IBM Plex Mono',monospace);font-variant-numeric:tabular-nums;color:#9A9AA5}
-.b-bc-d{grid-area:d;margin-top:6px;color:#9A9AA5;font-size:11.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.b-bc-add{grid-area:a;margin-top:6px;font:600 12px/1 var(--font-sans,'IBM Plex Sans',sans-serif);color:#B9A6FF}
-.b-bc-c{position:absolute;right:8px;top:8px;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#8B6CF6;color:#fff;font:700 11px/20px var(--font-mono,'IBM Plex Mono',monospace);text-align:center}
-.b-bc:hover{border-color:rgba(139,108,246,.7);background:#1B1D2A}
-.b-bc[data-k="sparkler"]:hover{border-color:rgba(255,210,74,.6)}.b-bc[data-k="thunderbolt"]:hover{border-color:rgba(159,216,255,.6)}.b-bc[data-k="inferno"]:hover{border-color:rgba(255,122,31,.6)}
-.b-bc:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
-.b-bc:active{background:#20223A}
-.b-bc[disabled]{cursor:default;opacity:.45;border-style:dashed}.b-bc[disabled]:hover{border-color:rgba(255,255,255,.12);background:#161822}
-.b-bc[disabled] .b-bc-add{color:#9A9AA5}
-
-.b-arm-rows{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px;max-width:880px}
-.b-arm-rows:empty{display:none}
-.b-ar{display:grid;grid-template-columns:22px 116px minmax(0,1fr) minmax(0,1fr) 36px;grid-template-areas:"i n w t x" ". . e e .";align-items:center;gap:4px 8px;padding:4px 4px 4px 8px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
-.b-ar .b-bi{grid-area:i;width:16px;height:16px}
-.b-ar-n{grid-area:n;font:600 12.5px/1.2 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff;white-space:nowrap}.b-ar-n small{font:500 11px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#9A9AA5;margin-left:4px}
-.b-ar-w{grid-area:w;position:relative;min-width:0}.b-ar-t{grid-area:t;min-width:0}
-.b-ar input,.b-ar select{box-sizing:border-box;width:100%;min-height:36px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:#161822;color:#E8EEF8;font:600 13px/1 var(--font-mono,'IBM Plex Mono',monospace);padding:0 44px 0 10px;letter-spacing:.04em;text-transform:uppercase}
-.b-ar select{font:13px var(--font-sans,'IBM Plex Sans',sans-serif);padding:0 8px;letter-spacing:0;text-transform:none}
-.b-ar input::placeholder{color:#6B6E7C;text-transform:none;letter-spacing:0;font-weight:500}
-.b-ar input:focus-visible,.b-ar select:focus-visible{outline:2px solid #3DF2FF;outline-offset:1px}
-.b-ar-cnt{position:absolute;right:8px;top:50%;transform:translateY(-50%);font:500 10.5px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#6B6E7C;pointer-events:none;font-variant-numeric:tabular-nums}
-.b-ar-x{grid-area:x;width:36px;height:36px;border:0;border-radius:50%;background:transparent;color:#9A9AA5;font-size:18px;cursor:pointer}.b-ar-x:hover{background:rgba(255,255,255,.06);color:#fff}.b-ar-x:focus-visible{outline:2px solid #3DF2FF}
-.b-ar-e{grid-area:e;margin:0 0 2px;font-size:12px;line-height:1.4;color:#FF9A9A}
-.b-ar.bad{border-color:rgba(255,154,154,.55);background:rgba(255,154,154,.06)}.b-ar.bad input{border-color:#FF9A9A}
-.b-board li .b-ar-tb,.b-ar-tb{grid-area:t;display:flex;align-items:center;gap:6px;width:100%;min-width:0;min-height:36px;padding:0 10px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:#161822;color:#E8EEF8;font:13px/1 var(--font-sans,'IBM Plex Sans',sans-serif);cursor:pointer;text-align:left}
-.b-ar-tb>span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.b-ar-tb::after{content:"";flex:none;width:6px;height:6px;border-right:1.5px solid #9A9AA5;border-bottom:1.5px solid #9A9AA5;transform:rotate(45deg) translateY(-2px);transition:transform .18s}
-.b-ar-tb[aria-expanded="true"]{border-color:#3DF2FF}.b-ar-tb[aria-expanded="true"]::after{transform:rotate(-135deg) translateY(-2px)}
-.b-ar-tb:focus-visible{outline:2px solid #3DF2FF;outline-offset:1px}
+@media (max-width:600px){.b-chip{top:auto;bottom:10px}.b-play{bottom:10px;left:10px;right:10px;transform:none;width:auto;padding:5px 5px 5px}.b-play .b-pb{gap:3px}.b-play button{font-size:11px;padding:0 2px}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
 .b-un{flex:none;font:600 10px/1 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.06em;text-transform:uppercase;padding:3px 5px;border-radius:4px;border:1px dashed rgba(201,210,230,.55);color:#C9D2E6}
 .b-tp{grid-area:p;display:grid;gap:8px;margin:2px 0 4px;padding:8px;border-radius:10px;border:1px solid rgba(61,242,255,.28);background:#12141D;min-width:0}
 .b-tp-in{position:relative}
@@ -707,80 +768,218 @@ html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, c
 @keyframes b-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.b-spin{animation:none;border-top-color:rgba(255,255,255,.2);border-right-color:#3DF2FF}.b-ar-tb::after{transition:none}}
 @media (max-width:600px){.b-ar-tb,.b-tp-in input,.b-gh-go{min-height:44px}.b-tp-in input{font-size:16px}.b-tp-l li{min-height:44px}}
-.b-ar{grid-template-areas:"i n w t x" ". . e e ." "p p p p p"}.b-tp-r{display:contents}.b-board li .b-ar-tb[aria-expanded="true"]{border-color:#3DF2FF}
-
-.b-arm-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px;max-width:880px;margin:0 0 6px}
-.b-arm-sum{display:grid;grid-template-columns:repeat(3,auto);grid-auto-flow:column;grid-template-rows:auto auto;gap:0 18px;margin:0;font-variant-numeric:tabular-nums}
-.b-arm-sum dt{font-size:11px;color:#9A9AA5}.b-arm-sum dd{margin:0;font:600 15px/1.3 var(--font-mono,'IBM Plex Mono',monospace);color:#fff}
-.b-arm-sum dd[data-arm="tot"]{color:#FFB347}.b-arm-sum dd.neg{color:#FF9A9A}
-.b-arm-buy{font:600 14px/1 var(--font-sans,'IBM Plex Sans',sans-serif);background:#8B6CF6;color:#fff;border:0;border-radius:999px;padding:0 20px;min-height:44px;cursor:pointer;transition:background-color .15s}
-.b-arm-who{flex:1 1 100%;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 14px;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04)}
-.b-arm-who-l{font:600 13px/1.3 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff;cursor:pointer}
-.b-arm-who-d{grid-column:1;margin:0;font-size:11.5px;line-height:1.4;color:#9A9AA5}.b-arm-who-d b{color:#C9D2E6;font-weight:600}
-.b-arm-sw{grid-column:2;grid-row:1/span 2;position:relative;width:44px;height:26px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);padding:0;cursor:pointer;transition:background-color .15s,border-color .15s}
-.b-arm-sw::before{content:"";position:absolute;inset:-9px -4px}
-.b-arm-sw::after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#9A9AA5;transition:transform .15s,background-color .15s}
-.b-arm-sw[aria-checked="true"]{background:#8B6CF6;border-color:#8B6CF6}.b-arm-sw[aria-checked="true"]::after{transform:translateX(18px);background:#fff}
-.b-arm-sw:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
-@media (min-width:430px) and (max-width:520px){.b-arm-who{padding:6px 8px}.b-arm-who-l{font-size:12px}.b-arm-who-d{font-size:11px}}
-@media (prefers-reduced-motion:reduce){.b-arm-sw,.b-arm-sw::after{transition:none}}
-.b-arm-buy:hover{background:#7A5BEA}.b-arm-buy:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
-.b-arm-buy[disabled]{background:rgba(139,108,246,.28);color:rgba(255,255,255,.6);cursor:default}
-.b-arm-buy[aria-busy="true"]{background:#6E4FE0;cursor:progress}
-.b-arm-note{margin:0 0 8px;font-size:11.5px;color:#9A9AA5}
-.b-arm-ok{margin:0 0 10px;padding:8px 10px;border-radius:8px;border:1px solid rgba(61,242,255,.4);background:rgba(61,242,255,.08);color:#C9F8FF;font-size:12.5px}
-
-.b-arm-load{margin:0 0 10px;max-width:880px}
-.b-arm-load h4{margin:0 0 4px;font:600 12.5px/1.3 var(--font-sans,'IBM Plex Sans',sans-serif);color:#fff}.b-arm-load h4 span{font:500 11.5px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#9A9AA5;margin-left:6px}
-.b-arm-load ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}
-.b-arm-load li{display:grid;grid-template-columns:16px 90px minmax(0,auto) minmax(0,1fr);align-items:center;gap:8px;min-height:28px;font:12.5px/1.3 var(--font-sans,'IBM Plex Sans',sans-serif);color:#C9D2E6;border-bottom:1px solid rgba(255,255,255,.06)}
-.b-arm-load li .b-bi{width:16px;height:16px}.b-arm-load li b{color:#fff;font-weight:600}
-.b-arm-load q{quotes:none;font:600 12.5px/1 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.04em;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.b-arm-load li span{color:#9A9AA5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.b-arm[data-st="locked"] .b-arm-cards,.b-arm[data-st="locked"] .b-arm-rows,.b-arm[data-st="locked"] .b-arm-foot,.b-arm[data-st="locked"] .b-arm-note{display:none}
-
-@media (max-width:600px){
-  .b-arm{padding:0 8px}
-  .b-arm-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
-  .b-bc{min-height:104px;padding:9px 9px 8px}
-  .b-ar{grid-template-columns:22px minmax(0,1fr) minmax(0,1fr) 44px;grid-template-areas:"i n n x" "w w t t" "e e e e" "p p p p";padding:4px 4px 6px 8px}
-  .b-ar-x{width:44px;height:44px}
-  .b-ar input,.b-ar select{min-height:44px;font-size:16px}   
-  .b-arm-foot{flex-direction:column;align-items:stretch}
-  .b-arm-sum{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .b-arm-buy{width:100%;min-height:48px}
-  .b-arm-load li{grid-template-columns:16px minmax(0,auto) minmax(0,1fr);grid-template-areas:"i b q" ". s s"}.b-arm-load li .b-bi{grid-area:i}.b-arm-load li b{grid-area:b}.b-arm-load li q{grid-area:q}.b-arm-load li span{grid-area:s}
-}
-@media (prefers-reduced-motion:reduce){.b-arm>summary::before,.b-bc,.b-arm-buy{transition:none}}
+.b-tp-r{display:contents}
 .b-play .b-pt{grid-template-columns:minmax(0,1fr) auto;align-items:center}.b-play .b-l1{grid-column:1/-1}
 .b-play .b-flag{display:inline-flex;align-items:center;gap:4px;flex:none;min-height:28px!important;min-width:0!important;padding:0 8px!important;border-radius:999px!important;background:transparent!important;border:1px solid rgba(255,154,154,.4)!important;color:#FFB4B4!important;font:500 11px/1 var(--font-mono,'IBM Plex Mono',monospace)!important}
 .b-play .b-flag:hover{background:rgba(255,154,154,.1)!important}
 .b-flagq{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:#F2F2F5;font:500 12px/1.35 var(--font-sans,'IBM Plex Sans',sans-serif)}
 .b-flagq span{flex:1 1 200px;min-width:0}
 .b-play .b-flagq button{flex:0 0 auto;min-height:36px;padding:0 12px}.b-play .b-flagq [data-p="flagyes"]{background:#8B6CF6;border-color:#8B6CF6;color:#fff;font-weight:600}
-.b-arm .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.b-arm .b-arm-note a{color:#B9A6FF}
-/* Mike 11-19 (Duo landscape): the status pill covered the tools and the last-night card ran off the map. The tools keep
-   one row (More menu, city.ts toolsFit); the pill takes its own row under them; the card sits under the tools, inside the
-   map, with its rows scrolling; the LIVE panel and hint step aside while it is open. Phones: the card is a bottom sheet. */
 @media (min-width:601px){.b-chip{top:48px;max-width:min(360px,calc(100% - 20px));font-size:11px;padding:5px 10px 5px 8px}
-.c-stage:has(.b-recap) .b-chip{max-width:min(360px,calc(100% - 360px))}
-.b-recap{top:48px;max-height:calc(100% - 58px)}
 html.w-battle:not(.w-replay) .c-stage:has(.b-chip) .g-today{top:80px;max-height:calc(100% - 90px);overflow-y:auto}}
-@media (min-width:601px) and (max-width:760px){.c-stage:has(.b-recap) .g-today{display:none}}
-.b-recap{display:flex;flex-direction:column;box-sizing:border-box}.b-recap>b,.b-recap>.b-rbtn{flex:none}
-.b-recap dl{flex:0 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
-.c-stage:has(.b-recap) .c-live,.c-stage:has(.b-recap) .c-hint{display:none}
-@media (max-width:600px){.b-recap{left:8px;right:8px;bottom:8px;top:auto;width:auto;max-height:62%}}
+.b-arm{min-width:0}
+/* ---- the deck under the map (map-audit PAGE.md 5, Mike 11-20). L >= 900 px, M (Duo) 700 to 899 px, dense on purpose; S < 700 px. */
+.b-deck{--ink:#F4F6FA;--ink2:rgba(244,246,250,.68);--ink3:rgba(244,246,250,.44);--line:rgba(255,255,255,.14);--rule:rgba(255,255,255,.09);--cy:#3DF2FF;--you:#8B6CF6;--gd:#FFC83D;--gap:12px;--disp:'Barlow Condensed','Arial Narrow',Arial,sans-serif;--ui:var(--font-sans,'IBM Plex Sans',sans-serif);--mono:var(--font-mono,'IBM Plex Mono',monospace);position:relative;margin-top:var(--gap);color:var(--ink);font:13px/1.45 var(--ui);min-width:0}
+.b-deck[hidden]{display:none}
+.b-deck .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.b-deck button:focus-visible,.b-deck a:focus-visible,.b-deck input:focus-visible,.b-deck select:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+.b-grid{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:var(--gap);align-items:start}
+.b-card{background:#14171E;border:1px solid var(--rule);border-radius:14px;padding:16px;min-width:0}
+.b-tn{border-color:rgba(139,108,246,.38)}.b-tn[aria-busy="true"]{min-height:250px}.b-tn[aria-busy="true"] .b-tile b{color:var(--ink3)}
+.b-eb{margin:0;font:700 13px/1 var(--disp);letter-spacing:.16em;text-transform:uppercase;color:var(--cy)}
+.b-big{font:700 34px/1 var(--disp);letter-spacing:.01em;text-transform:uppercase;margin:8px 0 0;color:var(--ink);text-wrap:balance}
+.b-big b{font-weight:700;font-variant-numeric:tabular-nums}.b-big b.last{color:var(--cy)}.b-big.b-none{font-size:24px}
+.b-sub{margin:6px 0 0;color:var(--ink2);font-size:12.5px}
+.b-ch1{display:flex;align-items:flex-start;gap:10px}.b-ch1>div:first-child{flex:1;min-width:0}
+.b-tools{display:flex;align-items:center;gap:8px;flex:none}
+.b-cred{height:32px;box-sizing:border-box;border-radius:10px;padding:0 10px;border:1px solid var(--line);display:inline-flex;align-items:center;gap:6px;font:500 12px var(--mono);color:var(--ink2);white-space:nowrap}.b-cred b{color:var(--ink);font-weight:600}
+.b-gear{position:relative;width:32px;height:32px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--ink);display:grid;place-items:center;padding:0;flex:none;cursor:pointer}
+.b-gear svg{width:17px;height:17px}.b-gear::before{content:"";position:absolute;inset:-7px}
+.b-gear[aria-expanded="true"]{background:var(--ink);color:#0B0D13;border-color:var(--ink)}
+.b-tnb{display:grid;grid-template-columns:288px minmax(0,1fr);gap:20px;margin-top:16px}
+.b-hh{font:600 13px/1.2 var(--ui);margin:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;color:var(--ink)}.b-hh small{font:400 12px var(--ui);color:var(--ink2)}
+.b-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.b-tile{background:rgba(255,255,255,.045);border-radius:10px;padding:9px 11px;min-width:0}
+.b-tile span{display:block;font-size:11.5px;color:var(--ink2)}
+.b-tile b{display:block;font:700 26px/1.05 var(--disp);letter-spacing:.01em;margin-top:2px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.b-tile b.cy{color:var(--cy)}
+.b-tile i{display:block;font-style:normal;font-size:11.5px;line-height:1.35;color:var(--ink3);margin-top:2px}
+.b-from{font-size:11.5px;color:var(--ink3);margin:8px 0 0}
+.b-trow{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--ink2);flex-wrap:wrap}.b-trow b{color:var(--ink);font-weight:600}.b-trow>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.b-gb{position:relative;box-sizing:border-box;height:32px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--ink);font:600 12.5px var(--ui);display:inline-flex;align-items:center;gap:7px;white-space:nowrap;cursor:pointer;text-decoration:none}
+.b-gb::before{content:"";position:absolute;inset:-7px 0}.b-gb svg{width:16px;height:16px;flex:none}.b-gb small{font:500 11px var(--mono);color:var(--ink3)}
+.b-gb:hover,.b-gear:hover{border-color:rgba(255,255,255,.34)}.b-gb[aria-pressed="true"],.b-gb[aria-expanded="true"]{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.4)}
+.b-txt{color:var(--ink2);margin:10px 0 0;max-width:62ch;font-size:13.5px}
+.b-cta-row{display:flex;align-items:center;gap:6px 18px;flex-wrap:wrap;margin-top:14px}
+.b-cta2{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:44px;padding:0 22px;border-radius:22px;border:0;background:var(--you);color:#fff;font:600 14px var(--ui);text-decoration:none;cursor:pointer;white-space:nowrap}
+.b-tn>.b-cta2{margin-top:14px}.b-cta2:hover{background:#7A5BEA}
+.b-lnk{display:inline-flex;align-items:center;min-height:44px;color:var(--ink);text-decoration:underline;text-underline-offset:3px;font-weight:500}
+.b-msg{margin:6px 0 0;color:#FF8C8C;font-size:12px}.b-msg:empty{display:none}
+.b-cap{margin:6px 0 0;font-size:12px;color:var(--ink2)}.b-cap:empty{display:none}
+/* the Armory column */
+.b-arm-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:8px}
+.b-bi{display:inline-grid;place-items:center;width:22px;height:22px;flex:none;color:var(--c,#C9D2E6)}.b-bi svg{width:100%;height:100%}
+[data-k="sparkler"]{--c:#FFC83D}[data-k="thunderbolt"]{--c:#58B4FF}[data-k="inferno"]{--c:#FF6A3D}[data-k="nova"]{--c:#B9A6FF}
+.b-bc{position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);gap:2px 8px;align-content:start;text-align:left;padding:10px 11px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.03);color:var(--ink);cursor:pointer;font:12px/1.35 var(--ui);transition:border-color .15s,background-color .15s}
+.b-bc .b-bi{grid-row:span 2;align-self:start}
+.b-bc-n{font:600 13px/1.2 var(--ui);color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-bc-p{font:500 11.5px/1.2 var(--mono);color:var(--ink2);font-variant-numeric:tabular-nums}
+.b-bc-d{grid-column:1/-1;margin-top:4px;font-size:11.5px;line-height:1.35;color:var(--ink3)}
+.b-bc-add{grid-column:1/-1;margin-top:4px;font:600 12px/1.2 var(--ui);color:#B9A6FF}
+.b-bc-c{position:absolute;right:-7px;top:-7px;width:20px;height:20px;border-radius:50%;background:var(--you);color:#fff;font:600 11px/20px var(--mono);text-align:center}.b-bc-c[hidden]{display:none}
+.b-bc:hover{border-color:rgba(139,108,246,.7)}.b-bc.in{border-color:var(--you);background:rgba(139,108,246,.1)}
+.b-bc[disabled]{cursor:default;opacity:.45}.b-bc[disabled]:hover{border-color:var(--line)}
+.b-arm-rows{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}.b-arm-rows:empty{display:none}
+.b-ar{display:grid;grid-template-columns:18px minmax(0,1fr) minmax(0,max-content) 32px;grid-template-areas:"i w t x" ". e e e" "p p p p";align-items:center;gap:4px 8px;min-width:0}
+.b-ar .b-bi{grid-area:i;width:18px;height:18px}
+.b-ar-w{grid-area:w;position:relative;min-width:0}
+.b-ar input{box-sizing:border-box;width:100%;height:36px;border-radius:10px;border:1px solid var(--line);background:#0B0D13;color:var(--ink);font:600 13px/1 var(--mono);padding:0 46px 0 10px;letter-spacing:.06em;text-transform:uppercase}
+.b-ar input::placeholder{color:var(--ink3);text-transform:none;letter-spacing:0;font-weight:500}
+.b-ar-cnt{position:absolute;right:10px;top:50%;transform:translateY(-50%);font:500 10.5px/1 var(--mono);color:var(--ink3);pointer-events:none;font-variant-numeric:tabular-nums}
+.b-ar-tb{grid-area:t;display:flex;align-items:center;gap:6px;box-sizing:border-box;max-width:190px;min-width:0;height:36px;padding:0 10px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--ink);font:600 12.5px var(--ui);cursor:pointer;text-align:left}
+.b-ar-tb>span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-ar-tb::after{content:"";flex:none;width:6px;height:6px;border-right:1.5px solid var(--ink3);border-bottom:1.5px solid var(--ink3);transform:rotate(45deg) translateY(-2px);transition:transform .18s}
+.b-ar-tb[aria-expanded="true"]{border-color:var(--cy)}.b-ar-tb[aria-expanded="true"]::after{transform:rotate(-135deg) translateY(-2px)}
+.b-ar-x{grid-area:x;position:relative;width:32px;height:36px;border:0;border-radius:8px;background:transparent;color:var(--ink2);font-size:18px;padding:0;cursor:pointer}.b-ar-x::before{content:"";position:absolute;inset:-4px -6px}.b-ar-x:hover{color:var(--ink);background:rgba(255,255,255,.06)}
+.b-ar-e{grid-area:e;margin:0;font-size:12px;line-height:1.4;color:#FF8C8C}.b-ar-e[hidden]{display:none}
+.b-ar.bad input{border-color:#FF8C8C}
+.b-arm-who{display:flex;align-items:center;gap:10px;margin-top:10px}
+.b-arm-who-d{margin:0;font-size:12px;line-height:1.4;color:var(--ink2)}.b-arm-who-d b{color:var(--ink);font-weight:600}
+.b-sw{position:relative;width:30px;height:18px;border-radius:9px;border:0;padding:0;background:rgba(255,255,255,.16);flex:none;cursor:pointer;transition:background-color .15s}
+.b-sw::before{content:"";position:absolute;inset:-13px -7px}
+.b-sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .15s,background-color .15s}
+.b-sw[aria-checked="true"],.b-sw[aria-pressed="true"]{background:var(--cy)}.b-sw[aria-checked="true"]::after,.b-sw[aria-pressed="true"]::after{left:14px;background:#0B0D13}
+.b-arm-foot{display:flex;align-items:center;gap:12px;margin-top:12px}
+.b-arm-sum{flex:1;min-width:0;font:500 12px var(--mono);color:var(--ink2);font-variant-numeric:tabular-nums}.b-arm-sum b{color:var(--ink);font-weight:600}.b-arm-sum b.neg{color:#FF8C8C}
+.b-arm-buy{height:44px;padding:0 22px;border-radius:22px;border:0;background:var(--you);color:#fff;font:600 14px var(--ui);white-space:nowrap;cursor:pointer;transition:background-color .15s}
+.b-arm-buy:hover{background:#7A5BEA}.b-arm-buy[disabled]{background:rgba(139,108,246,.28);color:rgba(255,255,255,.6);cursor:default}.b-arm-buy[aria-busy="true"]{cursor:progress}
+.b-fine{font-size:11.5px;color:var(--ink3);margin:8px 0 0}.b-fine a{color:var(--ink)}
+.b-arm-err{margin:8px 0 0;font-size:12px;color:#FF8C8C}
+.b-arm-ok{margin:8px 0 0;font-size:12.5px;color:var(--cy)}.b-arm-ok[hidden]{display:none}
+.b-arm-load{margin:0 0 10px}.b-arm .b-hh+.b-arm-load{margin-top:10px}
+.b-arm-load ul{list-style:none;margin:8px 0 0;padding:0;display:grid}
+.b-arm-load li{display:flex;align-items:center;gap:8px;min-height:30px;font-size:12.5px;color:var(--ink2);border-top:1px solid var(--rule);min-width:0}.b-arm-load li:first-child{border-top:0}
+.b-arm-load .b-bi{width:16px;height:16px}.b-arm-load li b{color:var(--ink);font-weight:600}
+.b-arm-load q{quotes:none;font:600 12px var(--mono);letter-spacing:.05em;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.b-arm-load li span{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* the Last night card */
+.b-nums{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.b-nums b{display:block;font:700 30px/1 var(--disp);color:var(--ink);font-variant-numeric:tabular-nums}.b-nums span{display:block;font-size:11.5px;color:var(--ink2);margin-top:3px}.b-nums .g b{color:var(--gd)}
+.b-ych{font:600 12px var(--ui);margin:14px 0 0;color:var(--ink);display:flex;align-items:center;gap:7px}.b-ych i{width:8px;height:8px;border-radius:2px;background:var(--you)}
+.b-yc{margin:6px 0 0;display:grid;grid-template-columns:auto minmax(0,1fr);font-size:12.5px}
+.b-yc dt,.b-yc dd{margin:0;padding:6px 0;border-top:1px solid var(--rule)}.b-yc dt{color:var(--ink2);padding-right:14px}.b-yc dd{text-align:right;color:var(--ink);font-weight:500;overflow-wrap:anywhere}
+.b-yc .cy{color:var(--cy)}.b-yc .gd{color:var(--gd)}.b-yc .gr{color:#4BE38A}
+.b-lbtn{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center}
+.b-allshots{margin-left:auto;display:inline-flex;align-items:center;min-height:32px;font-size:12.5px;color:var(--ink);text-decoration:underline;text-underline-offset:3px;font-weight:500}
+/* the tabs */
+.b-tabs{margin-top:var(--gap);background:#14171E;border:1px solid var(--rule);border-radius:14px;overflow:hidden}
+.b-tabrow{display:flex;gap:2px;border-bottom:1px solid var(--rule);padding:0 8px;overflow-x:auto}
+.b-tabrow button{height:42px;padding:0 12px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--ink2);font:600 13px var(--ui);display:inline-flex;align-items:center;gap:7px;white-space:nowrap;cursor:pointer}
+.b-tabrow button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--cy)}
+.b-tabrow small{font:500 11px var(--mono);color:var(--ink3);background:rgba(255,255,255,.07);border-radius:6px;padding:1px 6px}
+.b-ts{display:none}
+.b-panel{padding:0 16px 10px}.b-panel[hidden]{display:none}
+.b-tabhint{font-size:12px;color:var(--ink3);margin:0;padding:10px 0 4px}
+.b-sl,.b-rk,.b-al{list-style:none;margin:0;padding:0}
+.b-sl li,.b-rk li,.b-al li{border-top:1px solid var(--rule)}.b-sl li:first-child,.b-rk li:first-child,.b-al li:first-child{border-top:0}
+.b-sl button{display:grid;grid-template-columns:52px minmax(0,1fr) 34px 110px 18px;align-items:center;gap:10px;width:100%;min-height:38px;padding:0;border:0;background:none;color:var(--ink);font:13px/1.3 var(--ui);text-align:left;cursor:pointer}
+.b-sl button:hover{background:rgba(255,255,255,.03)}
+.b-sl time{font:500 11.5px var(--mono);color:var(--ink3);font-variant-numeric:tabular-nums}
+.b-p{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.b-p .a{box-shadow:inset 0 -2px 0 #FF6A3D}.b-p .d{box-shadow:inset 0 -2px 0 #58B4FF}.b-p q{quotes:none;font:600 11px var(--mono);color:#B9A6FF;margin-left:8px}
+.b-szc{font:600 10.5px var(--mono);border:1px solid var(--line);border-radius:6px;text-align:center;padding:1px 0;color:var(--ink2)}
+.b-r{font:600 12.5px var(--mono);text-align:right;color:var(--gd);white-space:nowrap;font-variant-numeric:tabular-nums}.b-r.h{color:var(--cy)}
+.b-cv{color:var(--ink3);font-size:15px;text-align:center;transition:transform .15s}.b-sl li.open .b-cv{transform:rotate(90deg)}
+.b-shot{padding:2px 0 10px 62px;font-size:12.5px;color:var(--ink2)}.b-shot p{margin:0 0 6px}.b-shot b{color:var(--ink)}
+.b-rk li,.b-al li{display:flex;align-items:center;gap:10px;min-height:38px;font-size:13px;min-width:0}
+.b-rn{width:22px;flex:none;font:500 11.5px var(--mono);color:var(--ink3)}
+.b-rk button,.b-al button{background:none;border:0;padding:0;color:var(--ink);font:inherit;cursor:pointer;min-height:32px;text-align:left;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-rk b,.b-al b{margin-left:auto;font:600 12.5px var(--mono);color:var(--ink);white-space:nowrap;font-variant-numeric:tabular-nums}
+.b-yq{width:8px;height:8px;border-radius:2px;background:var(--you);flex:none}.b-rk small{font-size:11.5px;color:var(--ink2);white-space:nowrap}
+.b-al span{font-size:12px;color:var(--ink2);white-space:nowrap}
+.b-empty{margin:0;padding:6px 0 4px;font-size:12.5px;color:var(--ink2)}
+.b-more{display:inline-flex;align-items:center;min-height:44px;padding:0;border:0;background:none;color:var(--ink);font:500 12.5px var(--ui);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+/* popovers: Layers, Choose a target, Battle settings */
+.b-pop{position:absolute;z-index:40;box-sizing:border-box;width:320px;max-width:100%;display:grid;gap:10px;padding:14px;border-radius:14px;background:#181B23;border:1px solid var(--line);box-shadow:0 16px 40px rgba(0,0,0,.5);color:var(--ink);font:13px/1.45 var(--ui)}
+.b-pop h4{margin:0;font:600 14px var(--ui)}.b-pop p{margin:0;font-size:12.5px;color:var(--ink2)}.b-pop p a{color:var(--ink)}
+.b-pop hr{width:100%;margin:0;border:0;border-top:1px solid var(--rule)}
+.b-pl{color:var(--ink)!important;margin:0 0 6px!important}.b-pnote{margin-top:6px!important;font-size:12px!important}
+.b-seg{display:flex;gap:2px;padding:3px;border-radius:10px;background:rgba(255,255,255,.06)}
+.b-seg button{flex:1;height:32px;border:0;border-radius:7px;background:transparent;color:var(--ink2);font:600 12px var(--ui);cursor:pointer}.b-seg button[aria-pressed="true"]{background:var(--ink);color:#0B0D13}
+.b-prow{display:flex;align-items:center;gap:10px;min-height:36px;font-size:13px}.b-prow>span{flex:1;min-width:0}.b-prow small{display:block;font:400 11.5px var(--ui);color:var(--ink3)}
+.b-dz{justify-self:start;min-height:32px;padding:0;border:0;background:none;color:#FF8C8C;font:600 13px var(--ui);text-align:left;cursor:pointer}
+.b-aimsel{box-sizing:border-box;width:100%;height:40px;padding:0 10px;border-radius:10px;border:1px solid var(--line);background:#0B0D13;color:var(--ink);font:13.5px var(--ui)}
+.b-pbuy{height:40px;border-radius:20px;border:0;background:var(--you);color:#fff;font:600 13.5px var(--ui);cursor:pointer}.b-pbuy[disabled]{background:rgba(139,108,246,.28);color:rgba(255,255,255,.6);cursor:default}
+.b-aims{list-style:none;margin:0;padding:0;display:grid;gap:2px;font-size:12.5px;color:var(--ink2)}.b-aims b{color:var(--ink);font-weight:600}
+.b-unaim{min-height:32px;padding:0 4px;border:0;background:none;color:var(--ink);font:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.b-perr{color:#FF8C8C!important;font-size:12px!important}
+.b-pop.sheet{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;max-height:80vh;overflow:auto;z-index:90;border-radius:16px 16px 0 0;padding:8px 14px calc(14px + env(safe-area-inset-bottom,0px))}
+.b-pop.sheet::before{content:"";display:block;width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,.3);margin:0 auto}
+.b-pop.sheet .b-seg button,.b-pop.sheet .b-aimsel,.b-pop.sheet .b-pbuy,.b-pop.sheet .b-prow{min-height:44px}
+@media (prefers-reduced-motion:no-preference){.b-pop{animation:b-pop .14s ease-out}}
+@keyframes b-pop{from{opacity:0;transform:translateY(4px)}}
+@media (prefers-reduced-motion:reduce){.b-sw,.b-sw::after,.b-bc,.b-arm-buy,.b-cv,.b-ar-tb::after{transition:none}}
+/* the status chip: the long line on L and M, "Starts in" on S */
+.b-cn{display:none}
+/* M: Duo, dense on purpose */
+@media (min-width:700px) and (max-width:899px){
+.b-deck{--gap:8px}
+.b-grid{grid-template-columns:minmax(0,1fr) 272px}
+.b-card{padding:10px 12px;border-radius:12px}
+.b-eb{font-size:11px}.b-big{font-size:22px;margin-top:5px}.b-big.b-none{font-size:19px}.b-sub{font-size:11px;margin-top:3px}
+.b-cred{height:28px;font-size:11px}.b-gear{width:28px;height:28px}.b-gear::before{inset:-8px}
+.b-tnb{grid-template-columns:minmax(0,1fr);gap:10px;margin-top:10px}
+.b-hh{font-size:11.5px}.b-hh small{font-size:11px}
+.b-tiles{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:6px}
+.b-tile{padding:5px 8px;border-radius:8px}.b-tile span,.b-tile i{font-size:10px}.b-tile b{font-size:19px}
+.b-from{font-size:10.5px;margin-top:5px}.b-trow{margin-top:6px;font-size:11px}
+.b-gb{height:28px;font-size:11.5px;padding:0 10px}.b-gb::before{inset:-8px 0}
+.b-txt{font-size:11.5px;margin-top:6px}.b-cta2{height:36px;font-size:12.5px;padding:0 16px}
+.b-arm-cards{gap:6px;margin-top:6px}
+.b-bc{padding:6px 8px;border-radius:12px;grid-template-columns:18px minmax(0,1fr);gap:0 6px}.b-bc .b-bi{width:18px;height:18px}.b-bc-n{font-size:11.5px}.b-bc-p{font-size:10px}.b-bc-d{display:none}.b-bc-add{font-size:10.5px;margin-top:2px}
+.b-arm-rows{margin-top:6px;gap:4px}.b-ar input,.b-ar-tb,.b-ar-x{height:28px}.b-ar input{font-size:11.5px}.b-ar-x::before{inset:-8px -6px}
+.b-arm-who{margin-top:6px}.b-arm-who-d{font-size:11px}
+.b-arm-foot{margin-top:8px}.b-arm-sum{font-size:10.5px}.b-arm-buy{height:36px;font-size:12.5px;padding:0 16px}
+.b-fine{font-size:10.5px;margin-top:5px}
+.b-nums{margin-top:8px;gap:4px}.b-nums b{font-size:21px}.b-nums span{font-size:10px}
+.b-ych{margin-top:8px;font-size:11px}.b-yc{font-size:11px}.b-yc dt,.b-yc dd{padding:3px 0}
+.b-lbtn{margin-top:8px;gap:6px}.b-allshots{font-size:11px}
+.b-tabrow button{height:32px;font-size:11.5px;padding:0 9px}
+.b-panel{padding:0 12px 6px}.b-tabhint{font-size:10.5px;padding:6px 0 2px}
+.b-sl button{min-height:28px;font-size:11.5px;grid-template-columns:44px minmax(0,1fr) 30px 96px 14px;gap:8px}.b-r{font-size:11px}
+.b-rk li,.b-al li{min-height:28px;font-size:11.5px}.b-shot{padding-left:52px;font-size:11.5px}
+}
+/* S: phones */
+@media (max-width:699px){
+.b-deck{--gap:10px}
+.b-grid{grid-template-columns:minmax(0,1fr)}
+.b-card{padding:14px}
+.b-big{font-size:24px}
+.b-ch1 .b-cred{display:none}
+.b-gear{width:40px;height:40px}.b-gear::before{inset:-2px}
+.b-tnb{grid-template-columns:minmax(0,1fr);gap:16px;margin-top:14px}
+.b-gb{height:44px;font-size:14px;padding:0 14px}.b-gb::before{display:none}
+.b-arm-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.b-bc{min-height:44px}
+.b-ar{grid-template-columns:18px minmax(0,1fr) 44px;grid-template-areas:"i w x" ". t t" ". e e" "p p p"}
+.b-ar input,.b-ar-tb{height:44px}.b-ar input{font-size:16px}.b-ar-tb{max-width:none;width:100%}.b-ar-x{width:44px;height:44px}.b-ar-x::before{display:none}
+.b-arm-foot{flex-direction:column;align-items:stretch;gap:8px}.b-arm-buy{width:100%}
+.b-tabrow button{flex:1;justify-content:center;height:44px;padding:0 6px}
+.b-tl{display:none}.b-ts{display:inline}
+.b-sl button{grid-template-columns:minmax(0,1fr) 34px 14px;min-height:52px;gap:2px 8px;padding:6px 0}.b-sl time{display:none}.b-r{grid-column:1;grid-row:2;text-align:left}.b-szc{grid-row:1/3;grid-column:2}.b-cv{grid-row:1/3;grid-column:3}
+.b-shot{padding-left:0}
+.b-cw{display:none}.b-cn{display:inline}
+}
 `;
 
+/** The deck under the map (PAGE.md 5): the Tonight and Last night cards, then one tab panel. The cards are filled by battleClient. */
 export function battleMarkup(): string {
-  return `<div class="b-bar" id="b-bar" hidden aria-label="Battles">
-<div class="b-row"><b class="b-date" data-b="date"></b><span class="b-stats"><span><b data-b="cities">0</b> <span data-b="cl">cities in the battles</span></span><span><b data-b="shots">0</b> shots</span><span><b data-b="landed">0</b> landed</span><span><b data-b="dmg">$0</b> damage</span><span><b data-b="fires">0</b> fires spread</span><span data-b="season"></span><span data-b="next"></span></span></div>
-<div class="b-row" role="group" aria-label="Layers"><button type="button" data-bl="damage" aria-pressed="true" title="Hits on the repo towers: lost floors, scorch, rubble, smoke; the cranes that rebuild them">Damage</button><button type="button" data-bl="attacks" aria-pressed="true" title="Ammo pads, stacks, launch centers and missiles in flight">Attacks</button><button type="button" data-bl="shields" aria-pressed="true" title="Each city's shield (white: beginner shield)">Shields</button><button type="button" data-bl="replay" aria-pressed="false" title="Last night strike by strike: the camera zooms to each city, follows its missiles into the hit, then the cranes">&#9654; Replay</button><button type="button" data-bdemo aria-pressed="false" title="A sample battle between the biggest cities on the map (synthetic shots), to see the full choreography">Demo replay</button><button type="button" class="b-howb" data-bhow aria-expanded="false" title="The budget, the missiles, blast, shields and fire, with the real numbers">How damage works</button><span class="b-cap" data-b="cap" aria-live="polite"></span></div>
-<div class="b-me" data-b="me"></div><div class="b-msg" data-b="msg" role="alert"></div>
-<details class="b-board b-list" id="arsenals"><summary data-b="arsum">Arsenals building today</summary><div data-b="arsenals"></div></details>
-<details class="b-board b-list" id="shots"><summary data-b="shotsum">Last night, shot by shot</summary><div data-b="shotlist"></div></details>
-<details class="b-board" id="season"><summary>Season leaderboard (per head: dollars of damage dealt, plus half of what your shield held off)</summary><div data-b="board"></div></details>
-</div>`;
+  return `<div class="b-deck" id="b-bar" hidden aria-label="Battles">
+<div class="b-grid"><section class="b-card b-tn" id="armory" data-b="me" aria-labelledby="b-tn-t" aria-busy="true"></section><section class="b-card b-ln" data-b="last" aria-label="Last night"></section></div>
+<p class="b-msg" data-b="msg" role="alert"></p><p class="b-cap" data-b="cap" aria-live="polite"></p>
+<section class="b-tabs" aria-label="Battle lists"><div class="b-tabrow" role="tablist" aria-label="Battle lists">
+<button type="button" role="tab" id="b-tab-shots" data-tab="shots" aria-controls="shots" aria-selected="true"><span class="b-tl">Shot by shot</span><span class="b-ts">Shots</span> <small data-b="nshots">0</small></button>
+<button type="button" role="tab" id="b-tab-season" data-tab="season" aria-controls="season" aria-selected="false" tabindex="-1"><span class="b-tl">Season ranking</span><span class="b-ts">Season</span></button>
+<button type="button" role="tab" id="b-tab-arsenals" data-tab="arsenals" aria-controls="arsenals" aria-selected="false" tabindex="-1"><span class="b-tl">Arming today</span><span class="b-ts">Arming</span> <small><span class="b-tl" data-b="narmed">0</span><span class="b-ts" data-b="narmeds">0</span></small></button></div>
+<div class="b-panel" role="tabpanel" id="shots" aria-labelledby="b-tab-shots"><p class="b-tabhint" data-b="shotsum"></p><div data-b="shotlist"></div><button type="button" class="b-more" data-bhow aria-haspopup="dialog" aria-expanded="false">How battles work</button></div>
+<div class="b-panel" role="tabpanel" id="season" aria-labelledby="b-tab-season" hidden><p class="b-tabhint" data-b="seasonsum"></p><div data-b="board"></div></div>
+<div class="b-panel" role="tabpanel" id="arsenals" aria-labelledby="b-tab-arsenals" hidden><p class="b-tabhint" data-b="armsum"></p><div data-b="arsenals"></div></div>
+</section></div>`;
 }
