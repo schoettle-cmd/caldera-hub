@@ -6,12 +6,9 @@ import fs from "node:fs";
 const SRC = fs.readFileSync(new URL("../dist/server.js", import.meta.url), "utf8");
 const BATTLE_CSS = SRC, WORLD_FIT_JS = SRC;
 
-test("battle overlays: pill row under the tools, card fits the map", () => {
+test("battle overlays: pill row under the tools; the morning card is gone (its rows are the Last night card, PAGE.md P4)", () => {
   assert.match(BATTLE_CSS, /@media \(min-width:601px\)\{\.b-chip\{top:48px;max-width:min\(360px,calc\(100% - 20px\)\)/);
-  assert.match(BATTLE_CSS, /\.b-recap\{top:48px;max-height:calc\(100% - 58px\)\}/);
-  assert.match(BATTLE_CSS, /\.b-recap dl\{flex:0 1 auto;min-height:0;overflow-y:auto/);
-  assert.match(BATTLE_CSS, /\.c-stage:has\(\.b-recap\) \.c-live,\.c-stage:has\(\.b-recap\) \.c-hint\{display:none\}/);
-  assert.match(BATTLE_CSS, /@media \(max-width:600px\)\{\.b-recap\{left:8px;right:8px;bottom:8px;top:auto;width:auto;max-height:62%\}\}/);
+  assert.ok(!SRC.includes(".b-recap{") && !SRC.includes("className = 'b-recap'") && !SRC.includes("caldera.world.recap"), "no morning overlay and no key for it");
   assert.match(BATTLE_CSS, /\.c-stage:has\(\.b-chip\) \.g-today\{top:80px/);
 });
 
