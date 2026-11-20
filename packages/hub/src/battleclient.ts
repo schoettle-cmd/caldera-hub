@@ -753,6 +753,18 @@ html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, c
 .b-play .b-flagq button{flex:0 0 auto;min-height:36px;padding:0 12px}.b-play .b-flagq [data-p="flagyes"]{background:#8B6CF6;border-color:#8B6CF6;color:#fff;font-weight:600}
 .b-arm .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .b-arm .b-arm-note a{color:#B9A6FF}
+/* Mike 11-19 (Duo landscape): the status pill covered the tools and the last-night card ran off the map. The tools keep
+   one row (More menu, city.ts toolsFit); the pill takes its own row under them; the card sits under the tools, inside the
+   map, with its rows scrolling; the LIVE panel and hint step aside while it is open. Phones: the card is a bottom sheet. */
+@media (min-width:601px){.b-chip{top:48px;max-width:min(360px,calc(100% - 20px));font-size:11px;padding:5px 10px 5px 8px}
+.c-stage:has(.b-recap) .b-chip{max-width:min(360px,calc(100% - 360px))}
+.b-recap{top:48px;max-height:calc(100% - 58px)}
+html.w-battle:not(.w-replay) .c-stage:has(.b-chip) .g-today{top:80px;max-height:calc(100% - 90px);overflow-y:auto}}
+@media (min-width:601px) and (max-width:760px){.c-stage:has(.b-recap) .g-today{display:none}}
+.b-recap{display:flex;flex-direction:column;box-sizing:border-box}.b-recap>b,.b-recap>.b-rbtn{flex:none}
+.b-recap dl{flex:0 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.c-stage:has(.b-recap) .c-live,.c-stage:has(.b-recap) .c-hint{display:none}
+@media (max-width:600px){.b-recap{left:8px;right:8px;bottom:8px;top:auto;width:auto;max-height:62%}}
 `;
 
 export function battleMarkup(): string {

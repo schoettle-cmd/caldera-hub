@@ -185,6 +185,19 @@ st.querySelectorAll('.b-chip,.c-tools,.c-tools button,#stage > [role=status]').f
 if(y>C.top-S.top+.5)cd.style.top=Math.round(y)+'px';if(y>C.top-S.top+.5||yb<S.height-10||C.bottom-S.top>yb)cd.style.maxHeight=Math.max(120,Math.round(yb-y))+'px'}finally{busy=false}}
 new MutationObserver(lay).observe(st,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class']});addEventListener('resize',lay);setInterval(lay,1000);lay()})();`;
 
+/** Mike 11-19 (Duo landscape, 868x669 with the tab bar): the map showed as a strip under a long intro. On short screens
+ *  (601px+ wide, 760px or less tall) the intro shows one line (tap for all) and the friend form drops its helper line; with
+ *  the app's bottom tab bar the map runs from where it starts down to just above the bar (380px at least; if less is left,
+ *  it fills the screen under the top bar and the page scrolls to it). */
+export const WORLD_FIT_JS = String.raw`(function(){var st=document.getElementById('stage');if(!st)return;
+var ss=document.createElement('style');ss.textContent='@media (min-width:601px) and (max-height:760px){.w-main .w-head{margin:0 0 6px;row-gap:4px}.w-main .w-head>p{flex:1 1 100%;order:9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px;cursor:pointer}.w-main .w-head>p.w-open{white-space:normal}.w-main .w-add-h{display:none}}';document.head.appendChild(ss);
+document.querySelectorAll('.w-head>p').forEach(function(p){p.addEventListener('click',function(){p.classList.toggle('w-open');fitH()})});
+function bar(){var b=document.querySelector('.ch-bn');if(!b)return 0;var cs=getComputedStyle(b);if(cs.display==='none'||cs.position!=='fixed')return 0;var r=b.getBoundingClientRect();return r.top>innerHeight*.5?innerHeight-r.top:0}
+function fitH(){if(st.classList.contains('c-full'))return;var bb=bar();if(!bb||innerWidth<601){if(st.style.height){st.style.height='';dispatchEvent(new Event('resize'))}return}
+  var top=st.getBoundingClientRect().top+scrollY,nav=document.querySelector('.ch,header.nav'),nh=nav?nav.getBoundingClientRect().height:0,h=Math.round(innerHeight-top-bb-10);
+  if(h<380)h=Math.round(innerHeight-nh-bb-16);h=Math.max(300,h)+'px';if(st.style.height!==h){st.style.height=h;dispatchEvent(new Event('resize'))}}
+var T=0;addEventListener('resize',function(){clearTimeout(T);T=setTimeout(fitH,120)});setTimeout(fitH,50);setTimeout(fitH,800)})();`;
+
 export function worldPage(w: World, o: { hub: string; nav: string; tools?: unknown[]; growth?: unknown | null; battle?: unknown | null; frontier?: { districts: any[]; meta: Record<string, any>; fs?: Record<string, { slot: number; by: string | null }> } | null }): string {
   const G = o.growth || null, BT = G ? o.battle || null : null;
   const hub = o.hub.replace(/\/$/, ""), n = w.members.length, b = w.city.districts.reduce((s, d) => s + d.repos.length, 0);
@@ -222,5 +235,5 @@ ${mapPanel(hub)}
 <script>window.CALDERA_TOOLS=${safeJson(o.tools || [])};window.CALDERA_TOOLS_HUB=${safeJson(hub)};window.CALDERA_LIVE=${safeJson({ url: "/v1/world/live", mode: "public" })};window.CALDERA_EXTRAS=${safeJson({ weather: `${hub}/v1/weather` })};window.CALDERA_GIFTS=${safeJson({ url: "/v1/gifts" })}</script>
 <script type="application/json" id="city-data">${safeJson(data)}</script>
 ${G ? `<script>window.CALDERA_GROWTH=${safeJson(G)}</script>` : ""}${BT ? `<script>window.CALDERA_BATTLE=${safeJson(BT)}</script>` : ""}
-<script>${CITY_JS}</script>${BT ? `<script>${BATTLE_CLIENT_JS}</script>` : ""}${G ? `<script>${GROWTH_CLIENT_JS}</script>` : ""}<script>${CARD_CLEAR_JS}</script>${o.frontier ? `<style>${WADD_CSS}</style><script>${WADD_JS}</script>` : ""}</body></html>`;
+<script>${CITY_JS}</script>${BT ? `<script>${BATTLE_CLIENT_JS}</script>` : ""}${G ? `<script>${GROWTH_CLIENT_JS}</script>` : ""}<script>${CARD_CLEAR_JS}</script><script>${WORLD_FIT_JS}</script>${o.frontier ? `<style>${WADD_CSS}</style><script>${WADD_JS}</script>` : ""}</body></html>`;
 }
