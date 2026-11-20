@@ -191,6 +191,17 @@ var po=/[?&]duo=1/.test(q),pf=/[?&]duof=1/.test(q),out=/[?&]duoout=1/.test(q)||(
 r.classList.toggle('ch-duo-outer',out);r.classList.toggle('ch-duo',open);r.classList.toggle('ch-duof',fold);r.classList.toggle('ch-duol',open&&w>h);if(rail&&ok(h))r.style.setProperty('--duo-vh',h+'px');else r.style.removeProperty('--duo-vh')}
 f();addEventListener('resize',f);addEventListener('orientationchange',f);addEventListener('pageshow',f);try{if(window.visualViewport)visualViewport.addEventListener('resize',f)}catch(e){}})()</script>`;
 
+/** Mike 11-20 ("Nav float issue"): on iOS the phone tab bar can stay where the bottom was before the browser bar shrank, floating
+ *  over the page with content showing under it. No ancestor transforms or filters the bar (checked); this pins it to the bottom of
+ *  the visual viewport on every viewport resize/scroll, page scroll and pageshow. It stands still (no transform) for the Duo rail,
+ *  while pinch-zoomed, with the keyboard up (more than 150px of the layout viewport hidden), and on any insane visualViewport value
+ *  (the Duo once reported -33554432). Desktops and phones with no stale bar get a 0 shift, so nothing changes there. */
+export const BN_PIN_JS = `<script data-bn-pin>(function(){var b=document.getElementById('drRail'),V=window.visualViewport;if(!b||!V||b.dataset.pin)return;b.dataset.pin='1';var q=0;
+function fix(){q=0;var r=document.documentElement;b.style.transform='';if(r.classList.contains('ch-duo')||r.classList.contains('ch-duof')||getComputedStyle(b).display==='none')return;
+var s=V.scale,h=V.height,t=V.offsetTop,ih=window.innerHeight;if(!(Math.abs(s-1)<.02)||!(h>=200&&h<=8192)||!(t>=-1&&t<=4000)||!(ih>=200&&ih<=8192)||ih-(t+h)>150)return;
+var d=Math.round(t+h-b.getBoundingClientRect().bottom);if(Math.abs(d)>1&&Math.abs(d)<400)b.style.transform='translateY('+d+'px)'}
+function go(){if(!q)q=requestAnimationFrame(fix)}V.addEventListener('resize',go);V.addEventListener('scroll',go);addEventListener('scroll',go,{passive:true});addEventListener('resize',go);addEventListener('pageshow',go);addEventListener('orientationchange',go);setTimeout(go,300);go()})()</script>`;
+
 /** Live unread counts for the signed-in header: badges, the messages strip, "(3)" in the tab title and a dot on the
  *  favicon, refreshed every 30s while the tab is visible and right away when it comes back. On the hub's own pages the
  *  cookie rides along; sandboxed pages (profiles, cities) have no cookie, so they send the short-lived token instead. */
@@ -231,7 +242,7 @@ export function appHeader(o: HeaderOpts): string {
     + `</div></details>`;
   // phones: a bottom tab bar instead of the hamburger (thumb-reachable, big targets); hidden above 760px
   const tab = (key: string, label: string, href: string, inner: string, on: boolean, cls = "") => `<a${cls ? ` class="${cls}"` : ""} href="${e(href)}"${on ? ' aria-current="page"' : ""}><span class="ch-bi">${inner}</span><span class="ch-bl">${label}</span></a>`;
-  const tabs = (list: string[]) => `${DUO_JS}<nav class="ch-bn" id="drRail" data-strip-rail aria-label="Main" style="grid-template-columns:repeat(${list.length},1fr)">${list.join("")}<a class="ch-fbk" id="chFbk" href="#feedback"><span class="ch-bi">${icon("feedback", 22)}</span><span class="ch-bl">Feedback</span></a></nav>`;
+  const tabs = (list: string[]) => `${DUO_JS}<nav class="ch-bn" id="drRail" data-strip-rail aria-label="Main" style="grid-template-columns:repeat(${list.length},1fr)">${list.join("")}<a class="ch-fbk" id="chFbk" href="#feedback"><span class="ch-bi">${icon("feedback", 22)}</span><span class="ch-bl">Feedback</span></a></nav>${BN_PIN_JS}`;
   const base3 = [tab("feed", "Feed", `${hub}/feed`, icon("feed", 22) + fbadge, cur === "feed", "ch-bn-feed"), tab("people", "People", `${hub}/people`, icon("people", 22), cur === "people"), tab("world", "World", `${hub}/world`, icon("world", 22), cur === "world"), tab("leaderboard", "Leaders", `${hub}/leaderboard`, icon("leaderboard", 22), cur === "leaderboard")];
   if (!v) {
     const signin = o.signinHref || `${hub}/signin`, join = o.joinHref || `${hub}/join?tp=header`;

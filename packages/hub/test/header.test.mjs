@@ -97,3 +97,22 @@ test("Power up your map: the World page and every city page carry one copyable p
     assert.equal((city.match(/id="power-up"/g) || []).length, 1, "once");
   } finally { hub.server.close(); fs.rmSync(d, { recursive: true, force: true }); }
 });
+
+test("Mike 11-20 nav float: the phone tab bar is pinned to the bottom of the visual viewport; it stands still when zoomed, with the keyboard up and on the Duo rail", () => {
+  const src = fs.readFileSync(new URL("../src/header.ts", import.meta.url), "utf8");
+  const js = src.match(/<script data-bn-pin>([\s\S]*?)<\/script>/)[1];
+  const run = (o) => {
+    const cls = new Set(o.cls || []), ls = {}, b = { dataset: {}, style: { transform: "" }, getBoundingClientRect: () => ({ bottom: o.barBottom + (parseFloat((b.style.transform.match(/-?[\d.]+/) || [0])[0]) || 0) }) };
+    const V = { scale: o.scale ?? 1, height: o.vh, offsetTop: o.top ?? 0, addEventListener() {} };
+    const win = { visualViewport: V, innerHeight: o.ih, requestAnimationFrame: (f) => { f(); return 1; } };
+    new Function("document", "window", "getComputedStyle", "addEventListener", "setTimeout", "requestAnimationFrame", js)(
+      { getElementById: () => b, documentElement: { classList: { contains: (c) => cls.has(c) } } }, win, () => ({ display: "grid" }), (k, f) => { ls[k] = f; }, () => {}, win.requestAnimationFrame);
+    return b.style.transform;
+  };
+  assert.equal(run({ vh: 844, ih: 844, barBottom: 754 }), "translateY(90px)");   // stuck 90 px above the bottom: pinned down
+  assert.equal(run({ vh: 844, ih: 844, barBottom: 844 }), "");                    // already at the bottom: no shift
+  assert.equal(run({ vh: 400, ih: 844, barBottom: 844 }), "");                    // keyboard up: stands still
+  assert.equal(run({ vh: 844, ih: 844, barBottom: 754, scale: 1.6 }), "");        // pinch zoom: stands still
+  assert.equal(run({ vh: -33554432, ih: 844, barBottom: 754 }), "");              // insane Duo value: stands still
+  assert.equal(run({ vh: 844, ih: 844, barBottom: 754, cls: ["ch-duo"] }), "");   // Duo rail: not the tab bar
+});
