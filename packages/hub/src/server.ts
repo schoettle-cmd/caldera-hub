@@ -41,6 +41,7 @@ import { ghPreview, GH_SITEMAP } from "./ghpreview";
 import { liveGen, liveClient } from "./livegen";
 export { cleanText, renderText } from "./messages";
 import { emailer, POSTAL, type Mail, type You } from "./email";
+import { featureMail } from "./featuremail";
 export { tagLinks } from "./email";
 import { weatherService, dayStats, ownerSetup, extrasScript } from "./cityextra";
 import { closenessOrder, buildWorld, foldLive, agentRank, worldPage, type World, type WorldMemberIn } from "./world";
@@ -1689,6 +1690,9 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   const mail = emailer({ q, seal, unseal, hub: opts.publicUrl || "https://caldera.social", pepper: PRIV_KEY, send: opts.email?.send, resendKey: opts.email?.resendKey, learnUrl, digest: digestFor, network: networkFor, news: opts.email?.schedule ? () => newsToday(q) : undefined, rank: { active: d => ext.digestActive(d), subject: d => ext.digestSubject(d) } });
   const CODES = signinCodes(q, e => mail.hashOf(e));   // "Email me a code" (sign-in standard, 2026-10-29)
   if (opts.email?.schedule) mail.schedule();
+  // the weekly "What's new" feature email (Growth Engine writes it; featuremail.ts only sends it), on the same switch as the digest
+  const FEATURE = featureMail({ q, unseal, hub: opts.publicUrl || "https://caldera.social", hashOf: e => mail.hashOf(e), send: m => mail.sendRaw(m), page: (t, h) => mail.page(t, h) });
+  if (opts.email?.schedule) FEATURE.schedule();
   // ---------------------------------------------------------------- the World's battles (battle.ts, battlehub.ts): opt-in, idle, overnight, on the growth tick
   // Kill switch CALDERA_BATTLE=0 (no Battle view, no nights). The battle-report email sends only with CALDERA_BATTLE_EMAIL=1.
   const BATTLE = !GROWTH || opts.battle === false || process.env.CALDERA_BATTLE === "0" ? null : battleHub({ q, hub: opts.publicUrl || "https://caldera.social", postal: POSTAL,
@@ -3077,6 +3081,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         return res.end(mail.page("You're unsubscribed", "<p>No more Caldera summary emails will go to this address. You can turn them back on any time from Caldera.</p>"));
       }
 
+      if (p === "/v1/email/news-off" && FEATURE.route(req, res, url, p)) return;   // the feature email's one-click "no product news"
       if (p === "/v1/email/invite-unsub" && (req.method === "GET" || req.method === "POST")) {
         const t = (url.searchParams.get("t") || "").replace(/[^\w-]/g, "");
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
@@ -3483,7 +3488,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   const reconnectStats = () => { const rows = q("SELECT profile_id FROM gh_accounts WHERE reconnect IS NOT NULL AND reconnect_mailed IS NULL AND claimed IS NULL").all() as any[];
     return { flagged: rows.length, reachable: rows.filter(r => mail.reconnectTo(r.profile_id)).length }; };
 
-  return { stuckClaim: (o: any) => EMP.stuckClaim(o), emailPagesDaily: () => EMP.daily(), reconnect: { sweep: (max?: number) => reconnectOn ? reconnectSweep(max) : Promise.resolve(0), stats: reconnectStats, compose: mail.reconnectCompose }, ext, server, privateServer, db, admin, mail, feed: FEED!, messages: MSG!, guide: GUIDE, offerNamed: () => offerNamed(), digestFor, networkFor, feedReady, headerItems, privateModes: PM, promptPrivateChoice, act: { token: (v: string, h: string, ttl?: number) => actToken(v, h, ttl), read: readAct },
+  return { stuckClaim: (o: any) => EMP.stuckClaim(o), emailPagesDaily: () => EMP.daily(), reconnect: { sweep: (max?: number) => reconnectOn ? reconnectSweep(max) : Promise.resolve(0), stats: reconnectStats, compose: mail.reconnectCompose }, ext, server, privateServer, db, admin, mail, featureMail: FEATURE, feed: FEED!, messages: MSG!, guide: GUIDE, offerNamed: () => offerNamed(), digestFor, networkFor, feedReady, headerItems, privateModes: PM, promptPrivateChoice, act: { token: (v: string, h: string, ttl?: number) => actToken(v, h, ttl), read: readAct },
     listen: (port = opts.port || 8787, host = process.env.CALDERA_HOST || "127.0.0.1") => new Promise<number>(r => server.listen(port, host, () => r((server.address() as any).port))),
     listenPrivate: (port = opts.privatePort || 0) => new Promise<number>(r => privateServer.listen(port, "127.0.0.1", () => r((privateServer.address() as any).port))) };
 }

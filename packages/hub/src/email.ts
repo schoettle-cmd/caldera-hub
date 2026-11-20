@@ -18,7 +18,11 @@ export interface Mail { to: string; subject: string; html: string; text: string;
   /** Growth Engine's shared learning loop: which program and arm this send is (goes to the mail guard, which counts the send) */
   learn?: { program: string; arm: string };
   /** extra query params for every link back to our own site, next to src= (utm_campaign, utm_content, and our opaque lt token) */
-  utm?: Record<string, string> }
+  utm?: Record<string, string>;
+  /** the content is final (Growth Engine's feature mail): leave its links as they are (no src=/utm tags added here) */
+  raw?: boolean;
+  /** Resend Idempotency-Key: a retry with the same key within 24 h is not sent twice */
+  idempotencyKey?: string }
 /** The learning programs this hub sends (registered with the learning service, LEARN_URL + /learn/*). Arm "a" is always our own copy. */
 export const LEARN_PROGRAMS = { daily: "caldera_daily", newMember: "caldera_new_member" } as const;
 export const LEARN_GOALS: Record<string, string> = { caldera_daily: "return_visit", caldera_new_member: "follow" };
@@ -203,7 +207,7 @@ export function emailer(ctx: EmailCtx) {
   const dismissPrompt = (owner: string) => q("INSERT OR REPLACE INTO email_prompt VALUES (?,?)").run(owner, new Date().toISOString());
 
   async function send(m0: Mail) {
-    const m: Mail = m0.src ? { ...m0, html: tagLinks(m0.html, hub, m0.src, true, m0.utm), text: tagLinks(m0.text, hub, m0.src, false, m0.utm) } : { ...m0 };
+    const m: Mail = m0.src && !m0.raw ? { ...m0, html: tagLinks(m0.html, hub, m0.src, true, m0.utm), text: tagLinks(m0.text, hub, m0.src, false, m0.utm) } : { ...m0 };
     if (ctx.send) return ctx.send(m);
     if (!ctx.resendKey) throw new Error("email is not set up on this hub");
     const g = await guardOk(m);
@@ -214,7 +218,7 @@ export function emailer(ctx: EmailCtx) {
       for (let attempt = 0; ; attempt++) {
         lastSend = Date.now();
         const r = await fetch("https://api.resend.com/emails", { method: "POST",
-          headers: { authorization: "Bearer " + ctx.resendKey, "content-type": "application/json", "user-agent": "Mozilla/5.0 (caldera-hub)" },
+          headers: { authorization: "Bearer " + ctx.resendKey, "content-type": "application/json", "user-agent": "Mozilla/5.0 (caldera-hub)", ...(m.idempotencyKey ? { "idempotency-key": m.idempotencyKey.slice(0, 256) } : {}) },
           body: JSON.stringify({ from: ctx.from || "Caldera <hello@caldera.social>", reply_to: ctx.replyTo || "hello@caldera.social", to: [m.to], subject: m.subject, html: m.html, text: m.text, headers: m.headers }) });
         if (r.ok) return;
         // the 10/second limit is per Resend account, shared with the other apps on it, so back off longer (1-16s)
