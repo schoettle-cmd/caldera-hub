@@ -59,6 +59,7 @@ export function battleClient() {
   function shotUsd(s) { var x = s[8]; return x ? (x.u || 0) + (x.fu || 0) : Math.round(s[3] * 5e6); }
   function sizesOf(n) { var out = []; (rules() ? rules().weapons : []).forEach(function (w) { if (n && n[w.k]) out.push(n[w.k] + ' ' + w.size); }); return out.join(', '); }
   function sizeChips(n, tech) { return (rules() ? rules().weapons : []).map(function (w) { var c = n && n[w.k] || 0; return '<span class="b-sz' + (w.tech > tech ? ' lock' : c ? ' has' : '') + '" title="' + esc(w.name + ', ' + w.tnt + ' kg TNT, ' + usd(w.cost) + (w.tech > tech ? ' (locked)' : '')) + '"><i>' + w.size + '</i>' + c + '</span>'; }).join(''); }
+  window.CALDERA_PEOPLE = data && data.people || null;   // the strike card's top attackers link and show avatars from it (plugin citycard.ts bcLink)
   function nameOf(h) { return h.charAt(0) === '@' ? h : 'the raiders'; }
   // people in the deck (Mike 11-20): avatar + name, one link to the member's Caldera profile. data.people (battlehub peopleOf) holds
   // every listed member's avatar path ('' for none: an initial); raiders and unclaimed lands are not in it and stay plain text
@@ -241,7 +242,7 @@ export function battleClient() {
     return fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j && j.error || r.status); return j; }); });
   }
-  function load() { return fetch('/v1/world/battle', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) { if (d) { data = d; if (api()) api().view(on, d); stats(); } return d; }).catch(function () {}); }
+  function load() { return fetch('/v1/world/battle', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) { if (d) { data = d; window.CALDERA_PEOPLE = d.people || null; if (api()) api().view(on, d); stats(); } return d; }).catch(function () {}); }
   function stats() { lastRender(); lists(); setTab(tab); if (meLoaded && !me) render(); }
   // ---------------------------------------------------------------- the view: shown and hidden by the switcher (growthclient.ts)
   var chip = null, chipT = 0, pollT = 0;
