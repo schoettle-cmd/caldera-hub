@@ -252,7 +252,7 @@ export function battleClient() {
       hudEl.innerHTML = '<div class="b-pt"><div class="b-l1"><b data-p="beat"></b><span data-p="label"></span></div><button type="button" data-p="hit" class="b-hit" aria-live="polite" hidden></button></div><div class="b-pb">'
         + '<button type="button" data-p="prev" aria-label="Previous strike">Prev</button><button type="button" data-p="pause" aria-pressed="false">Pause</button><button type="button" data-p="skip">Next</button>'
         + '<button type="button" data-p="speed">1x</button><button type="button" data-p="fit" aria-label="Fit all: show the whole battlefield">Fit</button><button type="button" data-p="follow" aria-label="Follow the action again" hidden>Follow</button>'
-        + '<button type="button" data-p="stop" aria-label="End the replay">End</button></div>';
+        + '<button type="button" data-p="snd" aria-pressed="true" aria-label="Sound" title="Sound (M)">Sound</button><button type="button" data-p="stop" aria-label="End the replay">End</button></div>';
       var A = function () { return api(); }, refresh = function () { var p = A() && A().phase ? A().phase() : null; if (p && p.replay) hud(p); };
       hudEl.querySelector('[data-p="pause"]').onclick = function () { if (A() && A().pause) { var on = A().pause(); this.setAttribute('aria-pressed', String(on)); this.textContent = on ? 'Play' : 'Pause'; } };
       hudEl.querySelector('[data-p="skip"]').onclick = function () { if (A() && A().skip) A().skip(); refresh(); };
@@ -261,10 +261,11 @@ export function battleClient() {
       hudEl.querySelector('[data-p="fit"]').onclick = function () { if (A() && A().fit) A().fit(); refresh(); };
       hudEl.querySelector('[data-p="follow"]').onclick = function () { if (A() && A().follow) A().follow(true); refresh(); };
       hudEl.querySelector('[data-p="stop"]').onclick = function () { stopPlay(); };
+      hudEl.querySelector('[data-p="snd"]').onclick = function () { if (A() && A().sound) A().sound(!A().sound()); refresh(); };   // D6 (Mike 11-20): sound on by default for a pressed replay; a mute is remembered
       hudEl.querySelector('[data-p="hit"]').onclick = function () { if (!hudHit) return; var s = nightShots(hudHit.night)[hudHit.ix]; if (!s) return; if (A() && A().pause) A().pause(true); refresh(); openHow(s); };
       document.addEventListener('keydown', function (e) {   // 11-20: keys during a replay (right/left: next/previous strike, space: pause)
         if (!hudEl || !document.documentElement.classList.contains('w-replay') || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
-        var k = e.key === 'ArrowRight' ? 'skip' : e.key === 'ArrowLeft' ? 'prev' : e.key === ' ' ? 'pause' : ''; if (!k) return;
+        var k = e.key === 'ArrowRight' ? 'skip' : e.key === 'ArrowLeft' ? 'prev' : e.key === ' ' ? 'pause' : e.key === 'm' || e.key === 'M' ? 'snd' : ''; if (!k) return;
         var b = hudEl.querySelector('[data-p="' + k + '"]'); if (b) { e.preventDefault(); b.click(); } });
       stage.appendChild(hudEl); }
     var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'fall' ? 'Final strike' : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
@@ -278,6 +279,7 @@ export function battleClient() {
     var sk = hudEl.querySelector('[data-p="skip"]'); sk.textContent = st === 'rebuild' ? 'Finish' : st === 'wide' ? 'Cranes' : 'Next';
     var sp = hudEl.querySelector('[data-p="speed"]'), cur = ph.speed || speed; sp.textContent = BSPD.label(cur); sp.setAttribute('aria-label', 'Speed ' + BSPD.label(cur) + '. Change speed: 0.5x, 1x or 2x.');
     var fo = hudEl.querySelector('[data-p="follow"]'); fo.hidden = ph.follow !== false;
+    var sb = hudEl.querySelector('[data-p="snd"]'), son = !!(api() && api().sound && api().sound()); sb.hidden = !(api() && api().sound); sb.setAttribute('aria-pressed', String(son)); sb.textContent = son ? 'Sound' : 'Muted'; sb.setAttribute('aria-label', son ? 'Sound on. Mute.' : 'Sound off. Turn sound on.');
   }
   function hudOff() { if (hudEl) { hudEl.remove(); hudEl = null; } }
   var flagBusy = false;

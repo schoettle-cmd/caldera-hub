@@ -1,6 +1,7 @@
 // @ts-nocheck
 /**
- * The World page's time views in the browser: the Now | Day | Week | Month switcher (it replaced Current | Expansion), the
+ * The World page's time views in the browser: the Now | Day | Week | Month switcher (it replaced Current | Expansion; since 11-20
+ * the "Time" row of the map's Layers panel, with World | Battle as a switch on the map), the
  * SimCity-style date bar with replay speeds (turtle, llama, cheetah), the zoning and heat toggles, the daily drop's ticker,
  * and the "Today in your city" card. The map itself is drawn by the city renderer (citygrowth.ts); this only drives it
  * through window.CALDERA_GROWTH_API. Shareable as /world?view=day|week|month (the old ?view=expansion opens Month).
@@ -12,6 +13,9 @@ export function growthClient() {
   var KEY = 'caldera.worldView', VIEWS = window.CALDERA_BATTLE ? ['now', 'day', 'week', 'month', 'battle'] : ['now', 'day', 'week', 'month'], SPEEDS = { turtle: 20000, llama: 10000, cheetah: 5000 };
   var html = document.documentElement, bar = document.getElementById('g-bar'), stage = document.getElementById('stage');
   var btns = Array.prototype.slice.call(document.querySelectorAll('[data-gview]'));
+  // D4 (Mike 11-20): World | Battle is a switch on the map ([data-gmode]); the Time row in Layers holds Now / Day / Week / Month.
+  // World goes back to the last time view this viewer used (Now at first)
+  var modes = Array.prototype.slice.call(document.querySelectorAll('[data-gmode]')), lastTime = 'now';
   var cache = { day: { d: G0, at: Date.now() } }, cur = 'now', data = G0, playing = null;
   var speed = 'llama'; try { var sp = localStorage.getItem('caldera.world.speed'); if (SPEEDS[sp]) speed = sp; } catch (e) {}
   function api() { return window.CALDERA_GROWTH_API; }
@@ -43,6 +47,8 @@ export function growthClient() {
     var BU = window.CALDERA_BATTLE_UI;   // the Battle view (battleclient.ts): the current map with the battle layers on top
     html.classList.toggle('w-grow', v !== 'now' && v !== 'battle');
     btns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-gview') === v)); });
+    modes.forEach(function (b) { b.setAttribute('aria-pressed', String((b.getAttribute('data-gmode') === 'battle') === (v === 'battle'))); });
+    if (v !== 'battle') lastTime = v;
     if (bar) bar.hidden = v === 'now' || v === 'battle';
     if (BU && v !== 'battle') BU.hide();
     if (save) {
@@ -57,6 +63,7 @@ export function growthClient() {
       .then(function () { if (bar) bar.removeAttribute('aria-busy'); });
   }
   btns.forEach(function (b) { b.addEventListener('click', function () { setView(b.getAttribute('data-gview'), true); }); });
+  modes.forEach(function (b) { b.addEventListener('click', function () { var m = b.getAttribute('data-gmode'); if (m === 'battle') { if (cur !== 'battle') setView('battle', true); } else if (cur === 'battle') setView(lastTime, true); }); });
 
   // ---------------------------------------------------------------- replay: the window as a time-lapse on the same camera
   var playBtn = q('.g-play'), fill = q('.g-track i');
