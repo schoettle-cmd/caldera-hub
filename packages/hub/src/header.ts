@@ -83,6 +83,11 @@ font:500 15px/1.2 'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;color:var(--
 .ch *{box-sizing:border-box}.ch a{color:inherit;text-decoration:none}.ch .ch-i{display:block;flex:none}
 .ch-brand{display:inline-flex;align-items:center;gap:9px;flex:none;color:var(--ch-strong)!important;font:600 19px/1 'Source Serif 4',Georgia,serif;letter-spacing:-.01em}
 .ch-nav{display:flex;align-items:center;gap:2px;flex:1;min-width:0}
+/* Mike 11-19 (868px): the six links ran under "Sign in". From 761 to 1099px the links show icons only; the current page keeps
+   its word, the hidden word shows as a tooltip on hover/focus, the right side never shrinks. Logged in under 900px the @handle hides (avatar stays). */
+@media (min-width:761px) and (max-width:1099px){.ch-nav{gap:4px}.ch-nav a:not([aria-current="page"]){width:40px;height:40px;padding:0;justify-content:center}.ch-nav a:not([aria-current="page"])>span:not(.ch-badge){position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);padding:4px 8px;border-radius:6px;background:#26232F;color:var(--ch-strong);font-size:12.5px;white-space:nowrap;pointer-events:none;opacity:0;z-index:40}.ch-nav a:not([aria-current="page"]) .ch-badge{position:absolute;top:0;right:-2px}.ch-nav a:not([aria-current="page"]):is(:hover,:focus-visible)>span:not(.ch-badge){opacity:1}.ch-nav a:not([aria-current="page"])>.ch-i{flex:none}}
+@media (min-width:761px) and (max-width:899px){.ch-acct .ch-hd{display:none}.ch-acct{padding:0 3px}}
+
 .ch-nav a{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 11px;border-radius:8px;color:var(--ch-dim);white-space:nowrap}
 .ch-nav a:hover{color:var(--ch-strong);background:var(--ch-raised)}
 .ch-nav a[aria-current="page"]{color:var(--ch-strong);background:var(--ch-accent-soft)}
