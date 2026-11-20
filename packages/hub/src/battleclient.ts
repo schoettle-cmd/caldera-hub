@@ -144,7 +144,7 @@ export function battleClient() {
     target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>'
   };
   function ic(n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICO[n] || '') + '</svg>'; }
-  try { if (!document.getElementById('b-font')) { var fl = document.createElement('link'); fl.id = 'b-font'; fl.rel = 'stylesheet'; fl.href = 'https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&display=swap'; document.head.appendChild(fl); } } catch (e) {}
+  try { if (!document.getElementById('b-font')) { var fl = document.createElement('link'); fl.id = 'b-font'; fl.rel = 'stylesheet'; fl.href = 'https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500;600&family=Saira+Extra+Condensed:wght@900&display=swap'; document.head.appendChild(fl); } } catch (e) {}   // 11-20 strike card (STRIKECARD.md): Saira Extra Condensed 900 for its headline, Barlow 600 and Plex Mono 500/600 for its labels
   /** the Aim tile's word for a miss multiplier (PAGE.md 5a): 1 or more Standard, 0.75 to 0.99 Steady, 0.5 to 0.74 Sharp, under 0.5 Pinpoint */
   function aimOf(cep) { cep = cep == null ? 1 : +cep; return cep >= 1 ? 'Standard' : cep >= 0.75 ? 'Steady' : cep >= 0.5 ? 'Sharp' : 'Pinpoint'; }
   function aimLine(cep) { cep = cep == null ? 1 : +cep; return cep >= 1 ? 'normal misses' : Math.round((1 - cep) * 100) + '% fewer misses'; }
@@ -268,6 +268,7 @@ export function battleClient() {
         var k = e.key === 'ArrowRight' ? 'skip' : e.key === 'ArrowLeft' ? 'prev' : e.key === ' ' ? 'pause' : e.key === 'm' || e.key === 'M' ? 'snd' : ''; if (!k) return;
         var b = hudEl.querySelector('[data-p="' + k + '"]'); if (b) { e.preventDefault(); b.click(); } });
       stage.appendChild(hudEl); }
+    if (api() && api().viewer) api().viewer(me && me.h ? me.h : null);   // the strike card: the viewer's own cities read YOU and YOUR on screen (citycard.ts)
     var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'fall' ? 'Final strike' : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
     hudEl.querySelector('[data-p="beat"]').textContent = (ph.demo ? 'Demo \u00b7 ' : '') + beat; hudEl.querySelector('[data-p="label"]').textContent = ph.label || '';
     var hs = ph.hit && !ph.demo ? nightShots(ph.night)[ph.hit.ix] : null, ht = ph.hit ? hitLine(ph.hit) + bombTail(hs) : '';
