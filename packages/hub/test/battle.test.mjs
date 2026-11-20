@@ -293,7 +293,8 @@ test("live: Battle is one more view (Now stays the default); every city is in un
   const { h, base, ids, post, as, cookie, sent } = await hubWith(["rae", "sam", "pat"]);
   try {
     const page = await (await fetch(base + "/world")).text();
-    for (const v of ["now", "day", "week", "month", "battle"]) assert.ok(page.includes(`data-gview="${v}"`), "switcher: " + v);
+    for (const v of ["now", "day", "week", "month"]) assert.ok(page.includes(`data-gview="${v}"`), "switcher: " + v);
+    assert.ok(page.includes('<button type="button" data-gmode="battle" aria-pressed="false">Battle</button>'), "D4: Battle is the map's mode switch");
     assert.ok(/<button type="button" data-gview="now" aria-pressed="true">/.test(page), "Now stays the default");
     for (const l of ["damage", "attacks", "shields", "replay"]) assert.ok(page.includes(`data-bl="${l}"`), "layer toggle: " + l);
     assert.ok(page.includes("window.CALDERA_BATTLE=") && page.includes('id="b-bar"') && page.includes("window.CALDERA_BATTLE_API"), "battle state, bar and renderer layer");
@@ -390,7 +391,7 @@ test("kill switch: battles off shows no Battle view and no battle API", async ()
   const { h, base } = await hubWith(["kim"], { battle: false });
   try {
     const page = await (await fetch(base + "/world")).text();
-    assert.ok(!page.includes('data-gview="battle"') && !page.includes("window.CALDERA_BATTLE=") && !page.includes('id="b-bar"'));
+    assert.ok(!page.includes('data-gview="battle"') && !page.includes('data-gmode=') && !page.includes("window.CALDERA_BATTLE=") && !page.includes('id="b-bar"'));
     assert.ok(page.includes('data-gview="day"'), "the growth views stay");
     assert.equal((await fetch(base + "/v1/world/battle")).status, 404);
   } finally { h.server?.close?.(); }

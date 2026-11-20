@@ -235,8 +235,9 @@ test("World page shell (map audit 11-20, PAGE.md 3, 5d, 6): one header row, the 
   const { page, cookie } = await hubWith(["ana", "bo"]);
   const w = (await page("/world", await cookie("ana"))).html;
   const head = w.match(/<div class="w-head">[\s\S]*?<div class="w-maps">/)[0];
-  // header row: title, the time switch (until the map's mode switch ships), one sentence per mode, How battles work, Add a friend
-  assert.match(head, /^<div class="w-head"><h1>The world<\/h1><div class="w-view" role="group" aria-label="Time view">/);
+  // header row: title, one sentence per mode, How battles work, Add a friend (D4: the time switch moved onto the map)
+  assert.match(head, /^<div class="w-head"><h1>The world<\/h1><p class="w-sent">/);
+  assert.ok(!head.includes("data-gview") && !head.includes("data-gmode"), "D4: no time or mode switch in the header");
   assert.match(head, /<span class="w-battle-only">Every city fires at 20:00\.<span class="w-xl"> Cranes rebuild the hits by noon\.<\/span><\/span>/);
   assert.match(head, /<span class="w-now-only">2 cities on one map\.<span class="w-xl"> Tap a name to fly there\.<\/span><\/span>/);
   assert.match(head, /<span class="w-grow-only">Purple outlines are new in this window\.<\/span>/);

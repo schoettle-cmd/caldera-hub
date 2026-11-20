@@ -180,7 +180,7 @@ const safeJson = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c").repl
 export const CARD_CLEAR_JS = String.raw`(function(){var st=document.getElementById('stage'),cd=document.getElementById('card');if(!st||!cd)return;var busy=false;var ss=document.createElement('style');ss.textContent='.c-stage.w-card-open .c-toasts{display:none}';document.head.appendChild(ss);
 function lay(){if(busy)return;busy=true;try{cd.style.top='';cd.style.maxHeight='';st.classList.toggle('w-card-open',!cd.hidden);if(cd.hidden||cd.classList.contains('is-sheet')||getComputedStyle(cd).position==='fixed')return;
 var S=st.getBoundingClientRect(),C=cd.getBoundingClientRect(),y=C.top-S.top,lim=S.height*.45,yb=S.height-10;
-st.querySelectorAll('.b-chip,.c-tools,.c-tools button,#stage > [role=status]').forEach(function(e){var cs=getComputedStyle(e);if(cs.display==='none'||cs.visibility==='hidden'||+cs.opacity===0)return;var r=e.getBoundingClientRect();if(!(r.width>0&&r.height>0))return;
+st.querySelectorAll('.b-chip,.w-mode,.c-tools,.c-tools button,#stage > [role=status]').forEach(function(e){var cs=getComputedStyle(e);if(cs.display==='none'||cs.visibility==='hidden'||+cs.opacity===0)return;var r=e.getBoundingClientRect();if(!(r.width>0&&r.height>0))return;
   var top=r.top-S.top,bot=r.bottom-S.top;if(r.right<=C.left||r.left>=C.right)return;if(top>lim){if(top-8<yb)yb=top-8;return}if(bot+8>y)y=bot+8});
 if(y>C.top-S.top+.5)cd.style.top=Math.round(y)+'px';if(y>C.top-S.top+.5||yb<S.height-10||C.bottom-S.top>yb)cd.style.maxHeight=Math.max(120,Math.round(yb-y))+'px'}finally{busy=false}}
 new MutationObserver(lay).observe(st,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class']});addEventListener('resize',lay);setInterval(lay,1000);lay()})();`;
@@ -199,6 +199,12 @@ var T=0;function later(){clearTimeout(T);T=setTimeout(fitH,120)}addEventListener
 var wb=R.classList.contains('w-battle');new MutationObserver(function(){var b=R.classList.contains('w-battle');if(b!==wb){wb=b;later()}}).observe(R,{attributes:true,attributeFilter:['class']});
 setTimeout(fitH,50);setTimeout(fitH,800)})();`;
 
+/** D4 (Mike 11-20, DESIGN.md item 3, PAGE.md step 12): the time views leave the page header. World | Battle is a switch at the
+ *  map's top left; Now / Day / Week / Month is the "Time" row of the Layers panel (the renderer moves .c-lrow rows from the
+ *  toolbar into Layers). growthclient.ts drives both ([data-gmode], [data-gview]); ?view= links work as before. */
+export const MODE_HTML = `<div class="w-mode" role="group" aria-label="Map mode"><button type="button" data-gmode="world" aria-pressed="true">World</button><button type="button" data-gmode="battle" aria-pressed="false">Battle</button></div>`;
+export const TIME_HTML = `<div class="c-lrow w-time" role="group" aria-labelledby="w-time-l"><span id="w-time-l">Time</span><span class="w-seg"><button type="button" data-gview="now" aria-pressed="true">Now</button><button type="button" data-gview="day" aria-pressed="false">Day</button><button type="button" data-gview="week" aria-pressed="false">Week</button><button type="button" data-gview="month" aria-pressed="false">Month</button></span></div>`;
+
 const PLUS_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/></svg>`;
 
 /** Map audit 11-20 (PAGE.md sections 3, 4, 5d, Fable mockups 06-08): the page shell around the map. One header row
@@ -207,7 +213,19 @@ const PLUS_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 export const WORLD_CSS = String.raw`.w-main{max-width:none;margin:0;padding:0 20px 32px}
 .w-head{display:flex;flex-wrap:nowrap;align-items:center;gap:14px;box-sizing:border-box;height:54px;padding:10px 0 8px;margin:0;min-width:0}
 .w-head h1{font:600 24px/1.1 'Source Serif 4',Georgia,serif;margin:0;white-space:nowrap;flex:none;color:var(--text-strong,#F4F6FA)}
-.w-head .w-view{padding:2px;gap:1px}.w-head .w-view button{min-height:0;height:22px;padding:0 10px;font-size:12px}
+.w-mode{position:absolute;left:12px;top:12px;z-index:7;display:inline-flex;gap:2px;padding:2px;box-sizing:border-box;height:32px;border-radius:10px;border:1px solid rgba(255,255,255,.16);background:rgba(10,12,18,.72);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.w-mode button{position:relative;min-width:52px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:rgba(244,246,250,.8);font:600 12.5px/1 'IBM Plex Sans',sans-serif;cursor:pointer}
+.w-mode button::before{content:"";position:absolute;left:0;right:0;top:-7px;bottom:-7px}
+.w-mode button[aria-pressed="true"]{background:#F4F6FA;color:#0B0D13}.w-mode button:focus-visible,.w-time button:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+.w-main .c-stage:has(.w-mode) .w-topics{top:52px}
+html.w-battle .w-main .c-stage:has(.w-mode) .b-chip{left:136px;top:12px;max-width:calc(100% - 300px)}
+html.w-replay .w-mode,html.w-replay .w-main .g-today{display:none}
+.c-more>.w-time{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 4px 0 10px;font:500 12px 'IBM Plex Mono',monospace;color:#BFF8FF}
+.w-time>span:first-child{min-width:64px;opacity:.65}.w-time .w-seg{display:inline-flex;gap:1px;padding:2px;border-radius:8px;background:rgba(255,255,255,.06)}
+.w-time .w-seg button{height:26px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:#BFF8FF;font:500 12px 'IBM Plex Mono',monospace;cursor:pointer}
+.w-time .w-seg button[aria-pressed="true"]{background:#F4F6FA;color:#0B0D13}
+.c-tools>.w-time{display:none}
+.w-main .c-tools.c-3{left:auto}   /* three buttons on the right only: the World | Battle switch at the left stays tappable */
 .w-sent{display:flex;align-items:baseline;gap:.4em;margin:0;flex:1 1 auto;min-width:0;font:400 13.5px/1.3 'IBM Plex Sans',sans-serif;color:rgba(244,246,250,.68)}
 .w-s-txt{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .w-sent a{flex:none;white-space:nowrap;color:#F4F6FA;text-decoration:underline;text-underline-offset:3px}
@@ -239,12 +257,14 @@ html.w-battle .w-main .c-stage:not(.c-full){height:calc(100vh - 200px);height:ca
 .w-lgd p{margin:0 0 8px}.w-lgd ul{margin:0;padding:0;list-style:none;display:grid;gap:6px}.w-lgd li{display:flex;align-items:baseline;gap:8px}.w-lgd a{color:#F4F6FA;text-underline-offset:3px}
 .w-lgd i{flex:none;display:inline-block;width:18px;height:4px;border-radius:2px;align-self:center;background:linear-gradient(90deg,#B98CFF,#FFC46B,#B98CFF);box-shadow:0 0 6px rgba(200,160,255,.8)}.w-lgd i.w-lg-stack{background:repeating-linear-gradient(90deg,#FF7A96 0 4px,transparent 4px 7px);box-shadow:none}
 .w-lgd-x{position:absolute;right:6px;top:6px;width:44px;height:44px;border:0;border-radius:50%;background:transparent;color:#C9D2E6;font-size:22px;cursor:pointer}
-@media (min-width:700px) and (max-width:899px){.w-main{padding:0 12px 28px}.w-head{height:36px;padding:3px 0;gap:10px}.w-head h1{font-size:17px}.w-sent{font-size:11.5px}.w-xl{display:none}
+@media (min-width:700px) and (max-width:899px){.w-mode{left:8px;top:8px}html.w-battle .w-main .c-stage:has(.w-mode) .b-chip{left:128px;top:8px;max-width:calc(100% - 260px)}.w-main{padding:0 12px 28px}.w-head{height:36px;padding:3px 0;gap:10px}.w-head h1{font-size:17px}.w-sent{font-size:11.5px}.w-xl{display:none}
   .w-addb{height:28px;padding:0 11px;font-size:11.5px}.w-addb::before{content:"";position:absolute;left:0;right:0;top:-8px;bottom:-8px}
   .w-main .c-stage:not(.c-full){height:calc(100vh - 150px);height:calc(100svh - 150px);min-height:460px}html.w-battle .w-main .c-stage:not(.c-full){height:calc(100vh - 212px);height:calc(100svh - 212px);min-height:380px}
   .w-extras{gap:8px;margin-top:14px}.w-ex{min-height:36px;padding:6px 10px;font-size:11px}.w-ex-a{font-size:11px}}
 @media (max-width:699px){.w-main{padding:0 12px 28px}.w-main .w-maps{margin:0 -4px}
-  .w-head{flex-wrap:wrap;height:auto;min-height:44px;padding:2px 0;gap:0 10px}.w-head h1{font-size:19px;line-height:40px}.w-head .w-view{order:9;margin:0 0 6px}
+  .w-head{height:44px;padding:2px 0;gap:10px}.w-head h1{font-size:19px;line-height:40px}
+  .w-mode{left:8px;top:8px}.w-mode button{min-width:56px}html.w-battle .w-main .c-stage:has(.w-mode) .b-chip{left:10px;top:auto}   /* the chip stays at the bottom on a phone: the new-land banner runs under the switch */
+  .c-more>.w-time{min-height:44px}.w-time .w-seg button{height:36px;padding:0 9px}
   .w-sent{flex:1 1 120px;justify-content:flex-end;font-size:13px}.w-s-txt{display:none}.w-sent a{display:inline-flex;align-items:center;min-height:44px}
   .w-addb{width:44px;height:40px;padding:0;justify-content:center;border-radius:10px}.w-addb span{display:none}
   .w-addp{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;z-index:95;border-radius:16px 16px 0 0;border-width:1px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px))}
@@ -316,9 +336,9 @@ ${WORLD_CSS}@media (max-width:600px){.w-main .c-tools{flex-wrap:wrap;justify-con
 </style></head><body>
 ${o.nav}
 <main class="w-main">
-<div class="w-head"><h1>The world</h1>${G ? `<div class="w-view" role="group" aria-label="Time view"><button type="button" data-gview="now" aria-pressed="true">Now</button><button type="button" data-gview="day" aria-pressed="false">Day</button><button type="button" data-gview="week" aria-pressed="false">Week</button><button type="button" data-gview="month" aria-pressed="false">Month</button>${BT ? `<button type="button" data-gview="battle" aria-pressed="false">Battle</button>` : ""}</div>` : ""}<p class="w-sent"><span class="w-s-txt"><span class="w-now-only">${n} cit${n === 1 ? "y" : "ies"} on one map.<span class="w-xl"> Tap a name to fly there.</span></span>${G ? `<span class="w-grow-only">Purple outlines are new in this window.</span>` : ""}${BT ? `<span class="w-battle-only">Every city fires at 20:00.<span class="w-xl"> Cranes rebuild the hits by noon.</span></span>` : ""}</span>${BT ? ` <a class="w-how-a" href="/world?view=battle&amp;how" data-whow>How battles work</a>` : ""}</p>${o.frontier ? `<div class="w-addw"><button type="button" class="w-addb" aria-label="Add a friend" title="Add a friend" aria-haspopup="dialog" aria-expanded="false" aria-controls="w-addp">${PLUS_SVG}<span>Add a friend</span></button><div class="w-addp" id="w-addp" role="dialog" aria-labelledby="w-addp-t" hidden><h2 id="w-addp-t">Add a friend's GitHub</h2>${WADD_HTML}</div></div>` : ""}</div>
-<div class="w-maps"><div class="c-stage" id="stage"><canvas id="city" aria-label="Isometric world map of ${n} member cities"></canvas>
-<div class="c-tools"><button id="t-labels" aria-pressed="true">Labels</button><button id="t-fr" aria-pressed="true" aria-label="Friendships" title="Friendships between neighborhoods, drawn as rays of light">&#x2727;<span class="t-txt"> Friendships</span></button><button id="t-topics" aria-pressed="false" aria-label="Color by topic" title="Tint each neighborhood by what they're building"><span class="t-sw" aria-hidden="true"></span><span class="t-txt"> Topics</span></button><button id="t-sky">Auto</button><button id="t-wx" title="Weather">Weather</button><button id="t-snd" aria-pressed="false" title="Sound for arrivals (off)">&#x1F507;</button><button id="t-reset">Reset</button><button id="t-what" type="button" aria-haspopup="dialog" aria-controls="w-lgd" title="What am I looking at?">What am I looking at?</button><button id="t-full" aria-label="Full screen">&#x26F6;<span class="t-txt"> Full screen</span></button></div>
+<div class="w-head"><h1>The world</h1><p class="w-sent"><span class="w-s-txt"><span class="w-now-only">${n} cit${n === 1 ? "y" : "ies"} on one map.<span class="w-xl"> Tap a name to fly there.</span></span>${G ? `<span class="w-grow-only">Purple outlines are new in this window.</span>` : ""}${BT ? `<span class="w-battle-only">Every city fires at 20:00.<span class="w-xl"> Cranes rebuild the hits by noon.</span></span>` : ""}</span>${BT ? ` <a class="w-how-a" href="/world?view=battle&amp;how" data-whow>How battles work</a>` : ""}</p>${o.frontier ? `<div class="w-addw"><button type="button" class="w-addb" aria-label="Add a friend" title="Add a friend" aria-haspopup="dialog" aria-expanded="false" aria-controls="w-addp">${PLUS_SVG}<span>Add a friend</span></button><div class="w-addp" id="w-addp" role="dialog" aria-labelledby="w-addp-t" hidden><h2 id="w-addp-t">Add a friend's GitHub</h2>${WADD_HTML}</div></div>` : ""}</div>
+<div class="w-maps"><div class="c-stage" id="stage"><canvas id="city" aria-label="Isometric world map of ${n} member cities"></canvas>${BT ? MODE_HTML : ""}
+<div class="c-tools">${G ? TIME_HTML : ""}<button id="t-labels" aria-pressed="true">Labels</button><button id="t-fr" aria-pressed="false" aria-label="Friendships" title="Friendships between neighborhoods, drawn as rays of light">&#x2727;<span class="t-txt"> Friendships</span></button><button id="t-topics" aria-pressed="false" aria-label="Color by topic" title="Tint each neighborhood by what they're building"><span class="t-sw" aria-hidden="true"></span><span class="t-txt"> Topics</span></button><button id="t-sky">Auto</button><button id="t-wx" title="Weather">Weather</button><button id="t-snd" aria-pressed="false" title="Sound for arrivals (off)">&#x1F507;</button><button id="t-reset">Reset</button><button id="t-what" type="button" aria-haspopup="dialog" aria-controls="w-lgd" title="What am I looking at?">What am I looking at?</button><button id="t-full" aria-label="Full screen">&#x26F6;<span class="t-txt"> Full screen</span></button></div>
 <div class="c-toasts" aria-live="polite"></div><div class="c-mininame" aria-hidden="true"><i></i>Caldera world</div>
 <div class="c-card" id="card" hidden></div><div class="c-hint">Drag to move &middot; scroll or pinch to zoom &middot; click a name to fly there</div></div>
 </div>${G ? growthMarkup() : ""}${BT ? battleMarkup() : ""}
