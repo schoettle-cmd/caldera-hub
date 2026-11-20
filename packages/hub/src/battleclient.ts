@@ -60,6 +60,20 @@ export function battleClient() {
   function sizesOf(n) { var out = []; (rules() ? rules().weapons : []).forEach(function (w) { if (n && n[w.k]) out.push(n[w.k] + ' ' + w.size); }); return out.join(', '); }
   function sizeChips(n, tech) { return (rules() ? rules().weapons : []).map(function (w) { var c = n && n[w.k] || 0; return '<span class="b-sz' + (w.tech > tech ? ' lock' : c ? ' has' : '') + '" title="' + esc(w.name + ', ' + w.tnt + ' kg TNT, ' + usd(w.cost) + (w.tech > tech ? ' (locked)' : '')) + '"><i>' + w.size + '</i>' + c + '</span>'; }).join(''); }
   function nameOf(h) { return h.charAt(0) === '@' ? h : 'the raiders'; }
+  // people in the deck (Mike 11-20): avatar + name, one link to the member's Caldera profile. data.people (battlehub peopleOf) holds
+  // every listed member's avatar path ('' for none: an initial); raiders and unclaimed lands are not in it and stay plain text
+  function pOf(h) { var P = data && data.people; return P && typeof h === 'string' && Object.prototype.hasOwnProperty.call(P, h) ? String(P[h] || '') : null; }
+  function avHtml(h) {
+    var a = pOf(h); if (a == null) return ''; var ini = esc((String(h).replace(/^@/, '').charAt(0) || '?').toUpperCase());
+    return a ? '<img class="b-av" src="' + esc(a) + '" width="20" height="20" loading="lazy" decoding="async" alt="" data-i="' + ini + '">' : '<i class="b-av b-avi" aria-hidden="true">' + ini + '</i>';
+  }
+  function who(h, cls, label) {
+    var t = esc(label != null ? label : h), sp = cls ? '<span class="' + cls + '">' + t + '</span>' : '<span>' + t + '</span>';
+    if (pOf(h) == null) return cls ? sp : t;
+    return '<a class="b-who" href="/@' + encodeURIComponent(String(h).slice(1)) + '/">' + avHtml(h) + sp + '</a>';
+  }
+  // an avatar that fails to load turns into the initial circle
+  document.addEventListener('error', function (e) { var im = e.target; if (!im || im.tagName !== 'IMG' || !im.classList || !im.classList.contains('b-av')) return; var i = document.createElement('i'); i.className = 'b-av b-avi'; i.setAttribute('aria-hidden', 'true'); i.textContent = im.getAttribute('data-i') || '?'; if (im.parentNode) im.parentNode.replaceChild(i, im); }, true);
   function dl(rows) { return '<dl class="b-math">' + rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('') + '</dl>'; }
   /** one shot, step by step: the same numbers the 2am battle used (the row's x) */
   function shotHtml(s) {
@@ -175,9 +189,10 @@ export function battleClient() {
   function moreBtn(k, n) { return n > 8 && !more[k] ? '<button type="button" class="b-more" data-more="' + k + '">Show all ' + n + '</button>' : ''; }
   function shotRow(s, i) {
     var w = wOf(s[2]), x = s[8], word = x && x.bk ? x.word : '', open = openShot === i, blk = !!s[6];
-    return '<li' + (open ? ' class="open"' : '') + '><button type="button" data-shot="' + i + '" aria-expanded="' + open + '"><time>' + (s[4] ? hhmm(s[4]) : '') + '</time>'
-      + '<span class="b-p"><span class="a">' + esc(s[0].charAt(0) === '@' ? s[0] : 'Raiders') + '</span> → <span class="d">' + esc(nameOf(s[1])) + '</span>' + (word ? '<q>' + esc(word) + '</q>' : '') + '</span>'
-      + '<span class="b-szc">' + esc(w ? w.size : '') + '</span><span class="b-r' + (blk ? ' h' : '') + '">' + (blk ? 'Blocked ' + usd(x && x.pot != null ? x.pot : shotUsd(s)) : '−' + usd(shotUsd(s))) + '</span><span class="b-cv" aria-hidden="true">›</span></button>'
+    var an = s[0].charAt(0) === '@' ? s[0] : 'Raiders', dn = nameOf(s[1]);
+    return '<li' + (open ? ' class="open"' : '') + '><div class="b-sr"><button type="button" class="b-hit0" data-shot="' + i + '" aria-expanded="' + open + '" aria-label="' + esc(an + ' fired at ' + dn + ': how the damage was worked out') + '"></button><time>' + (s[4] ? hhmm(s[4]) : '') + '</time>'
+      + '<span class="b-p">' + who(s[0], 'a', an) + ' → ' + who(s[1], 'd', dn) + (word ? '<q>' + esc(word) + '</q>' : '') + '</span>'
+      + '<span class="b-szc">' + esc(w ? w.size : '') + '</span><span class="b-r' + (blk ? ' h' : '') + '">' + (blk ? 'Blocked ' + usd(x && x.pot != null ? x.pot : shotUsd(s)) : '−' + usd(shotUsd(s))) + '</span><span class="b-cv" aria-hidden="true">›</span></div>'
       + (open ? '<div class="b-shot">' + shotHtml(s) + '</div>' : '') + '</li>';
   }
   function lists() {
@@ -190,10 +205,10 @@ export function battleClient() {
       sl.innerHTML = S.length ? '<ul class="b-sl">' + (more.shots ? ord : ord.slice(0, 8)).map(function (i) { return shotRow(S[i], i); }).join('') + '</ul>' + moreBtn('shots', S.length) : ''; }
     setText('seasonsum', 'Season ' + data.season.n + ' · week ' + data.season.week + '. Score = damage you dealt + half of what your shield blocked, per person.');
     var bd = q('[data-b="board"]'), Bd = data.board || [];
-    if (bd) bd.innerHTML = Bd.length ? '<ol class="b-rk">' + (more.season ? Bd : Bd.slice(0, 8)).map(function (r, i) { var you = r[0] === mh; return '<li' + (you ? ' class="you"' : '') + '><span class="b-rn">' + (i + 1) + '</span><button type="button" data-fly="' + esc(r[0]) + '">' + esc(r[0]) + '</button>' + (you ? '<i class="b-yq" aria-hidden="true"></i><small>Your city</small>' : '') + '<b>' + usd(r[1]) + '</b></li>'; }).join('') + '</ol>' + moreBtn('season', Bd.length) : '<p class="b-empty">No scores yet. The first battle sets the ranking.</p>';
+    if (bd) bd.innerHTML = Bd.length ? '<ol class="b-rk">' + (more.season ? Bd : Bd.slice(0, 8)).map(function (r, i) { var you = r[0] === mh; return '<li' + (you ? ' class="you"' : '') + '><button type="button" class="b-hit0" data-fly="' + esc(r[0]) + '" aria-label="Show ' + esc(r[0]) + ' on the map"></button><span class="b-rn">' + (i + 1) + '</span>' + who(r[0], 'n') + (you ? '<i class="b-yq" aria-hidden="true"></i><small>Your city</small>' : '') + '<b>' + usd(r[1]) + '</b></li>'; }).join('') + '</ol>' + moreBtn('season', Bd.length) : '<p class="b-empty">No scores yet. The first battle sets the ranking.</p>';
     setText('armsum', armed.length + ' of ' + keys.length + ' cit' + (keys.length === 1 ? 'y has' : 'ies have') + ' missiles so far today.');
     var ar = q('[data-b="arsenals"]');
-    if (ar) ar.innerHTML = armed.length ? '<ul class="b-al">' + (more.arsenals ? armed : armed.slice(0, 8)).map(function (k) { var m = M[k]; return '<li><button type="button" data-fly="' + esc(k) + '">' + esc(k) + '</button><span>' + (m.shots || 0) + ' missile' + (m.shots === 1 ? '' : 's') + '</span><b>' + usd(m.usd || 0) + '</b></li>'; }).join('') + '</ul>' + moreBtn('arsenals', armed.length)
+    if (ar) ar.innerHTML = armed.length ? '<ul class="b-al">' + (more.arsenals ? armed : armed.slice(0, 8)).map(function (k) { var m = M[k]; return '<li><button type="button" class="b-hit0" data-fly="' + esc(k) + '" aria-label="Show ' + esc(k) + ' on the map"></button>' + who(k, 'n') + '<span>' + (m.shots || 0) + ' missile' + (m.shots === 1 ? '' : 's') + '</span><b>' + usd(m.usd || 0) + '</b></li>'; }).join('') + '</ul>' + moreBtn('arsenals', armed.length)
       : '<p class="b-empty">' + (keys.length ? 'No city has missiles yet today. Code pushed today loads them.' : 'No cities in the battles yet.') + '</p>';
   }
   // ---------------------------------------------------------------- the Last night card (PAGE.md 5b)
@@ -203,8 +218,8 @@ export function battleClient() {
     var bq = function (b) { return (BNAME[b.k] || b.k) + ' "' + b.word + '"'; };
     rows.push(['Hits on you', hits ? '<span class="gd">' + hits + '</span> · ' + esc(usd(L.takenUsd)) + ' damage' : raids.length ? 'none: your shield blocked them' : 'none']);
     if (L.heldUsd > 0) rows.push(['Your shield blocked', '<span class="cy">' + esc(usd(L.heldUsd)) + '</span>']);
-    if (L.bombs && L.bombs.length) rows.push(['Custom bombs on you', esc(L.bombs.length + ': ' + L.bombs.slice(0, 2).map(function (b) { return bq(b) + ' from ' + b.from; }).join(', ') + (L.bombs.length > 2 ? ', +' + (L.bombs.length - 2) + ' more' : ''))]);
-    rows.push(['You hit', !L.fired ? 'You had no missiles' : L.landed ? esc((L.on || []).slice(0, 2).join(', ') || L.landed + ' hit' + (L.landed === 1 ? '' : 's')) + (L.dealtUsd ? ' · <span class="gd">' + esc(usd(L.dealtUsd)) + '</span>' : '') : 'No hits: shields blocked them']);
+    if (L.bombs && L.bombs.length) rows.push(['Custom bombs on you', esc(L.bombs.length + ': ') + L.bombs.slice(0, 2).map(function (b) { return esc(bq(b)) + ' from ' + who(b.from); }).join(', ') + esc(L.bombs.length > 2 ? ', +' + (L.bombs.length - 2) + ' more' : '')]);
+    rows.push(['You hit', !L.fired ? 'You had no missiles' : L.landed ? ((L.on || []).slice(0, 2).map(function (h) { return who(h); }).join(', ') || esc(L.landed + ' hit' + (L.landed === 1 ? '' : 's'))) + (L.dealtUsd ? ' · <span class="gd">' + esc(usd(L.dealtUsd)) + '</span>' : '') : 'No hits: shields blocked them']);
     if (L.mine) rows.push(['Your bombs', esc(L.mine.n + ' flew, ' + (L.mine.hit || 0) + ' hit')]);
     if (L.mvp) rows.push(['Top builder', esc(L.mvp.repo + ', ' + L.mvp.bricks + ' brick' + (L.mvp.bricks === 1 ? '' : 's'))]);
     if (L.taken > 0) rows.push(['Rebuilt so far', '<span class="gr">' + (L.rebuilt || 0) + '%</span>']);
@@ -458,7 +473,7 @@ export function battleClient() {
   function pList(n) {
     var o = pOpts(); if (pAct >= o.length) pAct = Math.max(0, o.length - 1);
     return (o.length ? '<p class="b-tp-h" id="b-tp-h-' + n + '">' + (pq ? 'Members' : 'In the next battle') + '</p><ul class="b-tp-l" id="b-tp-l-' + n + '" role="listbox" aria-labelledby="b-tp-h-' + n + '">'
-      + o.map(function (x, i) { return '<li role="option" id="b-tp-o-' + n + '-' + i + '" data-h="' + esc(x.h) + '" aria-selected="' + (i === pAct) + '"><span>' + esc(x.h || 'Random') + '</span><small>' + esc(x.t) + '</small></li>'; }).join('') + '</ul>' : '') + ghHtml();
+      + o.map(function (x, i) { return '<li role="option" id="b-tp-o-' + n + '-' + i + '" data-h="' + esc(x.h) + '" aria-selected="' + (i === pAct) + '">' + (x.h ? avHtml(x.h) : '') + '<span>' + esc(x.h || 'Random') + '</span><small>' + esc(x.t) + '</small></li>'; }).join('') + '</ul>' : '') + ghHtml();
   }
   function pHtml(n) {
     return '<div class="b-tp"><div class="b-tp-in"><span aria-hidden="true">@</span><label class="sr" for="b-tp-q-' + n + '">Search a member or type a GitHub username</label>'
@@ -548,7 +563,7 @@ export function battleClient() {
     var A2 = me.armory, tot = armTotal(), left = A2.balance - tot, room = A2.cap - A2.bought.length - cart.length;
     var spent = A2.bought.reduce(function (t, b) { return t + armCost(b.k); }, 0);
     var load = A2.bought.length ? '<div class="b-arm-load"><h3 class="b-hh">Loaded for tonight <small>' + A2.bought.length + ' bomb' + (A2.bought.length === 1 ? '' : 's') + ', ' + spent + ' credits</small></h3><ul>'
-      + A2.bought.map(function (b) { return '<li data-k="' + esc(b.k) + '">' + bIcon(b.k) + '<b>' + esc(BNAME[b.k] || b.k) + '</b><q>' + esc(b.word) + '</q><span>' + (b.target ? 'at ' + esc(b.target) : 'at a random rival') + '</span></li>'; }).join('') + '</ul></div>' : '';
+      + A2.bought.map(function (b) { return '<li data-k="' + esc(b.k) + '">' + bIcon(b.k) + '<b>' + esc(BNAME[b.k] || b.k) + '</b><q>' + esc(b.word) + '</q><span>' + (b.target ? 'at ' + who(b.target) : 'at a random rival') + '</span></li>'; }).join('') + '</ul></div>' : '';
     if (locked) return (load || '<h3 class="b-hh">Loaded for tonight</h3><p class="b-fine">No custom bombs tonight.</p>') + '<p class="b-fine">The Armory opens again after the battle.</p>';
     var cards = A2.kinds.map(function (t) {
       var n = cart.filter(function (r) { return r.k === t.k; }).length, need = t.cost - left, dis = room <= 0 || need > 0;
@@ -561,7 +576,7 @@ export function battleClient() {
       var n = i + 1, tl = r.target || 'Random rival';
       return '<li class="b-ar' + (r.err ? ' bad' : '') + '" data-k="' + esc(r.k) + '" data-i="' + i + '">' + bIcon(r.k)
         + '<label class="b-ar-w"><span class="sr">Word for bomb ' + n + ', ' + esc(BNAME[r.k] || r.k) + '</span><input id="b-ar-w-' + n + '" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="' + A2.wordMax + '" placeholder="Your word" aria-describedby="b-ar-e-' + n + '" value="' + esc(r.word) + '"' + (r.err ? ' aria-invalid="true"' : '') + '><span class="b-ar-cnt" aria-hidden="true">' + Array.from(r.word).length + '/' + A2.wordMax + '</span></label>'
-        + '<button type="button" class="b-ar-tb" id="b-ar-t-' + n + '" aria-haspopup="listbox" aria-expanded="' + (pick === i) + '" aria-label="Target for bomb ' + n + ': ' + esc(tl) + (isLand(r.target) ? ', unclaimed land' : '') + '"><span>' + esc(tl) + '</span>' + (isLand(r.target) ? '<i class="b-un">Unclaimed</i>' : '') + '</button>'
+        + '<button type="button" class="b-ar-tb" id="b-ar-t-' + n + '" aria-haspopup="listbox" aria-expanded="' + (pick === i) + '" aria-label="Target for bomb ' + n + ': ' + esc(tl) + (isLand(r.target) ? ', unclaimed land' : '') + '">' + (r.target ? avHtml(r.target) : '') + '<span>' + esc(tl) + '</span>' + (isLand(r.target) ? '<i class="b-un">Unclaimed</i>' : '') + '</button>'
         + '<button type="button" class="b-ar-x" aria-label="Remove bomb ' + n + '">&times;</button><p class="b-ar-e" id="b-ar-e-' + n + '" role="alert"' + (r.err ? '' : ' hidden') + '>' + esc(r.err || '') + '</p>' + (pick === i ? pHtml(n) : '') + '</li>';
     }).join('');
     var bl = armBuyLabel();
@@ -653,7 +668,7 @@ export function battleClient() {
     return '<div class="b-fp"><h3 class="b-hh">Your firepower <small>from today\'s code</small></h3><div class="b-tiles">'
       + tiles.map(function (t) { return '<div class="b-tile"><span>' + t[0] + '</span><b' + (t[3] ? ' class="' + t[3] + '"' : '') + '>' + esc(t[1]) + '</b><i>' + esc(t[2]) + '</i></div>'; }).join('') + '</div>'
       + (m ? '<p class="b-from">' + esc(workLine(m.arsenal)) + '</p>' : '')
-      + (m && !locked ? '<div class="b-trow"><span><b>Targets:</b> ' + (aims.length ? esc(aims.join(', ')) : 'auto, a fair rival') + '</span><button type="button" class="b-gb" data-pop="aim" aria-haspopup="dialog" aria-expanded="' + (popKind === 'aim') + '">' + ic('target') + 'Choose a target</button></div>' : '')
+      + (m && !locked ? '<div class="b-trow"><span><b>Targets:</b> ' + (aims.length ? aims.map(function (h) { return who(h); }).join(', ') : 'auto, a fair rival') + '</span><button type="button" class="b-gb" data-pop="aim" aria-haspopup="dialog" aria-expanded="' + (popKind === 'aim') + '">' + ic('target') + 'Choose a target</button></div>' : '')
       + '</div>';
   }
   function render() {
@@ -683,7 +698,7 @@ export function battleClient() {
       + (R.length ? '<label class="sr" for="b-aim-s">Rival to aim at</label><select id="b-aim-s" class="b-aimsel">' + R.map(function (r) { return '<option value="' + esc(r.h) + '">' + esc(r.h) + ' · shield ' + Math.round((r.sh || 0) * 100) + '%' + (r.beg ? ' · beginner' : '') + '</option>'; }).join('') + '</select>'
         + '<button type="button" class="b-pbuy b-doaim"' + (full ? ' disabled' : '') + '>' + (full ? cap + ' of ' + cap + ' aimed' : 'Aim a missile') + '</button>'
         : '<p>No rivals in reach yet. Your missiles find a fair match by themselves.</p>')
-      + (aims.length ? '<ul class="b-aims">' + aims.map(function (h) { return '<li><b>Aimed:</b> ' + esc(h) + ' <button type="button" class="b-unaim" data-h="' + esc(h) + '" aria-label="Stop aiming at ' + esc(h) + '">Remove</button></li>'; }).join('') + '</ul>' : '');
+      + (aims.length ? '<ul class="b-aims">' + aims.map(function (h) { return '<li><b>Aimed:</b> ' + who(h) + ' <button type="button" class="b-unaim" data-h="' + esc(h) + '" aria-label="Stop aiming at ' + esc(h) + '">Remove</button></li>'; }).join('') + '</ul>' : '');
   }
   /** Battle settings (PAGE.md 5a): the report email, the beginner shield, Leave the battles */
   function setHtml() {
@@ -884,8 +899,8 @@ html.w-battle:not(.w-replay) .c-stage:has(.b-chip) .g-today{top:80px;max-height:
 .b-tabhint{font-size:12px;color:var(--ink3);margin:0;padding:10px 0 4px}
 .b-sl,.b-rk,.b-al{list-style:none;margin:0;padding:0}
 .b-sl li,.b-rk li,.b-al li{border-top:1px solid var(--rule)}.b-sl li:first-child,.b-rk li:first-child,.b-al li:first-child{border-top:0}
-.b-sl button{display:grid;grid-template-columns:52px minmax(0,1fr) 34px 110px 18px;align-items:center;gap:10px;width:100%;min-height:38px;padding:0;border:0;background:none;color:var(--ink);font:13px/1.3 var(--ui);text-align:left;cursor:pointer}
-.b-sl button:hover{background:rgba(255,255,255,.03)}
+.b-sr{position:relative;display:grid;grid-template-columns:52px minmax(0,1fr) 34px 110px 18px;align-items:center;gap:10px;width:100%;min-height:38px;padding:0;border:0;background:none;color:var(--ink);font:13px/1.3 var(--ui);text-align:left;cursor:pointer}
+.b-sr:hover,.b-rk li:hover,.b-al li:hover{background:rgba(255,255,255,.03)}
 .b-sl time{font:500 11.5px var(--mono);color:var(--ink3);font-variant-numeric:tabular-nums}
 .b-p{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.b-p .a{box-shadow:inset 0 -2px 0 #FF6A3D}.b-p .d{box-shadow:inset 0 -2px 0 #58B4FF}.b-p q{quotes:none;font:600 11px var(--mono);color:#B9A6FF;margin-left:8px}
 .b-szc{font:600 10.5px var(--mono);border:1px solid var(--line);border-radius:6px;text-align:center;padding:1px 0;color:var(--ink2)}
@@ -894,7 +909,19 @@ html.w-battle:not(.w-replay) .c-stage:has(.b-chip) .g-today{top:80px;max-height:
 .b-shot{padding:2px 0 10px 62px;font-size:12.5px;color:var(--ink2)}.b-shot p{margin:0 0 6px}.b-shot b{color:var(--ink)}
 .b-rk li,.b-al li{display:flex;align-items:center;gap:10px;min-height:38px;font-size:13px;min-width:0}
 .b-rn{width:22px;flex:none;font:500 11.5px var(--mono);color:var(--ink3)}
-.b-rk button,.b-al button{background:none;border:0;padding:0;color:var(--ink);font:inherit;cursor:pointer;min-height:32px;text-align:left;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-rk li,.b-al li{position:relative}
+.b-rk .n,.b-al .n{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-hit0{position:absolute;inset:0;z-index:0;width:auto;height:auto;margin:0;padding:0;border:0;border-radius:6px;background:none;cursor:pointer}
+.b-hit0:focus-visible{outline:2px solid var(--cy);outline-offset:-2px}
+:where(.b-sr,.b-rk li,.b-al li)>:where(:not(.b-hit0)){position:relative;z-index:1;pointer-events:none}
+.b-who{pointer-events:auto;display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;vertical-align:middle;color:inherit;text-decoration:none;border-radius:4px}
+.b-who>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-who:hover>span,.b-who:focus-visible>span{text-decoration:underline;text-underline-offset:3px}
+.b-who:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+.b-av{flex:none;width:20px;height:20px;border-radius:50%;object-fit:cover;background:#262B36;display:inline-flex;align-items:center;justify-content:center;font:600 10px/1 var(--ui);font-style:normal;color:var(--ink);vertical-align:middle;box-shadow:0 0 0 1px rgba(255,255,255,.12)}
+.b-p .b-who{max-width:46%}
+.b-yc dd .b-who,.b-trow .b-who,.b-aims .b-who,.b-arm-load li span .b-who{margin:1px 0}
+.b-ar-tb .b-av,.b-tp-l .b-av{width:18px;height:18px}
 .b-rk b,.b-al b{margin-left:auto;font:600 12.5px var(--mono);color:var(--ink);white-space:nowrap;font-variant-numeric:tabular-nums}
 .b-yq{width:8px;height:8px;border-radius:2px;background:var(--you);flex:none}.b-rk small{font-size:11.5px;color:var(--ink2);white-space:nowrap}
 .b-al span{font-size:12px;color:var(--ink2);white-space:nowrap}
@@ -947,8 +974,8 @@ html.w-battle:not(.w-replay) .c-stage:has(.b-chip) .g-today{top:80px;max-height:
 .b-lbtn{margin-top:8px;gap:6px}.b-allshots{font-size:11px}
 .b-tabrow button{height:32px;font-size:11.5px;padding:0 9px}
 .b-panel{padding:0 12px 6px}.b-tabhint{font-size:10.5px;padding:6px 0 2px}
-.b-sl button{min-height:28px;font-size:11.5px;grid-template-columns:44px minmax(0,1fr) 30px 96px 14px;gap:8px}.b-r{font-size:11px}
-.b-rk li,.b-al li{min-height:28px;font-size:11.5px}.b-shot{padding-left:52px;font-size:11.5px}
+.b-sr{min-height:28px;font-size:11.5px;grid-template-columns:44px minmax(0,1fr) 30px 96px 14px;gap:8px}.b-r{font-size:11px}
+.b-rk li,.b-al li{min-height:28px;font-size:11.5px}.b-av{width:16px;height:16px;font-size:9px}.b-who{gap:5px}.b-shot{padding-left:52px;font-size:11.5px}
 }
 /* S: phones */
 @media (max-width:699px){
@@ -966,7 +993,7 @@ html.w-battle:not(.w-replay) .c-stage:has(.b-chip) .g-today{top:80px;max-height:
 .b-arm-foot{flex-direction:column;align-items:stretch;gap:8px}.b-arm-buy{width:100%}
 .b-tabrow button{flex:1;justify-content:center;height:44px;padding:0 6px}
 .b-tl{display:none}.b-ts{display:inline}
-.b-sl button{grid-template-columns:minmax(0,1fr) 34px 14px;min-height:52px;gap:2px 8px;padding:6px 0}.b-sl time{display:none}.b-r{grid-column:1;grid-row:2;text-align:left}.b-szc{grid-row:1/3;grid-column:2}.b-cv{grid-row:1/3;grid-column:3}
+.b-sr{grid-template-columns:minmax(0,1fr) 34px 14px;min-height:52px;gap:2px 8px;padding:6px 0}.b-sl time{display:none}.b-rk li,.b-al li{min-height:44px}.b-who{padding:6px 0;margin:-6px 0}.b-p .b-who{max-width:48%}.b-r{grid-column:1;grid-row:2;text-align:left}.b-szc{grid-row:1/3;grid-column:2}.b-cv{grid-row:1/3;grid-column:3}
 .b-shot{padding-left:0}
 .b-cw{display:none}.b-cn{display:inline}
 }

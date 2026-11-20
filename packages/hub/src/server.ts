@@ -1707,7 +1707,8 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
     // the Armory (armory.ts): bell alerts always; the "Armory open" email only with CALDERA_ARMORY_EMAIL=1 (Mike's rule: no email without his OK)
     alertPost: o => { try { alerts.post(o); } catch (e: any) { console.error("[armory] alert", e?.message); } }, unsubAll: id => mail.unsubUrlOf(id), armoryEmailOn: () => process.env.CALDERA_ARMORY_EMAIL === "1",
     lands: () => FR ? FR.store.live().map(l => ({ login: l.login, repos: l.city })) : [],
-    systemPost: (k, t, l) => SYS.systemPost(k, t, l), sysPosted: k => SYS.posted(k)?.post_id || null, png: (svg, w) => toPng(svg, w) });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
+    systemPost: (k, t, l) => SYS.systemPost(k, t, l), sysPosted: k => SYS.posted(k)?.post_id || null, png: (svg, w) => toPng(svg, w),
+    avatar: id => { const pr = profile(id); const a = pr?.handle ? body(pr).photos?.avatar : null; return a ? `/@${pr.handle}/${String(a).replace(/^\.?\//, "")}` : null; } });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
 
   const autoOff = (pr: any) => { const b = body(pr); return b.autoConnectGithub === false || b.autoConnectRepos === false; };
   const circleHooks: { joined?: (id: string) => void; signedIn?: (id: string) => void } = {};
