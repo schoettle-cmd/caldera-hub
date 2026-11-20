@@ -131,6 +131,8 @@ font:500 15px/1.2 'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;color:var(--
 .ch-strip a.ch-go{display:inline-flex;align-items:center;height:30px;padding:0 14px;border-radius:999px;background:#8B6CF6;color:#fff!important;font-weight:600;text-decoration:none;white-space:nowrap}.ch-strip a.ch-go:hover{filter:brightness(1.1)}
 .ch-strip button{all:unset;cursor:pointer;position:absolute;right:12px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:28px;height:28px;border-radius:8px;color:#B8B8C2;font-size:18px;line-height:1}.ch-strip button:hover{color:#fff;background:#3A2F5C}.ch-strip button:focus-visible,.ch-strip a:focus-visible{outline:2px solid #B9A6FF;outline-offset:2px}
 .ch a:focus-visible,.ch summary:focus-visible{outline:2px solid var(--ch-accent);outline-offset:2px}
+/* Map audit 11-20 (PAGE.md section 6): on /world no strip under the nav; the Messages button becomes a "1 new" pill */
+@media (min-width:761px){.ch .ch-msgs.ch-pill{display:inline-flex;align-items:center;gap:7px;width:auto;height:38px;padding:0 12px 0 10px;border-radius:10px;border-color:rgba(139,108,246,.55);background:rgba(139,108,246,.16);color:var(--ch-strong);font:600 12.5px/1 'IBM Plex Sans',Arial,sans-serif;white-space:nowrap}.ch-msgs.ch-pill .ch-badge{display:none}.ch-pt{display:inline-flex;align-items:center;gap:7px}.ch-pt i{width:7px;height:7px;border-radius:50%;background:#E5484D}}
 @media (max-width:760px){.ch{--ch-h:52px;gap:8px;padding:0 12px}.ch-nav{display:none}
 .ch-seg a span{display:none}.ch-seg a{padding:0 9px}.ch-acct{padding:0 3px}.ch-acct .ch-hd,.ch-acct .ch-i{display:none}.ch-text{font-size:14px}.ch-cta{height:34px;padding:0 13px;font-size:14px}.ch-stale{display:none}
 .ch-strip{padding:8px 44px 8px 12px;font-size:13.5px}.ch-right{gap:6px;margin-left:auto}
@@ -155,7 +157,7 @@ html.ch-duo-outer .ch-bn{display:grid}html.ch-duo-outer body{padding-bottom:calc
 html.ch-duo-outer :is(.fd-tip,.ms-tip,.pc-tip,.cal-nb){bottom:calc(76px + env(safe-area-inset-bottom,0px))!important}
 html.ch-duo-outer .cal-nb{left:calc(12px + env(safe-area-inset-left,0px));right:calc(12px + env(safe-area-inset-right,0px));max-width:none;transform:none;border-radius:16px}html.ch-duo-outer .cal-nb span{flex:1;min-width:0}
 html.ch-duo-outer body{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);box-sizing:border-box}html.ch-duo-outer .ch-bn{padding-left:calc(4px + env(safe-area-inset-left,0px));padding-right:calc(4px + env(safe-area-inset-right,0px))}
-@media (min-width:761px){html.ch-duo-outer .w-main .c-stage{height:calc(100svh - 214px)}}
+@media (min-width:761px){html.ch-duo-outer .w-main .c-stage:not(.c-full){height:calc(100svh - 214px)}html.ch-duo-outer.w-battle .w-main .c-stage:not(.c-full){height:calc(100svh - 212px);min-height:380px}}
 html:is(.ch-duo,.ch-duof) body{padding-right:var(--dr-pad)!important;padding-left:var(--dr-padl)!important;padding-bottom:0!important;box-sizing:border-box}
 html:is(.ch-duo,.ch-duof) .cal-nb{bottom:calc(16px + env(safe-area-inset-bottom,0px))!important}
 html:is(.ch-duo,.ch-duof) .ch-nav,html:is(.ch-duo,.ch-duof) .ch-menu{display:none!important}
@@ -197,11 +199,13 @@ const BADGE_JS = `var S=document.getElementById('ch-strip'),hub=h.getAttribute('
 var base=document.title.replace(/^\\(\\d+\\+?\\) /,''),fl=document.querySelector('link[rel~="icon"]'),f0=fl&&fl.getAttribute('href'),dot='data:image/svg+xml,'+encodeURIComponent(${JSON.stringify(FAV_DOT)});
 function badge(el,n,label){if(!el)return;var b=el.querySelector('.ch-badge');if(n>0){if(!b){b=document.createElement('span');b.className='ch-badge';el.appendChild(b)}b.textContent=n>9?'9+':String(n)}else if(b)b.remove();el.setAttribute('aria-label',label+(n>0?', '+n+' unread':''))}
 function key(m,f){return m+'|'+f}
+function pill(el,m,f){if(!el)return;var on=cur==='world'&&m>0,t=el.querySelector('.ch-pt');el.classList.toggle('ch-pill',on);if(!on){if(t)t.remove();el.setAttribute('title','Messages');return}
+if(!t){t=document.createElement('span');t.className='ch-pt';el.appendChild(t)}t.innerHTML='<i aria-hidden="true"></i>'+m+' new';var l=m+' unread message'+(m===1?'':'s')+(f?' from '+f:'');el.setAttribute('aria-label',l);el.setAttribute('title',l)}
 function strip(m,f){if(!S)return;var hid=null;try{hid=sessionStorage.getItem('ch-strip-x')}catch(e){}
-if(!m||cur==='messages'||hid===key(m,f)){S.hidden=true;return}
+if(!m||cur==='messages'||cur==='world'||hid===key(m,f)){S.hidden=true;return}
 var t=S.querySelector('span>span');t.innerHTML='';var b=document.createElement('b');b.textContent=m+' unread message'+(m===1?'':'s');t.appendChild(b);if(f)t.appendChild(document.createTextNode(' from '+f));
 S.querySelector('a.ch-go').textContent=m===1?'Read it':'Read them';S.hidden=false}
-function show(m,a,f,fd,gr){gr=gr||0;var tm=h.querySelector('.ch-msgs'),bm=document.querySelector('.ch-bn-msgs .ch-bi');[tm,bm].forEach(function(el){if(!el)return;badge(el,m+gr,'Messages');var b=el.querySelector('.ch-badge');if(b)b.classList.toggle('ch-new',!m)});if(bm){bm.removeAttribute('aria-label');bm.parentNode.setAttribute('aria-label','Messages'+(m+gr>0?', '+(m+gr)+' unread':''))}var bl=h.querySelector('.ch-bell');if(!(bl&&bl.open))badge(bl&&bl.querySelector('summary'),a,'Alerts');strip(m,f);
+function show(m,a,f,fd,gr){gr=gr||0;var tm=h.querySelector('.ch-msgs'),bm=document.querySelector('.ch-bn-msgs .ch-bi');[tm,bm].forEach(function(el){if(!el)return;badge(el,m+gr,'Messages');var b=el.querySelector('.ch-badge');if(b)b.classList.toggle('ch-new',!m)});if(bm){bm.removeAttribute('aria-label');bm.parentNode.setAttribute('aria-label','Messages'+(m+gr>0?', '+(m+gr)+' unread':''))}pill(tm,m,f);var bl=h.querySelector('.ch-bell');if(!(bl&&bl.open))badge(bl&&bl.querySelector('summary'),a,'Alerts');strip(m,f);
 if(typeof fd==='number'&&cur!=='feed'){var fl2=[h.querySelector('.ch-feed'),document.querySelector('.ch-bn-feed .ch-bi')];fl2.forEach(function(el){if(!el)return;var b=el.querySelector('.ch-badge');if(fd>0){if(!b){b=document.createElement('span');b.className='ch-badge ch-new';el.appendChild(b)}b.textContent=fd>99?'99+':String(fd)}else if(b)b.remove()})}
 var n=m+a;document.title=(n?'('+(n>9?'9+':n)+') ':'')+base;if(!fl&&n){fl=document.createElement('link');fl.rel='icon';f0='/favicon.svg';(document.head||document.documentElement).appendChild(fl)}if(fl)fl.setAttribute('href',n?dot:f0);h.setAttribute('data-m',m);h.setAttribute('data-a',a);h.setAttribute('data-from',f)}
 if(S){S.querySelector('button').addEventListener('click',function(){S.hidden=true;try{sessionStorage.setItem('ch-strip-x',key(h.getAttribute('data-m'),h.getAttribute('data-from')))}catch(e){}})}
@@ -259,14 +263,16 @@ export function appHeader(o: HeaderOpts): string {
     + `<div class="ch-sep"></div>` + mi("out", "Sign out", `${hub}/signout?h=${encodeURIComponent(v.handle)}`, ' style="color:var(--ch-muted)"')
     + `</div></details>`;
   const items = (o.items || []).join("");
-  // unread messages get a strip under the nav on every page but Messages itself: the badge alone is easy to miss
+  // unread messages get a strip under the nav on every page but Messages itself: the badge alone is easy to miss. Not on
+  // /world (map audit 11-20, PAGE.md section 6): a full-width row there pushed the map down; the Messages button is a pill
+  // ("1 new") there instead, set by BADGE_JS from the strip's data-cur
   const mu = v.msgs?.unread || 0, mg = v.msgs?.groups || 0, from = (v.msgs?.from || []).map(x => "@" + x);
   const meOn = !!own || (cur === "settings");
   const bav = `<span class="ch-bav">${v.avatar ? `<img src="${e(v.avatar)}" alt="">` : e((v.name || v.handle).charAt(0).toUpperCase())}</span>`;
   const bottom = tabs([...base3,
     tab("messages", "Messages", `${hub}/messages${mu || !mg ? "" : "/groups"}`, `${icon("message", 22)}${mu + mg ? `<span class="ch-badge${mu ? "" : " ch-new"}">${mu + mg > 9 ? "9+" : mu + mg}</span>` : ""}`, cur === "messages", "ch-bn-msgs"),
     tab("me", "Me", `${hub}/@${v.handle}/`, bav, meOn)]);
-  const strip = `<div class="ch-strip" id="ch-strip" role="status" data-cur="${e(cur)}"${mu && cur !== "messages" ? "" : " hidden"}><span>${icon("message", 18)}<span><b>${mu} unread message${mu === 1 ? "" : "s"}</b>${from.length ? ` from ${e(from.join(", "))}` : ""}</span></span><a class="ch-go" href="${e(hub)}/messages">Read ${mu === 1 ? "it" : "them"}</a><button type="button" aria-label="Hide until a new message arrives">&times;</button></div>`;
+  const strip = `<div class="ch-strip" id="ch-strip" role="status" data-cur="${e(cur)}"${mu && cur !== "messages" && cur !== "world" ? "" : " hidden"}><span>${icon("message", 18)}<span><b>${mu} unread message${mu === 1 ? "" : "s"}</b>${from.length ? ` from ${e(from.join(", "))}` : ""}</span></span><a class="ch-go" href="${e(hub)}/messages">Read ${mu === 1 ? "it" : "them"}</a><button type="button" aria-label="Hide until a new message arrives">&times;</button></div>`;
   const js = `<script>(function(){var h=document.getElementById('caldera-bar');if(!h||h.dataset.wired)return;h.dataset.wired='1';var ds=h.querySelectorAll('details');
 ds.forEach(function(d){d.addEventListener('toggle',function(){if(!d.open)return;ds.forEach(function(x){if(x!==d)x.open=false});
 if(d.classList.contains('ch-bell')&&!d.dataset.done){d.dataset.done='1';var u=d.getAttribute('data-seen');if(u){var i=new Image();i.src=u}var b=d.querySelector('.ch-badge');if(b)b.remove()}})});

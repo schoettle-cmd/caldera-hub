@@ -128,7 +128,8 @@ addEventListener('resize',function(){frame(cv,done?1e6:null,performance.now())})
 export const GH_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg>`;
 export const FLAG_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4m0 0h12l-2.5 4 2.5 4H5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 2.5"/></svg>`;
 
-/** the World map's "Add a GitHub" box (frontier-design E1, mockup 05) */
+/** the World map's "Add a friend" form (frontier-design E1; since the 11-20 map audit, PAGE.md section 3, it sits in the
+ *  "Add a friend" popover of the header row, world.ts). The CSS is shared with /add. */
 export const WADD_CSS = String.raw`.w-add{display:grid;gap:6px;min-width:0;font:14px/1.45 var(--font-sans,'IBM Plex Sans',sans-serif);color:var(--text)}
 .w-add-f{display:flex;gap:6px;min-width:0}
 .w-add-in{position:relative;flex:1 1 auto;min-width:0}
@@ -144,38 +145,36 @@ export const WADD_CSS = String.raw`.w-add{display:grid;gap:6px;min-width:0;font:
 .w-add-r[data-st="bad"]{border-color:var(--danger)}.w-add-r[data-st="limit"]{border-color:#E5A00D}
 .w-add-r[data-st="ok"]{border-style:dashed}
 @media (max-width:600px){.w-add-in input,.w-add-b{min-height:44px}.w-add-in input{font-size:16px}}
-.w-head .w-add{flex:1 1 320px;max-width:440px;margin-left:auto;align-self:center;order:9}
-@media (max-width:600px){.w-main .w-head .w-add{flex:none;width:100%;max-width:none;margin:6px 0 0;order:0}}
 .w-add .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .w-add-url{width:100%;box-sizing:border-box;min-height:36px;border-radius:8px;border:1px solid var(--line);background:var(--bg-raised);color:var(--text-strong);font:12px var(--font-mono,'IBM Plex Mono',monospace);padding:0 8px}`;
-export const WADD_HTML = String.raw`<form class="w-add" id="w-add" novalidate><div class="w-add-f"><div class="w-add-in"><span aria-hidden="true">@</span><label class="sr" for="w-add-u">GitHub username to add to the map</label><input id="w-add-u" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="39" placeholder="GitHub username" aria-describedby="w-add-h"></div><button type="submit" class="w-add-b">Add to the map</button></div><p class="w-add-h" id="w-add-h">Add a friend's GitHub. Their city appears on the frontier, unclaimed, until they claim it.</p></form>`;
-export const WADD_JS = String.raw`(function(){var f=document.getElementById('w-add');if(!f)return;var u=f.querySelector('input'),b=f.querySelector('.w-add-b'),hint=f.querySelector('.w-add-h'),busy=false,
+export const WADD_HTML = String.raw`<form class="w-add" id="w-add" novalidate><div class="w-add-f"><div class="w-add-in"><span aria-hidden="true">@</span><label class="sr" for="w-add-u">GitHub username of your friend</label><input id="w-add-u" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="39" placeholder="GitHub username" aria-describedby="w-add-h"></div><button type="submit" class="w-add-b">Add as my friend</button></div><p class="w-add-h" id="w-add-h">Their city appears at the edge of the map. It is theirs when they claim it, and then you are friends. Caldera does not contact them.</p></form><div class="w-add-so" hidden><p>Sign in to add a friend.</p><a class="w-add-b" href="/auth/github?back=%2Fworld">Sign in with GitHub</a></div>`;
+export const WADD_JS = String.raw`(function(){var f=document.getElementById('w-add');if(!f)return;var u=f.querySelector('input'),b=f.querySelector('.w-add-b'),hint=f.querySelector('.w-add-h'),HELP=hint.textContent,busy=false,
 GHL=/^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 function e(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function out(st,html){var r=f.querySelector('.w-add-r');if(!r){r=document.createElement('p');r.className='w-add-r';f.appendChild(r)}hint.hidden=true;r.setAttribute('data-st',st);r.setAttribute('role',st==='bad'||st==='limit'?'alert':'status');var k=html.search(/ ?<(a|button) /);r.innerHTML=k>0?'<span>'+html.slice(0,k)+'</span>'+html.slice(k):'<span>'+html+'</span>';wire(r)}
 function view(l){return '<a href="/world?focus='+encodeURIComponent(l)+'" data-view="'+e(l)+'">View the land</a>'}
 function wire(r){var c=r.querySelector('[data-copy]');if(c)c.onclick=function(){var url=location.origin+'/claim/'+c.getAttribute('data-copy'),ok=function(){c.textContent='Copied';setTimeout(function(){c.textContent='Copy the claim link'},2000)},
   no=function(){var i=document.createElement('input');i.readOnly=true;i.value=url;i.className='w-add-url';i.setAttribute('aria-label','Claim link');c.replaceWith(i);i.focus();i.select()};try{navigator.clipboard.writeText(url).then(ok,no)}catch(x){no()}};
-  var t=r.querySelector('[data-retry]');if(t)t.onclick=function(){go()};var fb=r.querySelector('[data-friend]');if(fb)fb.onclick=function(){asF=true;go()};
+  var t=r.querySelector('[data-retry]');if(t)t.onclick=function(){go()};var fb=r.querySelector('[data-friend]');if(fb)fb.onclick=function(){go()};var ag=r.querySelector('[data-again]');if(ag)ag.onclick=function(){r.remove();hint.hidden=false;hint.textContent=HELP;u.value='';u.focus()};
   var v=r.querySelector('[data-view]');if(v&&window.CALDERA_FRONTIER_FOCUS)v.onclick=function(ev){if(window.CALDERA_FRONTIER_FOCUS('@'+v.getAttribute('data-view'))){ev.preventDefault();var st=document.getElementById('stage');if(st&&st.scrollIntoView)try{st.scrollIntoView({block:'nearest',behavior:'smooth'})}catch(x){}}}}   // on the world map: fly there, no page load
-function done(){busy=false;b.removeAttribute('aria-busy');b.disabled=false;b.textContent='Add to the map'}
-var asF=false;u.addEventListener('input',function(){asF=false});
+function done(){busy=false;b.removeAttribute('aria-busy');b.disabled=false;b.textContent='Add as my friend'}
+var AG=' <button type="button" data-again>Add another</button>';
 function go(){if(busy)return;var l=u.value.trim().replace(/^@/,'');if(!l){u.focus();return}
-  if(!GHL.test(l)){out('bad','<b>No GitHub user named @'+e(l)+'.</b> Check the spelling. Use the username from github.com/username.');return}
+  if(!GHL.test(l)){out('bad','<b>No GitHub user named @'+e(l)+'.</b> Check the spelling.');return}
   busy=true;b.disabled=true;b.setAttribute('aria-busy','true');b.textContent='Checking...';hint.hidden=false;hint.textContent='Checking GitHub for @'+l+'...';var r0=f.querySelector('.w-add-r');if(r0)r0.remove();
-  fetch('/v1/frontier/add',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({login:l,friend:asF})}).then(function(r){return r.json().catch(function(){return {}}).then(function(j){return {s:r.status,j:j}})}).then(function(x){done();asF=false;var j=x.j||{},L=j.login||l;
-    if(x.s===401){out('bad','<b>Sign in to add a GitHub.</b> The land shows who added it. <a href="/auth/github?back='+encodeURIComponent(location.pathname)+'">Sign in with GitHub</a>');return}
+  fetch('/v1/frontier/add',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({login:l,friend:true})}).then(function(r){return r.json().catch(function(){return {}}).then(function(j){return {s:r.status,j:j}})}).then(function(x){done();var j=x.j||{},L=j.login||l;
+    if(x.s===401){out('bad','<b>Sign in to add a friend.</b> <a href="/auth/github?back='+encodeURIComponent(location.pathname)+'">Sign in with GitHub</a>');return}
     if(x.s===200&&j.ok){if(j.land&&window.CALDERA_FRONTIER_ADD)try{window.CALDERA_FRONTIER_ADD(j.land.district,j.land.meta,false)}catch(x2){}   // gap 2: the open map draws it now
-      out('ok',j.st==='land'?'<b>@'+e(L)+' is already on the frontier</b>'+(j.by?', added by '+e(j.by)+'.':'.')+' '+view(L)+' <button type="button" data-copy="'+e(L)+'">Copy the claim link</button>':'<b>@'+e(L)+' is on the frontier.</b> The land is unclaimed until they claim it. Caldera does not contact them. '+view(L)+' <button type="button" data-copy="'+e(L)+'">Copy the claim link</button>');u.value='';u.focus();return}
-    if(j.st==='member'){out('ok','<b>@'+e(j.handle||L)+' is already on Caldera.</b> <a href="/world?focus='+encodeURIComponent(j.handle||L)+'">View their city</a>');return}
-    if(x.s===429||j.st==='limit'){out('limit','<b>You added 20 GitHubs today.</b> That is the daily limit. You can add more after midnight Pacific.');return}
-    if(j.st==='missing'){out('bad','<b>No GitHub user named @'+e(L)+'.</b> Check the spelling. Use the username from github.com/username.');return}
+      out('ok',(j.st==='land'?'<b>@'+e(L)+' is already on the map</b>'+(j.by?', added by '+e(j.by)+'.':'.'):'<b>@'+e(L)+' is on the map.</b>')+' '+view(L)+' <button type="button" data-copy="'+e(L)+'">Copy the claim link</button>'+AG);u.value='';return}
+    if(j.st==='member'){out('ok','<b>@'+e(j.handle||L)+' is on Caldera.</b> <a href="/world?focus='+encodeURIComponent(j.handle||L)+'">View their city</a>');return}
+    if(x.s===429||j.st==='limit'){out('limit','<b>You added 20 GitHubs today.</b> Add more after midnight Pacific.');return}
+    if(j.st==='missing'){out('bad','<b>No GitHub user named @'+e(L)+'.</b> Check the spelling.');return}
     if(j.st==='removed'){out('bad','<b>@'+e(L)+' can\'t be added.</b> This person asked not to be on Caldera.');return}
     if(j.st==='org'){out('bad','<b>@'+e(L)+' is an organization.</b> Only a person\'s GitHub can be a land.');return}
-    if(j.st==='friend'){out('limit','<b>@'+e(L)+' is not a well-known GitHub.</b> Only well-known GitHubs and members\' friends go on the map. If @'+e(L)+' is your friend, add them: when they claim the land, you two become friends. <button type="button" data-friend>Add @'+e(L)+' as my friend</button>');return}
+    if(j.st==='friend'){out('limit','<b>@'+e(L)+' is not a well-known GitHub.</b> Only well-known GitHubs and members\' friends go on the map. <button type="button" data-friend>Add @'+e(L)+' as my friend</button>');return}
     if(j.st==='nocode'){out('bad','<b>@'+e(L)+' has no public code yet.</b> There is no city to draw, so nothing was added.');return}
-    out('bad','<b>Could not reach GitHub.</b> Nothing was added. <button type="button" data-retry>Try again</button>')}).catch(function(){done();out('bad','<b>Could not reach GitHub.</b> Nothing was added. <button type="button" data-retry>Try again</button>')})}
-f.onsubmit=function(ev){ev.preventDefault();go()};if(location.hash==='#add'){try{f.scrollIntoView({block:'center'})}catch(x){}u.focus()}})();`;
+    out('bad','<b>Could not reach GitHub.</b> <button type="button" data-retry>Try again</button>')}).catch(function(){done();out('bad','<b>Could not reach GitHub.</b> <button type="button" data-retry>Try again</button>')})}
+f.onsubmit=function(ev){ev.preventDefault();go()}})();`;
 
 /** /add (frontier-design J, Fable 11-17): the top-level add page the sandboxed profile opens. Two steps (Find, then Add) so a typo
  *  never puts the wrong person on the map. CSS from the mockup; .nar/.ph/.duo there are the media queries here. */

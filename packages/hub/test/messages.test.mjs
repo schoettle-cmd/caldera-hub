@@ -209,6 +209,14 @@ test("unread messages show in the header on every page: badge, a strip under the
       assert.match(html, /<b>1 unread message<\/b> from @ana/, p);
       assert.match(html, /data-m="1"/); assert.match(html, /\/v1\/me\/badges/, p + ": counts refresh live");
     }
+    // map audit 11-20 (PAGE.md section 6): no strip on /world; the Messages button turns into a "1 new" pill there
+    { const html = await (await get("bo", "/world")).text();
+      assert.match(html, /<div class="ch-strip" id="ch-strip" role="status" data-cur="world" hidden>/, "/world: no strip");
+      assert.match(html, /class="ch-icon ch-msgs"[^>]*aria-label="Messages, 1 unread"/, "/world: the badge is still there");
+      assert.match(html, /function pill\(el,m,f\)\{if\(!el\)return;var on=cur==='world'&&m>0/, "/world: the pill");
+      assert.match(html, /'<i aria-hidden="true"><\/i>'\+m\+' new';var l=m\+' unread message'\+\(m===1\?'':'s'\)\+\(f\?' from '\+f:''\)/, "pill text and its label");
+      assert.match(html, /if\(!m\|\|cur==='messages'\|\|cur==='world'\|\|/, "the live refresh never shows the strip on /world");
+      assert.match(html, /@media \(min-width:761px\)\{\.ch \.ch-msgs\.ch-pill\{display:inline-flex;[^}]*border-color:rgba\(139,108,246,\.55\);background:rgba\(139,108,246,\.16\)/, "pill look, wide screens only"); }
     // on Messages itself the strip stays out of the way
     assert.match(await (await get("bo", "/messages")).text(), /<div class="ch-strip" id="ch-strip" role="status" data-cur="[a-z]*" hidden>/);
     // reading the conversation clears it everywhere

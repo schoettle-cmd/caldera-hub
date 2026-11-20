@@ -52,10 +52,12 @@ function sel(){var r=document.createRange();r.selectNodeContents(pre);var s=getS
 function ok(m){if(note){note.textContent=m;note.hidden=false}b.textContent='Copied';setTimeout(function(){b.textContent='Copy prompt'},2200)}
 b.addEventListener('click',function(){var t=pre.textContent;try{navigator.clipboard.writeText(t).then(function(){ok('Copied. Paste it into Claude, ChatGPT or your coding agent.')},function(){sel();ok('Selected: press Cmd+C (or Ctrl+C) to copy.')})}catch(e){sel();ok('Selected: press Cmd+C (or Ctrl+C) to copy.')}})})})();`;
 
-/** The panel. `floating`: a small pill pinned to the bottom of a full-screen city page that expands in place. */
-export function mapPanel(hubUrl: string, o: { floating?: boolean; handle?: string } = {}): string {
+/** The panel. `floating`: a small pill pinned to the bottom of a full-screen city page that expands in place. `extras`: the
+ *  World page's Extras row (map audit 11-20, PAGE.md 5d) opens it with its own "Open" button, so the panel shows only when
+ *  open and its summary row is not drawn. */
+export function mapPanel(hubUrl: string, o: { floating?: boolean; handle?: string; extras?: boolean } = {}): string {
   const hub = hubUrl.replace(/\/$/, "");
-  return `<style>${CSS}</style><details class="mp${o.floating ? " mp-float" : ""}" id="power-up"><summary><span class="mp-ic" aria-hidden="true">&#10022;</span><span class="mp-t"><b>Power up ${o.floating ? "this" : "your"} map</b><span>One prompt for your AI: drones, live visitors, private repos</span></span><svg class="mp-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>`
+  return `<style>${CSS}</style><details class="mp${o.floating ? " mp-float" : o.extras ? " mp-x" : ""}" id="power-up"><summary><span class="mp-ic" aria-hidden="true">&#10022;</span><span class="mp-t"><b>Power up ${o.floating ? "this" : "your"} map</b><span>One prompt for your AI: drones, live visitors, private repos</span></span><svg class="mp-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>`
     + `<div class="mp-body"><ul class="mp-list"><li><b>Drones:</b> your AI coding agents fly over the repos they're working in.</li><li><b>Live visitors:</b> visits to your sites arrive in your city, with signup and sale celebrations.</li><li><b>Real work:</b> private repos as padlocked buildings, never names or code.</li></ul>`
     + `<pre>${esc(mapPrompt(hub, o.handle))}</pre><div class="mp-row"><button type="button" class="mp-copy">Copy prompt</button><span class="mp-note">Paste it into Claude, ChatGPT or your coding agent. Your keys stay in <a href="${esc(hub)}/settings" target="_blank" rel="noopener">Settings</a>, never in the prompt.</span></div><p class="mp-note mp-done" role="status" hidden></p></div></details><script>${JS}</script>`;
 }

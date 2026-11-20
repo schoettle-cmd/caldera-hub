@@ -231,6 +231,49 @@ test("frontier UI: the World add box, the Armory target picker, and the owner-on
   assert.ok(Array.isArray(lv.lands) && lv.lands.some(x => x.district.nb === "@kestrel-dev" && x.district.uc === 1));
 });
 
+test("World page shell (map audit 11-20, PAGE.md 3, 5d, 6): one header row, the Add a friend popover, the Extras row, the legend sheet", async () => {
+  const { page, cookie } = await hubWith(["ana", "bo"]);
+  const w = (await page("/world", await cookie("ana"))).html;
+  const head = w.match(/<div class="w-head">[\s\S]*?<div class="w-maps">/)[0];
+  // header row: title, the time switch (until the map's mode switch ships), one sentence per mode, How battles work, Add a friend
+  assert.match(head, /^<div class="w-head"><h1>The world<\/h1><div class="w-view" role="group" aria-label="Time view">/);
+  assert.match(head, /<span class="w-battle-only">Every city fires at 20:00\.<span class="w-xl"> Cranes rebuild the hits by noon\.<\/span><\/span>/);
+  assert.match(head, /<span class="w-now-only">2 cities on one map\.<span class="w-xl"> Tap a name to fly there\.<\/span><\/span>/);
+  assert.match(head, /<span class="w-grow-only">Purple outlines are new in this window\.<\/span>/);
+  assert.match(head, /<a class="w-how-a" href="\/world\?view=battle&amp;how" data-whow>How battles work<\/a>/);
+  for (const gone of ["Cities at war", "Growth from code", "rays of light", "salvo", "Add to the map", "w-add-h\">Add a friend's GitHub"]) assert.ok(!head.includes(gone), "not in the header: " + gone);
+  // the popover
+  assert.match(head, /<button type="button" class="w-addb" aria-label="Add a friend" title="Add a friend" aria-haspopup="dialog" aria-expanded="false" aria-controls="w-addp">/);
+  assert.match(head, /<div class="w-addp" id="w-addp" role="dialog" aria-labelledby="w-addp-t" hidden><h2 id="w-addp-t">Add a friend's GitHub<\/h2><form class="w-add" id="w-add" novalidate>/);
+  assert.match(head, /<label class="sr" for="w-add-u">GitHub username of your friend<\/label>/);
+  assert.match(head, /placeholder="GitHub username"/);
+  assert.match(head, /<button type="submit" class="w-add-b">Add as my friend<\/button>/);
+  assert.match(head, />Their city appears at the edge of the map\. It is theirs when they claim it, and then you are friends\. Caldera does not contact them\.<\/p>/);
+  assert.match(head, /<div class="w-add-so" hidden><p>Sign in to add a friend\.<\/p><a class="w-add-b" href="\/auth\/github\?back=%2Fworld">Sign in with GitHub<\/a><\/div>/, "signed-out content");
+  // the add sends friend:true (the server adds a well-known GitHub as a plain land), and the strings follow PAGE.md 3
+  assert.match(w, /body:JSON\.stringify\(\{login:l,friend:true\}\)/);
+  for (const s of ["is on the map.</b>", "data-again>Add another</button>", "is on Caldera.</b>", "<b>No GitHub user named @'+e(L)+'.</b> Check the spelling.')", "<b>You added 20 GitHubs today.</b> Add more after midnight Pacific.", "<b>Could not reach GitHub.</b> <button type=\"button\" data-retry>Try again</button>", "<b>Sign in to add a friend.</b>", "has no public code yet."])
+    assert.ok(w.includes(s), "string: " + s);
+  assert.match(w, /window\.CALDERA_WADD_OPEN=function\(\)\{pop\(true\)\};if\(location\.hash==='#add'\)/, "#add opens the popover");
+  assert.match(w, /if\(e\.key==='Escape'&&P&&!P\.hidden\)\{pop\(false,true\)\}/, "Esc closes it and focus goes back to the button");
+  assert.match(w, /\.w-addp\{position:absolute;right:0;top:calc\(100% \+ 8px\);z-index:70;width:320px;/);
+  assert.match(w, /@media \(max-width:699px\)\{[^@]*\.w-addp\{position:fixed;left:0;right:0;bottom:0;/, "a bottom sheet on phones");
+  // How battles work: the battle client's own sheet, with the old Battle paragraph as its first paragraph
+  assert.match(w, /var o=document\.querySelector\('\[data-bhow\]'\);if\(typeof window\.CALDERA_BATTLE_HOW==='function'\)/);
+  assert.match(w, /var INTRO="Cities at war: every city in the battles/);
+  // Extras row at the bottom, then the Power up panel (closed) and the legend sheet
+  assert.match(w, /<section class="w-extras" aria-labelledby="w-ex-h"><h2 class="w-exh" id="w-ex-h">Extras<\/h2><div class="w-ex"><span><b>Power up your map\.<\/b> One prompt for your AI: drones, live visitors, private repos\.<\/span><button type="button" class="w-ex-a" data-wpu aria-controls="power-up" aria-expanded="false">Open<\/button><\/div><div class="w-ex"><span><b>Orpheus\.<\/b> More agents, more commits, more missiles\.<\/span><a class="w-ex-a" href="https:\/\/useorpheus\.com\/\?utm_source=caldera&amp;utm_medium=world" target="_blank" rel="noopener[^"]*">Try Orpheus free<\/a><\/div><\/section>/);
+  assert.ok(w.indexOf('class="w-extras"') > w.indexOf('id="b-bar"'), "Extras come after the battle deck");
+  assert.ok(!w.includes('class="w-foot"') && !w.includes('class="w-orph"'), "the old legend line and Orpheus box are gone");
+  assert.match(w, /<button id="t-what" type="button" aria-haspopup="dialog" aria-controls="w-lgd" title="What am I looking at\?">What am I looking at\?<\/button>/, "in the map tools, so the Layers panel carries it");
+  const lg = w.match(/<aside class="w-lgd"[\s\S]*?<\/aside>/)[0];
+  assert.match(lg, /role="dialog" aria-labelledby="w-lgd-t"/); assert.match(lg, /Rays of light are friendships\./); assert.match(lg, /Dashed coral lines: builds with a similar stack\./);
+  assert.match(lg, /Padlocked buildings are private repos: size only, never names\./); assert.match(lg, /Only people listed in <a href="\/people">People<\/a> appear\./);
+  // signed out: the same shell; the popover shows its signed-out part (the header says data-state="out")
+  const out = (await page("/world")).html;
+  assert.match(out, /<div class="w-add-so" hidden>/); assert.match(out, /if\(SO&&hb&&hb\.getAttribute\('data-state'\)==='out'\)\{SO\.hidden=false;if\(F\)F\.hidden=true\}/);
+});
+
 test("claim page CSS: the phone rules come after the desktop grid, so the page is one column at 390 px", async () => {
   const { CLAIM_CSS } = await import("../dist/frontierpage.js").catch(() => import("../src/frontierpage.ts"));
   const base = CLAIM_CSS.indexOf(".cl-main{display:grid"), ph = CLAIM_CSS.indexOf("@media (max-width:760px){.cl-main{grid-template-columns:minmax(0,1fr)");

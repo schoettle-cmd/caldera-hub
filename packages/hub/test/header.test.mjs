@@ -85,8 +85,9 @@ test("Power up your map: the World page and every city page carry one copyable p
     await post(`/v1/profiles/${id.id}/bundle`, { manifest: C.sign(id, "profile.manifest", { name: "Pat", handle: "pat", boxKey: id.boxPublic }),
       files: { "index.html": Buffer.from("<html><head></head><body><h1>Pat</h1></body></html>").toString("base64"), "city.html": Buffer.from("<html><head></head><body><canvas></canvas></body></html>").toString("base64") } });
     const world = await (await fetch(base + "/world")).text();
-    assert.match(world, /<details class="mp" id="power-up">/, "an expandable panel under the World map");
-    const prompt = world.match(/<details class="mp" id="power-up">[\s\S]*?<pre>([\s\S]*?)<\/pre>/)[1];
+    assert.match(world, /<details class="mp mp-x" id="power-up">/, "an expandable panel under the World map, opened from the Extras row");
+    assert.match(world, /<button type="button" class="w-ex-a" data-wpu aria-controls="power-up" aria-expanded="false">Open<\/button>/);
+    const prompt = world.match(/<details class="mp mp-x" id="power-up">[\s\S]*?<pre>([\s\S]*?)<\/pre>/)[1];
     assert.match(prompt, /AI agents on the map/); assert.match(prompt, /Live visitors on your city/); assert.match(prompt, /caldera\(&#39;signup&#39;\)/);
     assert.match(prompt, /http:\/\/hub\.test\/settings/); assert.doesNotMatch(prompt, /"secret"\s*:|data-site="[a-z0-9]{8,}"/i, "no member's keys in a public prompt");
     const city = await (await fetch(base + "/@pat/city.html", { headers: { "user-agent": "Mozilla/5.0" } })).text();

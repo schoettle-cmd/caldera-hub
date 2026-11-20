@@ -185,19 +185,115 @@ st.querySelectorAll('.b-chip,.c-tools,.c-tools button,#stage > [role=status]').f
 if(y>C.top-S.top+.5)cd.style.top=Math.round(y)+'px';if(y>C.top-S.top+.5||yb<S.height-10||C.bottom-S.top>yb)cd.style.maxHeight=Math.max(120,Math.round(yb-y))+'px'}finally{busy=false}}
 new MutationObserver(lay).observe(st,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class']});addEventListener('resize',lay);setInterval(lay,1000);lay()})();`;
 
-/** Mike 11-19 (Duo landscape, 868x669 with the tab bar): the map showed as a strip under a long intro. On short screens
- *  (601px+ wide, 760px or less tall) the intro shows one line (tap for all) and the friend form drops its helper line; with
- *  the app's bottom tab bar the map runs from where it starts down to just above the bar (380px at least; if less is left,
- *  it fills the screen under the top bar and the page scrolls to it). */
-export const WORLD_FIT_JS = String.raw`(function(){var st=document.getElementById('stage');if(!st)return;
-var ss=document.createElement('style');ss.textContent='@media (min-width:601px) and (max-height:760px){.w-main .w-head{margin:0 0 6px;row-gap:4px}.w-main .w-head>p{flex:1 1 100%;order:9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px;cursor:pointer}.w-main .w-head>p.w-open{white-space:normal}.w-main .w-add-h{display:none}}';document.head.appendChild(ss);
-document.querySelectorAll('.w-head>p').forEach(function(p){p.addEventListener('click',function(){p.classList.toggle('w-open');fitH()})});
+/** Map audit 11-20 (PAGE.md section 4, step 11): the map's height leaves the top of the battle deck on the first screen.
+ *  With the app's bottom tab bar (601px+ wide in the old rule; now 700px+, the M and L sizes) the map runs from where it
+ *  starts down to the tab bar, less 58px in Battle mode (the 8px gap and 50px of the Tonight card stay above the bar) or
+ *  10px in World mode (380px at least; if less is left, it fills the screen under the top bar and the page scrolls to it).
+ *  Under 700px the CSS rules alone set the height. The header is one row now, so the old one-line-intro rule is gone. */
+export const WORLD_FIT_JS = String.raw`(function(){var st=document.getElementById('stage');if(!st)return;var R=document.documentElement;
 function bar(){var b=document.querySelector('.ch-bn');if(!b)return 0;var cs=getComputedStyle(b);if(cs.display==='none'||cs.position!=='fixed')return 0;var r=b.getBoundingClientRect();return r.top>innerHeight*.5?innerHeight-r.top:0}
-function fitH(){if(st.classList.contains('c-full'))return;var bb=bar();if(!bb||innerWidth<601){if(st.style.height){st.style.height='';dispatchEvent(new Event('resize'))}return}
-  var top=st.getBoundingClientRect().top+scrollY,nav=document.querySelector('.ch,header.nav'),nh=nav?nav.getBoundingClientRect().height:0,h=Math.round(innerHeight-top-bb-10);
+function fitH(){if(st.classList.contains('c-full'))return;var bb=bar();if(!bb||innerWidth<700){if(st.style.height){st.style.height='';dispatchEvent(new Event('resize'))}return}
+  var top=st.getBoundingClientRect().top+scrollY,nav=document.querySelector('.ch,header.nav'),nh=nav?nav.getBoundingClientRect().height:0,deck=R.classList.contains('w-battle')?58:10,h=Math.round(innerHeight-top-bb-deck);
   if(h<380)h=Math.round(innerHeight-nh-bb-16);h=Math.max(300,h)+'px';if(st.style.height!==h){st.style.height=h;dispatchEvent(new Event('resize'))}}
-var T=0;addEventListener('resize',function(){clearTimeout(T);T=setTimeout(fitH,120)});setTimeout(fitH,50);setTimeout(fitH,800)})();`;
+var T=0;function later(){clearTimeout(T);T=setTimeout(fitH,120)}addEventListener('resize',later);
+var wb=R.classList.contains('w-battle');new MutationObserver(function(){var b=R.classList.contains('w-battle');if(b!==wb){wb=b;later()}}).observe(R,{attributes:true,attributeFilter:['class']});
+setTimeout(fitH,50);setTimeout(fitH,800)})();`;
 
+const PLUS_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/></svg>`;
+
+/** Map audit 11-20 (PAGE.md sections 3, 4, 5d, Fable mockups 06-08): the page shell around the map. One header row
+ *  (title, time switch, one sentence, "How battles work", "Add a friend"), the map's height, the Extras row and the legend
+ *  sheet. Sizes: L 900px+, M 700 to 899px (dense on purpose), S under 700px. */
+export const WORLD_CSS = String.raw`.w-main{max-width:none;margin:0;padding:0 20px 32px}
+.w-head{display:flex;flex-wrap:nowrap;align-items:center;gap:14px;box-sizing:border-box;height:54px;padding:10px 0 8px;margin:0;min-width:0}
+.w-head h1{font:600 24px/1.1 'Source Serif 4',Georgia,serif;margin:0;white-space:nowrap;flex:none;color:var(--text-strong,#F4F6FA)}
+.w-head .w-view{padding:2px;gap:1px}.w-head .w-view button{min-height:0;height:22px;padding:0 10px;font-size:12px}
+.w-sent{display:flex;align-items:baseline;gap:.4em;margin:0;flex:1 1 auto;min-width:0;font:400 13.5px/1.3 'IBM Plex Sans',sans-serif;color:rgba(244,246,250,.68)}
+.w-s-txt{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.w-sent a{flex:none;white-space:nowrap;color:#F4F6FA;text-decoration:underline;text-underline-offset:3px}
+.w-addw{position:relative;flex:none;margin-left:auto}
+.w-addb{position:relative;display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#F4F6FA;font:600 13px/1 'IBM Plex Sans',sans-serif;white-space:nowrap;cursor:pointer}
+.w-addb:hover,.w-addb[aria-expanded="true"]{border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.05)}.w-addb svg{width:16px;height:16px;flex:none}
+.w-head :is(a,button):focus-visible,.w-addp :is(a,button,input):focus-visible,.w-extras :is(a,button):focus-visible,.w-lgd :is(a,button):focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+.w-addp{position:absolute;right:0;top:calc(100% + 8px);z-index:70;width:320px;box-sizing:border-box;display:grid;gap:10px;padding:14px;border-radius:14px;border:1px solid rgba(255,255,255,.14);background:#181B23;box-shadow:0 16px 40px rgba(0,0,0,.5);text-align:left;white-space:normal;color:#F4F6FA}
+.w-addp[hidden]{display:none}.w-addp h2{font:600 14px/1.3 'IBM Plex Sans',sans-serif;margin:0;color:#F4F6FA}
+.w-addp .w-add{gap:10px}.w-addp .w-add-f{flex-direction:column;gap:10px}
+.w-addp .w-add-in input{min-height:40px;border-radius:10px;border-color:rgba(255,255,255,.14);background:#0B0D13;font-size:13.5px}
+.w-addp .w-add-b{min-height:40px;border-radius:20px;background:#8B6CF6;color:#fff;font-size:13.5px}
+.w-addp .w-add-h{font-size:12.5px;line-height:1.45;color:rgba(244,246,250,.68)}
+.w-addp .w-add-so{display:grid;gap:10px}.w-addp .w-add-so[hidden]{display:none}.w-addp .w-add-so p{margin:0;font-size:12.5px;color:rgba(244,246,250,.68)}
+.w-addp a.w-add-b{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+@media (prefers-reduced-motion:no-preference){.w-addp:not([hidden]),.w-lgd:not([hidden]){animation:w-in .14s ease-out}@keyframes w-in{from{opacity:0;transform:translateY(-4px)}}}
+.w-main .c-stage:not(.c-full){height:calc(100vh - 130px);height:calc(100svh - 130px);min-height:460px}
+html.w-battle .w-main .c-stage:not(.c-full){height:calc(100vh - 200px);height:calc(100svh - 200px);min-height:460px}
+.w-extras{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:22px 0 0}
+.w-exh{grid-column:1/-1;font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:rgba(244,246,250,.44);margin:0 2px -4px}
+.w-ex{display:flex;align-items:center;gap:10px;box-sizing:border-box;min-height:44px;padding:10px 12px;border:1px solid rgba(255,255,255,.09);border-radius:10px;color:rgba(244,246,250,.68);font:400 12.5px/1.4 'IBM Plex Sans',sans-serif}
+.w-ex b{color:#F4F6FA;font-weight:600}.w-ex>span{flex:1;min-width:0}
+.w-ex-a{position:relative;flex:none;display:inline-flex;align-items:center;min-height:24px;padding:0;border:0;background:none;color:#F4F6FA;font:500 12.5px/1 'IBM Plex Sans',sans-serif;text-decoration:underline;text-underline-offset:3px;white-space:nowrap;cursor:pointer}
+.w-ex-a::before{content:"";position:absolute;left:-8px;right:-8px;top:-10px;bottom:-10px}
+.mp.mp-x{margin:10px 0 0}.mp.mp-x:not([open]),.mp.mp-x>summary{display:none}.mp.mp-x>.mp-body{padding-top:16px}
+.w-lgd{position:fixed;z-index:80;right:12px;top:12px;bottom:12px;width:min(400px,calc(100% - 24px));box-sizing:border-box;overflow:auto;overscroll-behavior:contain;padding:16px 18px 20px;background:#14171E;color:rgba(244,246,250,.82);border:1px solid rgba(255,255,255,.14);border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.55);font:13.5px/1.55 'IBM Plex Sans',sans-serif}
+.w-lgd[hidden]{display:none}.w-lgd:focus{outline:none}
+.w-lgd h2{font:600 17px/1.25 'IBM Plex Sans',sans-serif;color:#F4F6FA;margin:0 44px 8px 0}.w-lgd h3{font:600 13.5px/1.3 'IBM Plex Sans',sans-serif;color:#F4F6FA;margin:14px 0 4px}
+.w-lgd p{margin:0 0 8px}.w-lgd ul{margin:0;padding:0;list-style:none;display:grid;gap:6px}.w-lgd li{display:flex;align-items:baseline;gap:8px}.w-lgd a{color:#F4F6FA;text-underline-offset:3px}
+.w-lgd i{flex:none;display:inline-block;width:18px;height:4px;border-radius:2px;align-self:center;background:linear-gradient(90deg,#B98CFF,#FFC46B,#B98CFF);box-shadow:0 0 6px rgba(200,160,255,.8)}.w-lgd i.w-lg-stack{background:repeating-linear-gradient(90deg,#FF7A96 0 4px,transparent 4px 7px);box-shadow:none}
+.w-lgd-x{position:absolute;right:6px;top:6px;width:44px;height:44px;border:0;border-radius:50%;background:transparent;color:#C9D2E6;font-size:22px;cursor:pointer}
+@media (min-width:700px) and (max-width:899px){.w-main{padding:0 12px 28px}.w-head{height:36px;padding:3px 0;gap:10px}.w-head h1{font-size:17px}.w-sent{font-size:11.5px}.w-xl{display:none}
+  .w-addb{height:28px;padding:0 11px;font-size:11.5px}.w-addb::before{content:"";position:absolute;left:0;right:0;top:-8px;bottom:-8px}
+  .w-main .c-stage:not(.c-full){height:calc(100vh - 150px);height:calc(100svh - 150px);min-height:460px}html.w-battle .w-main .c-stage:not(.c-full){height:calc(100vh - 212px);height:calc(100svh - 212px);min-height:380px}
+  .w-extras{gap:8px;margin-top:14px}.w-ex{min-height:36px;padding:6px 10px;font-size:11px}.w-ex-a{font-size:11px}}
+@media (max-width:699px){.w-main{padding:0 12px 28px}.w-main .w-maps{margin:0 -4px}
+  .w-head{flex-wrap:wrap;height:auto;min-height:44px;padding:2px 0;gap:0 10px}.w-head h1{font-size:19px;line-height:40px}.w-head .w-view{order:9;margin:0 0 6px}
+  .w-sent{flex:1 1 120px;justify-content:flex-end;font-size:13px}.w-s-txt{display:none}.w-sent a{display:inline-flex;align-items:center;min-height:44px}
+  .w-addb{width:44px;height:40px;padding:0;justify-content:center;border-radius:10px}.w-addb span{display:none}
+  .w-addp{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;z-index:95;border-radius:16px 16px 0 0;border-width:1px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px))}
+  .w-addp .w-add-in input,.w-addp .w-add-b{min-height:44px}.w-addp .w-add-b{border-radius:22px}
+  .w-main .c-stage:not(.c-full){height:calc(100vh - 190px);height:calc(100svh - 190px);min-height:400px}html.w-battle .w-main .c-stage:not(.c-full){height:calc(100vh - 228px);height:calc(100svh - 228px);min-height:400px}
+  .w-extras{grid-template-columns:1fr;gap:10px}
+  .w-lgd{left:0;right:0;top:auto;bottom:0;width:auto;max-height:72vh;border-radius:16px 16px 0 0;border-width:1px 0 0;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px))}}
+`;
+
+/** "What am I looking at?" (PAGE.md section 2, rows 7, 8 and 30): the legend line and the long intro paragraphs live here
+ *  now. It opens from the Layers panel (the #t-what button, which the renderer moves into Layers). */
+export function legendSheet(n: number, b: number, growth: boolean): string {
+  return `<aside class="w-lgd" id="w-lgd" role="dialog" aria-labelledby="w-lgd-t" tabindex="-1" hidden><button type="button" class="w-lgd-x" aria-label="Close" title="Close">&times;</button>`
+    + `<h2 id="w-lgd-t">What am I looking at?</h2><p>${n.toLocaleString("en-US")} cit${n === 1 ? "y" : "ies"} and ${b.toLocaleString("en-US")} building${b === 1 ? "" : "s"} on one map. Each city is one member's work.</p>`
+    + `<ul><li><i aria-hidden="true"></i><span>Rays of light are friendships.</span></li><li><i class="w-lg-stack" aria-hidden="true"></i><span>Dashed coral lines: builds with a similar stack.</span></li>`
+    + `<li><span aria-hidden="true">&#128274;</span><span>Padlocked buildings are private repos: size only, never names.</span></li>`
+    + `<li><span aria-hidden="true">&#10022;</span><span>Light up a city you like: one gift a day.</span></li>`
+    + `<li><span aria-hidden="true">&rarr;</span><span>Click a name to fly there, and again to walk in.</span></li>`
+    + `<li><span aria-hidden="true">&middot;</span><span>Only people listed in <a href="/people">People</a> appear.</span></li></ul>`
+    + (growth ? `<h3>Growth from code</h3><p>Every day's commits, merged PRs and releases earn build points, and each plot spends them on land, one lot at a time (zoned, graded, framed, built). Purple outlines are new in this window. Recent daily work and AI projects grow fastest. Land is never lost, it weathers.</p>` : "")
+    + `</aside>`;
+}
+
+/** The old Battle paragraph (PAGE.md section 2, row 6): now the first paragraph of the "How battles work" sheet. */
+export const BATTLE_INTRO = "Cities at war: every city in the battles has an ammo pad in front of its buildings. At noon on your clock, that day's real code drops from the sky as missiles and stacks on the pad. Through the afternoon they load into the launch center. At 20:00 every city fires at once, and the hits land on rival repo towers. From midnight to noon the cranes rebuild them, whole by noon. Every city with buildings is in, and you can leave or rejoin at any time. Damage shows only on this map: land and data are never touched.";
+
+/** The shell's behaviour: the Add a friend popover (Esc and a tap outside close it, focus goes to the field and back to
+ *  the button, signed-out content, #add opens it), the "How battles work" link (opens the battle client's sheet through its
+ *  [data-bhow] opener or window.CALDERA_BATTLE_HOW, and puts BATTLE_INTRO first in it), the legend sheet and the Extras
+ *  "Open" button for the Power up panel. */
+export const WORLD_UI_JS = String.raw`(function(){
+var W=document.querySelector('.w-addw');if(W){var B=W.querySelector('.w-addb'),P=document.getElementById('w-addp'),F=document.getElementById('w-add'),SO=P&&P.querySelector('.w-add-so'),hb=document.getElementById('caldera-bar');
+  if(SO&&hb&&hb.getAttribute('data-state')==='out'){SO.hidden=false;if(F)F.hidden=true}
+  var pop=function(on,back){if(!P)return;P.hidden=!on;B.setAttribute('aria-expanded',String(on));if(on){var x=(F&&!F.hidden&&F.querySelector('input'))||P.querySelector('a,button,input');if(x)try{x.focus({preventScroll:true})}catch(e){x.focus()}}else if(back)B.focus()};
+  B.addEventListener('click',function(){pop(P.hidden,false)});
+  document.addEventListener('pointerdown',function(e){if(P&&!P.hidden&&!W.contains(e.target))pop(false,false)});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&P&&!P.hidden){pop(false,true)}});
+  if(P)P.addEventListener('click',function(e){var v=e.target.closest&&e.target.closest('[data-view]');if(v&&window.CALDERA_FRONTIER_FOCUS)setTimeout(function(){pop(false,false)},0)});
+  window.CALDERA_WADD_OPEN=function(){pop(true)};if(location.hash==='#add')setTimeout(function(){pop(true)},0)}
+var INTRO=${JSON.stringify(BATTLE_INTRO)};
+function intro(){var hb2=document.querySelector('.b-how .b-hb');if(!hb2||hb2.querySelector('.w-how-in'))return;var p=document.createElement('p');p.className='b-lede w-how-in';p.textContent=INTRO;var h=hb2.querySelector('h2');hb2.insertBefore(p,h?h.nextSibling:hb2.firstChild)}
+var HO=null;new MutationObserver(function(){var a=document.querySelector('.b-how');if(a&&a!==HO){HO=a;new MutationObserver(intro).observe(a,{childList:true,subtree:true})}intro()}).observe(document.body,{childList:true});
+var HA=document.querySelector('[data-whow]');if(HA)HA.addEventListener('click',function(e){var o=document.querySelector('[data-bhow]');if(typeof window.CALDERA_BATTLE_HOW==='function'){e.preventDefault();window.CALDERA_BATTLE_HOW()}else if(o){e.preventDefault();o.click()}else return;intro()});
+var L=document.getElementById('w-lgd'),LB=null;if(L){var lclose=function(){if(L.hidden)return;L.hidden=true;if(LB)try{LB.focus()}catch(e){}};L.querySelector('.w-lgd-x').onclick=lclose;
+  document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('#t-what');if(!t)return;LB=t;if(!L.hidden)return lclose();L.hidden=false;try{L.focus({preventScroll:true})}catch(x){}});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')lclose()})}
+var X=document.querySelector('[data-wpu]'),MP=document.getElementById('power-up');if(X&&MP){var sync=function(){X.setAttribute('aria-expanded',String(MP.open));X.textContent=MP.open?'Close':'Open'};
+  X.addEventListener('click',function(){MP.open=!MP.open;sync();if(MP.open){var c=MP.querySelector('.mp-copy');if(c)try{c.focus({preventScroll:true})}catch(e){}}});MP.addEventListener('toggle',sync);sync()}
+})();`;
 export function worldPage(w: World, o: { hub: string; nav: string; tools?: unknown[]; growth?: unknown | null; battle?: unknown | null; frontier?: { districts: any[]; meta: Record<string, any>; fs?: Record<string, { slot: number; by: string | null }> } | null }): string {
   const G = o.growth || null, BT = G ? o.battle || null : null;
   const hub = o.hub.replace(/\/$/, ""), n = w.members.length, b = w.city.districts.reduce((s, d) => s + d.repos.length, 0);
@@ -212,28 +308,25 @@ export function worldPage(w: World, o: { hub: string; nav: string; tools?: unkno
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
 ${BT ? `<script>window.CALDERA_BATTLE_ON=1</script>` : ""}${G ? `<script>${GROWTH_HEAD_JS}</script>` : ""}
 <link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css"><style>${CITY_CSS}${G ? GROWTH_CSS : ""}${BT ? BATTLE_CSS : ""}
-.w-main{max-width:none;margin:0;padding:10px 20px 32px}.w-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:flex-start;gap:2px 14px;margin:2px 0 10px}@media (max-width:600px){.w-main{padding:8px 16px 28px}.w-main .w-head{flex-direction:column;align-items:flex-start;gap:2px}.w-main .w-head p{flex:none;font-size:13px}}
-.w-head h1{font-family:'Source Serif 4',Georgia,serif;font-size:clamp(1.3rem,2.2vw,1.7rem);margin:0;color:var(--text-strong,#F7F7FA)}.w-head p{margin:0;color:var(--text-muted,#8A8A93);font-size:14px;flex:1 1 30ch;min-width:0}
-@media (max-width:600px){.w-main .c-tools{flex-wrap:wrap;justify-content:flex-end;left:8px;right:8px;gap:4px}.w-main .c-tools button{padding:5px 8px}}.w-main .c-stage{height:calc(100vh - 150px);height:calc(100svh - 150px);min-height:460px}@media (max-width:600px){.w-main .c-stage{height:calc(100svh - 190px);min-height:400px}}
+${WORLD_CSS}@media (max-width:600px){.w-main .c-tools{flex-wrap:wrap;justify-content:flex-end;left:8px;right:8px;gap:4px}.w-main .c-tools button{padding:5px 8px}}
 .w-main .c-stage.c-full{height:100%;min-height:0}
 @media (max-width:600px){html.w-battle .w-main .c-live{display:none}.w-main .b-chip{font-size:11px;gap:6px;padding:6px 10px 6px 8px}}
 .w-main .b-chip b{flex:none}.w-main .b-chip span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .w-main .b-me .b-small{line-height:1.45}.w-main .b-me .b-link{min-height:0;padding:7px 0;margin:-7px 0;vertical-align:baseline}.w-main .b-board summary{line-height:1.35;padding:6px 0}
-.w-foot{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:13px;color:var(--text-muted,#8A8A93)}.w-foot a{color:var(--accent-text,#B9A6FF)}.w-orph{flex:1 1 100%;padding:8px 12px;border:1px solid rgba(139,108,246,.35);border-radius:10px;background:rgba(139,108,246,.08);line-height:1.5}.w-orph b{color:var(--text-strong,#fff);font-weight:600}.w-orph a{font-weight:600;white-space:nowrap;display:inline-block;padding:4px 0}
-.w-legend i{display:inline-block;width:18px;height:4px;border-radius:2px;background:linear-gradient(90deg,#B98CFF,#FFC46B,#B98CFF);vertical-align:middle;margin-right:6px;box-shadow:0 0 6px rgba(200,160,255,.8)}.w-legend-stack i{background:repeating-linear-gradient(90deg,#FF7A96 0 4px,transparent 4px 7px);box-shadow:none}</style></head><body>
+</style></head><body>
 ${o.nav}
 <main class="w-main">
-<div class="w-head"><h1>The world</h1>${G ? `<div class="w-view" role="group" aria-label="Time view"><button type="button" data-gview="now" aria-pressed="true">Now</button><button type="button" data-gview="day" aria-pressed="false">Day</button><button type="button" data-gview="week" aria-pressed="false">Week</button><button type="button" data-gview="month" aria-pressed="false">Month</button>${BT ? `<button type="button" data-gview="battle" aria-pressed="false">Battle</button>` : ""}</div>` : ""}${o.frontier ? WADD_HTML : ""}<p class="w-now-only">${n} neighborhood${n === 1 ? "" : "s"} &middot; ${b.toLocaleString("en-US")} building${b === 1 ? "" : "s"} &middot; rays of light are friendships, dashed coral lines are similar stacks &middot; click a name to fly there, again to walk in &middot; &#10022; light up a city you like (one gift a day)</p>${G ? `<p class="w-grow-only">Growth from code: every day's commits, merged PRs and releases earn build points, and each plot spends them on land, one lot at a time (zoned, graded, framed, built). Purple outlines are new in this window; recent daily work and AI projects grow fastest. Land is never lost, it weathers.</p>` : ""}${BT ? `<p class="w-battle-only">Cities at war: every city in the battles has an ammo pad in front of its buildings. At noon on your clock that day's real code drops from the sky as missiles and stacks on the pad; through the afternoon they load into the launch center; at 20:00 every city fires in one salvo and the hits land on rival repo towers; from midnight to noon the cranes rebuild them, whole by noon. Every city with buildings is in; leave or rejoin any time in the battle bar. Damage shows only on this map; land and data are never touched.</p>` : ""}</div>
+<div class="w-head"><h1>The world</h1>${G ? `<div class="w-view" role="group" aria-label="Time view"><button type="button" data-gview="now" aria-pressed="true">Now</button><button type="button" data-gview="day" aria-pressed="false">Day</button><button type="button" data-gview="week" aria-pressed="false">Week</button><button type="button" data-gview="month" aria-pressed="false">Month</button>${BT ? `<button type="button" data-gview="battle" aria-pressed="false">Battle</button>` : ""}</div>` : ""}<p class="w-sent"><span class="w-s-txt"><span class="w-now-only">${n} cit${n === 1 ? "y" : "ies"} on one map.<span class="w-xl"> Tap a name to fly there.</span></span>${G ? `<span class="w-grow-only">Purple outlines are new in this window.</span>` : ""}${BT ? `<span class="w-battle-only">Every city fires at 20:00.<span class="w-xl"> Cranes rebuild the hits by noon.</span></span>` : ""}</span>${BT ? ` <a class="w-how-a" href="/world?view=battle&amp;how" data-whow>How battles work</a>` : ""}</p>${o.frontier ? `<div class="w-addw"><button type="button" class="w-addb" aria-label="Add a friend" title="Add a friend" aria-haspopup="dialog" aria-expanded="false" aria-controls="w-addp">${PLUS_SVG}<span>Add a friend</span></button><div class="w-addp" id="w-addp" role="dialog" aria-labelledby="w-addp-t" hidden><h2 id="w-addp-t">Add a friend's GitHub</h2>${WADD_HTML}</div></div>` : ""}</div>
 <div class="w-maps"><div class="c-stage" id="stage"><canvas id="city" aria-label="Isometric world map of ${n} member cities"></canvas>
-<div class="c-tools"><button id="t-labels" aria-pressed="true">Labels</button><button id="t-fr" aria-pressed="true" aria-label="Friendships" title="Friendships between neighborhoods, drawn as rays of light">&#x2727;<span class="t-txt"> Friendships</span></button><button id="t-topics" aria-pressed="false" aria-label="Color by topic" title="Tint each neighborhood by what they're building"><span class="t-sw" aria-hidden="true"></span><span class="t-txt"> Topics</span></button><button id="t-sky">Auto</button><button id="t-wx" title="Weather">Weather</button><button id="t-snd" aria-pressed="false" title="Sound for arrivals (off)">&#x1F507;</button><button id="t-reset">Reset</button><button id="t-full" aria-label="Full screen">&#x26F6;<span class="t-txt"> Full screen</span></button></div>
+<div class="c-tools"><button id="t-labels" aria-pressed="true">Labels</button><button id="t-fr" aria-pressed="true" aria-label="Friendships" title="Friendships between neighborhoods, drawn as rays of light">&#x2727;<span class="t-txt"> Friendships</span></button><button id="t-topics" aria-pressed="false" aria-label="Color by topic" title="Tint each neighborhood by what they're building"><span class="t-sw" aria-hidden="true"></span><span class="t-txt"> Topics</span></button><button id="t-sky">Auto</button><button id="t-wx" title="Weather">Weather</button><button id="t-snd" aria-pressed="false" title="Sound for arrivals (off)">&#x1F507;</button><button id="t-reset">Reset</button><button id="t-what" type="button" aria-haspopup="dialog" aria-controls="w-lgd" title="What am I looking at?">What am I looking at?</button><button id="t-full" aria-label="Full screen">&#x26F6;<span class="t-txt"> Full screen</span></button></div>
 <div class="c-toasts" aria-live="polite"></div><div class="c-mininame" aria-hidden="true"><i></i>Caldera world</div>
 <div class="c-card" id="card" hidden></div><div class="c-hint">Drag to move &middot; scroll or pinch to zoom &middot; click a name to fly there</div></div>
 </div>${G ? growthMarkup() : ""}${BT ? battleMarkup() : ""}
-<div class="w-foot"><span class="w-legend"><i></i>Friendships are rays of light</span><span class="w-legend w-legend-stack"><i></i>Dashed coral: builds with a similar stack</span><span>&#128274; Padlocked buildings are private repos: size only, never names.</span><span>Only people listed in <a href="/people">People</a> appear.</span><a href="/#start">Add your city &rarr;</a><span class="w-orph"><b>More agents, more commits, more ammo.</b> Orpheus keeps your Claude agents working across all your accounts. <a href="https://useorpheus.com/?utm_source=caldera&amp;utm_medium=world" target="_blank" rel="noopener">Try Orpheus free</a></span></div>
-${mapPanel(hub)}
+<section class="w-extras" aria-labelledby="w-ex-h"><h2 class="w-exh" id="w-ex-h">Extras</h2><div class="w-ex"><span><b>Power up your map.</b> One prompt for your AI: drones, live visitors, private repos.</span><button type="button" class="w-ex-a" data-wpu aria-controls="power-up" aria-expanded="false">Open</button></div><div class="w-ex"><span><b>Orpheus.</b> More agents, more commits, more missiles.</span><a class="w-ex-a" href="https://useorpheus.com/?utm_source=caldera&amp;utm_medium=world" target="_blank" rel="noopener">Try Orpheus free</a></div></section>
+${mapPanel(hub, { extras: true })}${legendSheet(n, b, !!G)}
 </main><footer class="footer"><span>&copy; 2026 mjonesone, LLC</span><span><a href="/guide">Guide</a> &middot; <a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a></span></footer>
 <script>window.CALDERA_TOOLS=${safeJson(o.tools || [])};window.CALDERA_TOOLS_HUB=${safeJson(hub)};window.CALDERA_LIVE=${safeJson({ url: "/v1/world/live", mode: "public" })};window.CALDERA_EXTRAS=${safeJson({ weather: `${hub}/v1/weather` })};window.CALDERA_GIFTS=${safeJson({ url: "/v1/gifts" })}</script>
 <script type="application/json" id="city-data">${safeJson(data)}</script>
 ${G ? `<script>window.CALDERA_GROWTH=${safeJson(G)}</script>` : ""}${BT ? `<script>window.CALDERA_BATTLE=${safeJson(BT)}</script>` : ""}
-<script>${CITY_JS}</script>${BT ? `<script>${BATTLE_CLIENT_JS}</script>` : ""}${G ? `<script>${GROWTH_CLIENT_JS}</script>` : ""}<script>${CARD_CLEAR_JS}</script><script>${WORLD_FIT_JS}</script>${o.frontier ? `<style>${WADD_CSS}</style><script>${WADD_JS}</script>` : ""}</body></html>`;
+<script>${CITY_JS}</script>${BT ? `<script>${BATTLE_CLIENT_JS}</script>` : ""}${G ? `<script>${GROWTH_CLIENT_JS}</script>` : ""}<script>${CARD_CLEAR_JS}</script><script>${WORLD_FIT_JS}</script>${o.frontier ? `<style>${WADD_CSS}</style><script>${WADD_JS}</script>` : ""}<script>${WORLD_UI_JS}</script></body></html>`;
 }
