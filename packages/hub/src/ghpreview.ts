@@ -300,12 +300,12 @@ ${tail}`}`;
     if (cg && c.trackCareer) c.trackCareer(req, cg === "b" ? "cg-b" : "cg-a");
     send(res, 200, "text/html; charset=utf-8", previewPage(g.p, `/gh/${g.p.login}`, !!arm, cg === "b", !!c.googleFirst?.(url)), c.saveArm ? "private, max-age=0" : "public, max-age=600", { "content-security-policy": CSP }); return true;
   }
-  /** one public GitHub user (Frontier lookup): numeric id, type, name, public repo count. Never the email. */
-  async function user(login: string): Promise<{ status: number; id?: number; login?: string; type?: string; name?: string; repos?: number }> {
+  /** one public GitHub user (Frontier lookup): numeric id, type, name, public repo and follower counts. Never the email. */
+  async function user(login: string): Promise<{ status: number; id?: number; login?: string; type?: string; name?: string; repos?: number; followers?: number }> {
     if (removed(login)) return { status: 404 };
     const token = await c.token().catch(() => null), u = await gh(token, `/users/${encodeURIComponent(login)}`);
     if (u.status !== 200 || !u.body?.login) return { status: u.status === 404 ? 404 : 502 };
-    return { status: 200, id: Number(u.body.id), login: String(u.body.login), type: String(u.body.type || ""), name: String(u.body.name || u.body.login).slice(0, 80), repos: Number(u.body.public_repos) || 0 };
+    return { status: 200, id: Number(u.body.id), login: String(u.body.login), type: String(u.body.type || ""), name: String(u.body.name || u.body.login).slice(0, 80), repos: Number(u.body.public_repos) || 0, followers: Number(u.body.followers) || 0 };
   }
   return { route, memberBadge, get, user, badgeSnippet: (handle: string) => snippet(`${c.hub()}/@${handle}/city.html`, `${c.hub()}/@${handle}/badge.svg?style=card`, "My GitHub city on Caldera") };
 }

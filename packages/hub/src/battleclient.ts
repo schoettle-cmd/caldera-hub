@@ -296,11 +296,14 @@ export function battleClient() {
     var L = '@' + gl.login, j = gl.j || {}, st = gl.st, T = '', D = '', M = '', B = '', k = 'bad';
     if (st === 'wait') { k = 'wait'; T = 'Checking GitHub for ' + esc(L); D = 'This takes a second.'; }
     else if (st === 'new' && j.left === 0) { k = 'limit'; T = 'You added 20 GitHubs today'; D = 'That is the daily limit. You can add more after midnight Pacific. You can still target any land on the map.'; }
-    else if (st === 'new') { k = 'new'; T = esc(L) + ' <small>on GitHub</small>'; D = esc(j.name || gl.login) + ' &middot; ' + (j.repos || 0) + ' public repo' + (j.repos === 1 ? '' : 's'); M = 'Not on Caldera yet. Adding puts an unclaimed land on the frontier, built from public GitHub data. Caldera does not contact them.'; B = '<button type="button" class="b-gh-go" data-gh="add">Add to the map and target</button>'; }
+    else if (st === 'new') { k = 'new'; T = esc(L) + ' <small>on GitHub</small>'; D = esc(j.name || gl.login) + ' &middot; ' + (j.repos || 0) + ' public repo' + (j.repos === 1 ? '' : 's');
+      M = j.famous ? 'Not on Caldera yet. Adding puts an unclaimed land on the frontier, built from public GitHub data. Caldera does not contact them.' : 'Not on Caldera yet. Only well-known GitHubs and members\' friends go on the map. If ' + esc(L) + ' is your friend, add them: when they claim the land, you two become friends. Caldera does not contact them.';
+      B = '<button type="button" class="b-gh-go" data-gh="add">' + (j.famous ? 'Add to the map and target' : 'Add as my friend and target') + '</button>'; }
     else if (st === 'land') { k = 'new'; T = esc(L) + ' <small>unclaimed land</small>'; D = 'Added by ' + esc(j.by || 'Caldera') + ' &middot; ' + (j.repos || 0) + ' public repo' + (j.repos === 1 ? '' : 's'); B = '<button type="button" class="b-gh-go" data-gh="aim">Target ' + esc(L) + '</button>'; }
     else if (st === 'limit') { k = 'limit'; T = 'You added 20 GitHubs today'; D = 'That is the daily limit. You can add more after midnight Pacific. You can still target any land on the map.'; }
     else if (st === 'missing') { T = 'No GitHub user named ' + esc(L); D = 'Check the spelling. Use the username from github.com/username.'; }
     else if (st === 'removed') { T = esc(L) + ' can\'t be added'; D = 'This person asked not to be on Caldera. Pick another target.'; }
+    else if (st === 'nocode') { T = esc(L) + ' has no public code yet'; D = 'There is no city to draw, so it can\'t be a land.'; }
     else if (st === 'org') { T = esc(L) + ' is an organization'; D = 'Only a person\'s GitHub can be a land. Type a person\'s username.'; }
     else if (st === 'member') { T = esc('@' + (j.handle || gl.login)) + ' is on Caldera'; D = 'Their city is not in the next battle. Pick another target.'; }
     else if (st === 'busy') { k = 'limit'; T = 'Too many lookups'; D = 'Try again in an hour. You can still target any city in the list.'; }
@@ -330,7 +333,7 @@ export function battleClient() {
   }
   function pAdd(i) {
     var login = gl && gl.login; if (!login) return; var bt = panel.querySelector('[data-gh="add"]'); if (bt) { bt.disabled = true; bt.setAttribute('aria-busy', 'true'); }
-    fetch('/v1/frontier/add', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: login }) })
+    fetch('/v1/frontier/add', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: login, friend: !(gl && gl.j && gl.j.famous) }) })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; }); })
       .then(function (x) {
         if (x.status === 200 && x.j.login) { var h = '@' + x.j.login; if (x.j.land && window.CALDERA_FRONTIER_ADD) try { window.CALDERA_FRONTIER_ADD(x.j.land.district, x.j.land.meta, false); } catch (e2) {} if (!isLand(h)) (me.armory.lands = me.armory.lands || []).push(h); armOk = h + ' is on the frontier. Caldera does not contact them.'; pSet(i, h); return; }

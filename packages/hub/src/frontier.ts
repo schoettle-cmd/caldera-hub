@@ -18,12 +18,15 @@ import type { CityRepo } from "../../../../caldera/packages/plugin/src/city";
 import { CLAIM_CSS, CLAIM_JS, GH_ICON, FLAG_ICON, WADD_CSS, ADD_CSS, ADD_JS } from "./frontierpage";
 
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
-export const FRONTIER = { addsPerDay: 20, lookupsPerHour: 60, reward: 50, perLand: 8, hidesPerHour: 5 };
+/** Mike 11-20: "we should not be adding repo users automatically if they are not famous with lots of code ... only add in
+ *  celebrities, or allow people to add in their friends; if they add in their friends create a friend connect". famous = at least
+ *  this many GitHub followers; a land also needs public code (a city to draw). */
+export const FRONTIER = { famous: 5000, addsPerDay: 20, lookupsPerHour: 60, reward: 50, perLand: 8, hidesPerHour: 5 };
 /** a GitHub username: 1 to 39 of [A-Za-z0-9-], no hyphen at either end, no "--" */
 export const GH_LOGIN = /^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 export type LandState = "live" | "hidden" | "claimed" | "removed";
-export interface Land { lc: string; login: string; gh_id: number; name: string; repos: number; adder: string; ts: number; state: LandState; slot: number; claimed_by: string | null; claimed_ts: number | null; city: CityRepo[] }
-const landOf = (r: any): Land => ({ lc: r.lc, login: r.login, gh_id: Number(r.gh_id), name: r.name || r.login, repos: r.repos || 0, adder: r.adder, ts: r.ts, state: r.state, slot: r.slot, claimed_by: r.claimed_by || null, claimed_ts: r.claimed_ts || null, city: (() => { try { return JSON.parse(r.city || "[]"); } catch { return []; } })() });
+export interface Land { lc: string; login: string; gh_id: number; name: string; repos: number; adder: string; ts: number; state: LandState; slot: number; claimed_by: string | null; claimed_ts: number | null; city: CityRepo[]; friend: boolean }
+const landOf = (r: any): Land => ({ lc: r.lc, login: r.login, gh_id: Number(r.gh_id), name: r.name || r.login, repos: r.repos || 0, adder: r.adder, ts: r.ts, state: r.state, slot: r.slot, claimed_by: r.claimed_by || null, claimed_ts: r.claimed_ts || null, friend: !!r.friend, city: (() => { try { return JSON.parse(r.city || "[]"); } catch { return []; } })() });
 export const SYSTEM_ADDER = "caldera";
 const sha = (s: string) => crypto.createHash("sha256").update("caldera-frontier:" + s).digest("hex");
 
@@ -38,6 +41,7 @@ export function pacificDayStart(at: number): number {
 export function frontierStore(q: Q) {
   q(`CREATE TABLE IF NOT EXISTS frontier_lands (lc TEXT PRIMARY KEY, login TEXT, gh_id INTEGER, name TEXT, repos INTEGER, adder TEXT, ts INTEGER,
       state TEXT, slot INTEGER, claimed_by TEXT, claimed_ts INTEGER, city TEXT)`).run();
+  try { q("ALTER TABLE frontier_lands ADD COLUMN friend INTEGER DEFAULT 0").run(); } catch { /* already there */ }   // added as the adder's friend: a claim makes them friends
   q("CREATE INDEX IF NOT EXISTS frontier_lands_adder ON frontier_lands(adder, ts)").run();
   // the do-not-add list: hashes of the GitHub numeric id and of the lowercase login, nothing else. A pending request (no
   // sign-in) keeps the optional note until a person checks it; then the note is dropped.
@@ -51,14 +55,16 @@ export function frontierStore(q: Q) {
     byAdder: (p: string): Land[] => (q("SELECT * FROM frontier_lands WHERE adder=? AND state IN ('live','claimed') ORDER BY ts DESC").all(p) as any[]).map(landOf),
     addsSince: (p: string, since: number): number => (q("SELECT COUNT(*) n FROM frontier_lands WHERE adder=? AND ts>=?").get(p, since) as any).n,
     blocked: (login: string, ghId?: number | null): boolean => !!q("SELECT 1 FROM frontier_block WHERE h=? OR h=?").get(sha("lg:" + login.toLowerCase()), ghId ? sha("id:" + ghId) : "-"),
-    add: (l: { login: string; gh_id: number; name: string; repos: number; adder: string; city: CityRepo[] }, at: number): Land => {
+    add: (l: { login: string; gh_id: number; name: string; repos: number; adder: string; city: CityRepo[]; friend?: boolean }, at: number): Land => {
       const lc = l.login.toLowerCase(), old = S.get(lc);
       if (old && old.state === "live") return old;
       // a slot is the land's place in line on the frontier (the map puts lower slots first); a removed land's row is reused
       const slot = old ? old.slot : (Number((q("SELECT MAX(slot) m FROM frontier_lands").get() as any).m) || 0) + 1;
-      q("INSERT OR REPLACE INTO frontier_lands VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").run(lc, l.login, l.gh_id, l.name.slice(0, 80), l.repos, l.adder, at, "live", slot, null, null, JSON.stringify(l.city));
+      q("INSERT OR REPLACE INTO frontier_lands (lc,login,gh_id,name,repos,adder,ts,state,slot,claimed_by,claimed_ts,city,friend) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").run(lc, l.login, l.gh_id, l.name.slice(0, 80), l.repos, l.adder, at, "live", slot, null, null, JSON.stringify(l.city), l.friend ? 1 : 0);
       return S.get(lc)!;
     },
+    /** taken off the map by Caldera (not famous, or no code): no block, so a member can still add them as a friend */
+    prune: (lc: string) => q("UPDATE frontier_lands SET state='pruned', city='[]' WHERE lc=? AND state='live'").run(lc).changes > 0,
     setCity: (login: string, city: CityRepo[], repos: number) => q("UPDATE frontier_lands SET city=?, repos=? WHERE lc=?").run(JSON.stringify(city), repos, login.toLowerCase()),
     /** a GitHub-verified claim: true the first time (the caller pays the adder) */
     claim: (login: string, p: string, at: number): boolean => q("UPDATE frontier_lands SET state='claimed', claimed_by=?, claimed_ts=? WHERE lc=? AND state IN ('live','hidden')").run(p, at, login.toLowerCase()).changes > 0,
@@ -102,7 +108,7 @@ export function landRepos(repos: CityRepo[], login: string): CityRepo[] {
 }
 
 // ---------------------------------------------------------------- the routes and pages
-export interface GhUser { status: number; id?: number; login?: string; type?: string; name?: string; repos?: number }
+export interface GhUser { status: number; id?: number; login?: string; type?: string; name?: string; repos?: number; followers?: number }
 export interface FrontierCtx {
   q: Q; hub: () => string; now?: () => number;
   memberOf: (req: http.IncomingMessage) => string | null;
@@ -118,6 +124,7 @@ export interface FrontierCtx {
   json: (res: http.ServerResponse, status: number, body: unknown) => void;
   tooMany: (key: string, max: number, windowMs?: number) => boolean; ipOf: (req: http.IncomingMessage) => string;
   alertPost?: (o: { target: string; key: string; title: string; body: string; ctaLabel?: string; ctaUrl?: string; by?: string }) => void;
+  /** a claim of a land added as a friend: make the two friends */ connect?: (a: string, b: string, why: string) => void;
   /** a land left the map: bombs aimed at it get their credits back */ landGone?: (login: string) => void;
   /** a claim must not put the new member in the battles */ leaveBattles?: (profileId: string) => void;
   /** the world map changed (rebuild its cache) */ changed?: () => void;
@@ -138,7 +145,8 @@ export function frontier(c: FrontierCtx) {
   const S = frontierStore(c.q), now = () => (c.now ? c.now() : Date.now());
   const adderName = (l: Land) => l.adder === SYSTEM_ADDER ? null : c.handleOf(l.adder);
 
-  /** what adding this name would do: one of member | land | removed | blocked | org | missing | github | new (D3, E1) */
+  /** what adding this name would do: one of member | land | removed | blocked | org | missing | github | nocode | new (D3, E1).
+   *  new carries famous: a person who isn't famous can only be added as the member's friend */
   async function look(raw: string): Promise<any> {
     const login = String(raw || "").trim().replace(/^@/, "");
     if (!GH_LOGIN.test(login)) return { st: "missing", login };
@@ -153,19 +161,25 @@ export function frontier(c: FrontierCtx) {
     if (u.type === "Organization") return { st: "org", login: u.login };
     if (u.type !== "User") return { st: "missing", login };
     if (S.blocked(u.login, u.id)) return { st: "removed", login: u.login };
-    return { st: "new", login: u.login, id: u.id, name: u.name || u.login, repos: u.repos || 0 };
+    if (!(u.repos! > 0)) return { st: "nocode", login: u.login };
+    return { st: "new", login: u.login, id: u.id, name: u.name || u.login, repos: u.repos || 0, famous: (u.followers || 0) >= FRONTIER.famous };
   }
   const left = (p: string) => Math.max(0, FRONTIER.addsPerDay - S.addsSince(p, pacificDayStart(now())));
 
   /** add a land (idempotent). `p` is the adder (a member id, or SYSTEM_ADDER for the seed list). */
-  async function add(p: string, raw: string): Promise<{ status: number; body: any }> {
+  async function add(p: string, raw: string, friend = false): Promise<{ status: number; body: any }> {
     const r = await look(raw);
     if (r.st === "land") return { status: 200, body: { ...r, ok: true, claim: c.hub() + "/claim/" + r.login, left: p === SYSTEM_ADDER ? null : left(p), land: landData(r.login) } };
     if (r.st !== "new") return { status: r.st === "github" ? 502 : r.st === "member" ? 409 : 422, body: r };
+    const asFriend = p !== SYSTEM_ADDER && !r.famous;   // a famous GitHub goes on as a land; anyone else only as the member's friend
+    if (!r.famous && p === SYSTEM_ADDER) return { status: 422, body: { st: "notfamous", login: r.login } };
+    if (asFriend && !friend) return { status: 422, body: { st: "friend", login: r.login, name: r.name, repos: r.repos } };
     if (p !== SYSTEM_ADDER && left(p) <= 0) return { status: 429, body: { st: "limit", login: r.login } };
     const repos = await c.ghRepos(r.login).catch(() => null);
     if (!repos) return { status: 502, body: { st: "github", login: r.login } };
-    const l = S.add({ login: r.login, gh_id: r.id, name: r.name, repos: repos.length, adder: p, city: landRepos(repos, r.login) }, now());
+    const city = landRepos(repos, r.login);
+    if (!city.length) return { status: 422, body: { st: "nocode", login: r.login } };
+    const l = S.add({ login: r.login, gh_id: r.id, name: r.name, repos: repos.length, adder: p, city, friend: asFriend }, now());
     c.changed?.();
     console.log(`[frontier] ${p === SYSTEM_ADDER ? "seed" : "@" + (c.handleOf(p) || "?")} added @${l.login} (${l.repos} repos, slot ${l.slot})`);
     return { status: 200, body: { st: "added", ok: true, login: l.login, name: l.name, repos: l.repos, claim: c.hub() + "/claim/" + l.login, left: p === SYSTEM_ADDER ? null : left(p), land: landData(l.login) } };
@@ -202,6 +216,8 @@ export function frontier(c: FrontierCtx) {
     if (!first) return false;
     try { c.leaveBattles?.(acct.profile_id); } catch (e: any) { console.error("[frontier] leave battles", e?.message); }
     c.landGone?.(l.login); c.changed?.();
+    // added as a friend (Mike 11-20): the claim makes them friends
+    if (l.friend && l.adder !== SYSTEM_ADDER && l.adder !== acct.profile_id && c.handleOf(l.adder)) try { c.connect?.(acct.profile_id, l.adder, "added you to the map as a friend"); } catch (e: any) { console.error("[frontier] connect", e?.message); }
     // the adder: +50 once per land, only on a real GitHub-verified claim, only if they are still a member
     const by = l.adder !== SYSTEM_ADDER ? c.handleOf(l.adder) : null;
     if (by && l.adder !== acct.profile_id && !S.paid(l.lc)) {
@@ -327,7 +343,7 @@ ${l ? `<p class="cl-fine">Is this your GitHub? <a href="${signIn(`/claim/${u}?go
       if (!c.sameOrigin(req)) { c.json(res, 403, { error: "cross-site" }); return true; }
       const me = c.memberOf(req); if (!me) { c.json(res, 401, { st: "signin" }); return true; }
       const b = await c.readBody(req).catch(() => ({}));
-      const r = await add(me, String(b?.login || "")); c.json(res, r.status, r.body); return true;
+      const r = await add(me, String(b?.login || ""), b?.friend === true); c.json(res, r.status, r.body); return true;
     }
     if (p === "/add" && req.method === "GET") { send(res, 200, addPage(c.memberOf(req))); return true; }
     if (p === "/v1/frontier/mine" && req.method === "GET") {
@@ -358,6 +374,25 @@ ${l ? `<p class="cl-fine">Is this your GitHub? <a href="${signIn(`/claim/${u}?go
       }
     } finally { seeding = false; }
     return added;
+  }
+  /** Mike 11-20: "remove any and all auto (agent) added non-claimed properties if they are not famous or dont have rendered
+   *  cities due to no code". Caldera's own live lands (not friends) go when they have no code or fewer than FRONTIER.famous
+   *  followers. One GitHub look at a time; stops when GitHub is busy and carries on next run. */
+  let pruning = false;
+  async function pruneSeeds(): Promise<{ checked: number; pruned: string[] }> {
+    const out = { checked: 0, pruned: [] as string[] }; if (pruning) return out; pruning = true;
+    try {
+      for (const l of S.live()) {
+        if (l.adder !== SYSTEM_ADDER || l.friend) continue;
+        let why = "";
+        if (!l.city.length || !(l.repos > 0)) why = "no code";
+        else { const u = await c.ghUser(l.login).catch(() => ({ status: 502 } as GhUser)); if (u.status === 404) why = "gone"; else if (u.status !== 200) break; else if ((u.followers || 0) < FRONTIER.famous) why = (u.followers || 0) + " followers"; }
+        out.checked++;
+        if (why && S.prune(l.lc)) { out.pruned.push(l.login); c.landGone?.(l.login); console.log(`[frontier] pruned @${l.login} (${why})`); }
+      }
+    } finally { pruning = false; }
+    if (out.pruned.length) c.changed?.();
+    return out;
   }
 
   /** /add (frontier-design J): the whole add flow on a top-level page, opened from the sandboxed profile in a new tab */
@@ -393,5 +428,5 @@ ${l ? `<p class="cl-fine">Is this your GitHub? <a href="${signIn(`/claim/${u}?go
     return /<\/main>/i.test(html) ? html.replace(/<\/main>/i, () => sec + "</main>") : html.replace(/<\/body>/i, () => sec + "</body>");
   }
 
-  return { route, look, add, districts, meta, claimedSlots, landData, recentLands, addPage, store: S, seedSome, claimNow, profileSection, erase: (p: string) => S.erase(p) };
+  return { route, look, add, districts, meta, claimedSlots, landData, recentLands, addPage, store: S, seedSome, pruneSeeds, claimNow, profileSection, erase: (p: string) => S.erase(p) };
 }

@@ -2416,10 +2416,12 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
     alertPost: o => { try { alerts.post(o); } catch (e: any) { console.error("[frontier] alert", e?.message); } },
     landGone: login => { try { BATTLE?.landGone(login); } catch (e: any) { console.error("[frontier] refunds", e?.message); } },
     leaveBattles: id => BATTLE?.leave(id),
+    connect: (a, b, why) => { befriend(a, b, "invite", now(), why); worldCache = null; },
     changed: () => { worldCache = null; worldPng = null; } });
   (admin as any).frontier = FR;
   // the seed list: a few lands every 2 minutes, from 3 minutes after start, until the list is done (CALDERA_FRONTIER_SEED=0: off)
   if (FR && !opts.githubFetch && process.env.CALDERA_FRONTIER_SEED !== "0") {
+    setTimeout(() => { FR.pruneSeeds().then(r => console.log(`[frontier] prune: checked ${r.checked}, removed ${r.pruned.length}`)).catch(e => console.error("[frontier] prune", e?.message)); }, 60_000).unref();   // Mike 11-20: famous or friends only
     const t0 = setTimeout(() => { const t = setInterval(() => { FR.seedSome(FRONTIER_SEED, 2).then(n => { if (n) console.log(`[frontier] seeded ${n}`); }).catch(e => console.error("[frontier] seed", e?.message)); }, 120_000); t.unref(); }, 180_000); t0.unref();
   }
 

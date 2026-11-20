@@ -156,13 +156,14 @@ function out(st,html){var r=f.querySelector('.w-add-r');if(!r){r=document.create
 function view(l){return '<a href="/world?focus='+encodeURIComponent(l)+'" data-view="'+e(l)+'">View the land</a>'}
 function wire(r){var c=r.querySelector('[data-copy]');if(c)c.onclick=function(){var url=location.origin+'/claim/'+c.getAttribute('data-copy'),ok=function(){c.textContent='Copied';setTimeout(function(){c.textContent='Copy the claim link'},2000)},
   no=function(){var i=document.createElement('input');i.readOnly=true;i.value=url;i.className='w-add-url';i.setAttribute('aria-label','Claim link');c.replaceWith(i);i.focus();i.select()};try{navigator.clipboard.writeText(url).then(ok,no)}catch(x){no()}};
-  var t=r.querySelector('[data-retry]');if(t)t.onclick=function(){go()};
+  var t=r.querySelector('[data-retry]');if(t)t.onclick=function(){go()};var fb=r.querySelector('[data-friend]');if(fb)fb.onclick=function(){asF=true;go()};
   var v=r.querySelector('[data-view]');if(v&&window.CALDERA_FRONTIER_FOCUS)v.onclick=function(ev){if(window.CALDERA_FRONTIER_FOCUS('@'+v.getAttribute('data-view'))){ev.preventDefault();var st=document.getElementById('stage');if(st&&st.scrollIntoView)try{st.scrollIntoView({block:'nearest',behavior:'smooth'})}catch(x){}}}}   // on the world map: fly there, no page load
 function done(){busy=false;b.removeAttribute('aria-busy');b.disabled=false;b.textContent='Add to the map'}
+var asF=false;u.addEventListener('input',function(){asF=false});
 function go(){if(busy)return;var l=u.value.trim().replace(/^@/,'');if(!l){u.focus();return}
   if(!GHL.test(l)){out('bad','<b>No GitHub user named @'+e(l)+'.</b> Check the spelling. Use the username from github.com/username.');return}
   busy=true;b.disabled=true;b.setAttribute('aria-busy','true');b.textContent='Checking...';hint.hidden=false;hint.textContent='Checking GitHub for @'+l+'...';var r0=f.querySelector('.w-add-r');if(r0)r0.remove();
-  fetch('/v1/frontier/add',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({login:l})}).then(function(r){return r.json().catch(function(){return {}}).then(function(j){return {s:r.status,j:j}})}).then(function(x){done();var j=x.j||{},L=j.login||l;
+  fetch('/v1/frontier/add',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({login:l,friend:asF})}).then(function(r){return r.json().catch(function(){return {}}).then(function(j){return {s:r.status,j:j}})}).then(function(x){done();asF=false;var j=x.j||{},L=j.login||l;
     if(x.s===401){out('bad','<b>Sign in to add a GitHub.</b> The land shows who added it. <a href="/auth/github?back='+encodeURIComponent(location.pathname)+'">Sign in with GitHub</a>');return}
     if(x.s===200&&j.ok){if(j.land&&window.CALDERA_FRONTIER_ADD)try{window.CALDERA_FRONTIER_ADD(j.land.district,j.land.meta,false)}catch(x2){}   // gap 2: the open map draws it now
       out('ok',j.st==='land'?'<b>@'+e(L)+' is already on the frontier</b>'+(j.by?', added by '+e(j.by)+'.':'.')+' '+view(L)+' <button type="button" data-copy="'+e(L)+'">Copy the claim link</button>':'<b>@'+e(L)+' is on the frontier.</b> The land is unclaimed until they claim it. Caldera does not contact them. '+view(L)+' <button type="button" data-copy="'+e(L)+'">Copy the claim link</button>');u.value='';u.focus();return}
@@ -171,6 +172,8 @@ function go(){if(busy)return;var l=u.value.trim().replace(/^@/,'');if(!l){u.focu
     if(j.st==='missing'){out('bad','<b>No GitHub user named @'+e(L)+'.</b> Check the spelling. Use the username from github.com/username.');return}
     if(j.st==='removed'){out('bad','<b>@'+e(L)+' can\'t be added.</b> This person asked not to be on Caldera.');return}
     if(j.st==='org'){out('bad','<b>@'+e(L)+' is an organization.</b> Only a person\'s GitHub can be a land.');return}
+    if(j.st==='friend'){out('limit','<b>@'+e(L)+' is not a well-known GitHub.</b> Only well-known GitHubs and members\' friends go on the map. If @'+e(L)+' is your friend, add them: when they claim the land, you two become friends. <button type="button" data-friend>Add @'+e(L)+' as my friend</button>');return}
+    if(j.st==='nocode'){out('bad','<b>@'+e(L)+' has no public code yet.</b> There is no city to draw, so nothing was added.');return}
     out('bad','<b>Could not reach GitHub.</b> Nothing was added. <button type="button" data-retry>Try again</button>')}).catch(function(){done();out('bad','<b>Could not reach GitHub.</b> Nothing was added. <button type="button" data-retry>Try again</button>')})}
 f.onsubmit=function(ev){ev.preventDefault();go()};if(location.hash==='#add'){try{f.scrollIntoView({block:'center'})}catch(x){}u.focus()}})();`;
 
@@ -239,6 +242,7 @@ function fail(x,j,L){if(x===401)return signin();
   if(j.st==='missing')return out('bad','<b>No GitHub user named @'+e(L)+'.</b> Check the spelling. Use the username from github.com/username.');
   if(j.st==='removed')return out('bad','<b>@'+e(L)+' can\'t be added.</b> This person asked not to be on Caldera.');
   if(j.st==='org')return out('bad','<b>@'+e(L)+' is an organization.</b> Only a person\'s GitHub can be a land.');
+  if(j.st==='nocode')return out('bad','<b>@'+e(L)+' has no public code yet.</b> There is no city to draw, so nothing was added.');
   out('bad','<b>Could not reach GitHub.</b> Nothing was added. <button type="button" data-retry>Try again</button>')}
 function req(m,url,body){return fetch(url,{method:m,credentials:'same-origin',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json().catch(function(){return {}}).then(function(j){return {s:r.status,j:j}})})}
 function find(){if(busy)return;var l=u.value.trim().replace(/^@/,'');if(!l){u.focus();return}clear();
@@ -246,13 +250,13 @@ function find(){if(busy)return;var l=u.value.trim().replace(/^@/,'');if(!l){u.fo
   busy=true;b.disabled=true;b.setAttribute('aria-busy','true');b.textContent='Checking...';hint.hidden=false;hint.textContent='Checking GitHub for @'+l+'...';
   req('GET','/v1/frontier/lookup?u='+q(l)).then(function(x){idle();var j=x.j||{},L=j.login||l;
     if(x.s===200&&j.st==='new'){hit=j;b.classList.add('sec');var c=document.createElement('div');c.className='ad-gh';c.setAttribute('role','status');
-      c.innerHTML='<span class="ad-gh-av" aria-hidden="true">'+e(L.charAt(0).toUpperCase())+'</span><span class="ad-gh-n">@'+e(L)+'<small>on GitHub</small></span><span class="ad-gh-d">'+e(j.name||L)+' · '+(+j.repos||0)+' public repos · Not on Caldera yet.</span><button type="button" class="w-add-b" data-add>Add to the map</button>';
+      c.innerHTML='<span class="ad-gh-av" aria-hidden="true">'+e(L.charAt(0).toUpperCase())+'</span><span class="ad-gh-n">@'+e(L)+'<small>on GitHub</small></span><span class="ad-gh-d">'+e(j.name||L)+' · '+(+j.repos||0)+' public repos · Not on Caldera yet.'+(j.famous?'':' Only well-known GitHubs and members\' friends go on the map. When @'+e(L)+' claims the land, you two become friends.')+'</span><button type="button" class="w-add-b" data-add>'+(j.famous?'Add to the map':'Add as my friend')+'</button>';
       f.appendChild(c);wire(c);c.querySelector('[data-add]').focus();return}
     fail(x.s,j,L)}).catch(function(){idle();fail(0,{},l)})}
 function add(){if(busy||!hit)return;var l=hit.login,a=f.querySelector('[data-add]');busy=true;if(a){a.disabled=true;a.setAttribute('aria-busy','true');a.textContent='Adding...'}
-  req('POST','/v1/frontier/add',{login:l}).then(function(x){busy=false;var j=x.j||{},L=j.login||l;
+  req('POST','/v1/frontier/add',{login:l,friend:!hit.famous}).then(function(x){busy=false;var j=x.j||{},L=j.login||l;
     if(x.s===200&&j.ok&&j.st==='added'){setLeft(j.left);done(L);return}
-    if(a){a.disabled=false;a.removeAttribute('aria-busy');a.textContent='Add to the map'}fail(x.s,j,L)}).catch(function(){busy=false;fail(0,{},l)})}
+    if(a){a.disabled=false;a.removeAttribute('aria-busy');a.textContent=hit.famous?'Add to the map':'Add as my friend'}fail(x.s,j,L)}).catch(function(){busy=false;fail(0,{},l)})}
 function done(L){f.hidden=true;var d=document.querySelector('.ad-done');if(!d){d=document.createElement('div');d.className='ad-done';box.appendChild(d)}d.hidden=false;
   d.innerHTML='<h2 tabindex="-1">@'+e(L)+' is on the frontier.</h2><p>The land is unclaimed until they claim it. Caldera does not contact them.</p><div class="cl-row"><a class="cl-go" href="/world?focus='+q(L)+'">View the land</a><button type="button" class="cl-go sec" data-again>Add another</button></div>'+copyBtn(L,'ad-copy');
   wire(d);d.querySelector('[data-again]').onclick=function(){d.hidden=true;f.hidden=false;u.value='';clear();u.focus()};var h=d.querySelector('h2');h.focus();if(live)live.textContent=h.textContent;

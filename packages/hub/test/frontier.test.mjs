@@ -32,13 +32,14 @@ test("frontier: GitHub username rule, Pacific day start, the seed list", () => {
 
 // GitHub, faked: three people, one organization; each person has two public repos
 const USERS = { "kestrel-dev": { id: 9001, type: "User", name: "Kes Arroyo" }, hollis: { id: 9002, type: "User", name: "Hollis" }, marrow: { id: 9003, type: "User", name: "Marrow" },
-  "caldera-labs": { id: 9100, type: "Organization", name: "Caldera Labs" } };
+  "caldera-labs": { id: 9100, type: "Organization", name: "Caldera Labs" },
+  wren: { id: 9004, type: "User", name: "Wren", followers: 40 }, blank: { id: 9005, type: "User", name: "Blank", followers: 9000, repos: 0 } };   // wren: not famous; blank: no code
 let ghCalls = 0;
 async function gh(url) {
   ghCalls++;
   const u = new URL(String(url)), m = /^\/users\/([^/]+)(\/repos)?$/.exec(u.pathname), key = m && decodeURIComponent(m[1]).toLowerCase(), who = key && USERS[key];
   if (m && !who) return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
-  if (m && !m[2]) return new Response(JSON.stringify({ login: key, id: who.id, type: who.type, name: who.name, public_repos: 2, email: "never@read.test" }), { status: 200 });
+  if (m && !m[2]) return new Response(JSON.stringify({ login: key, id: who.id, type: who.type, name: who.name, public_repos: who.repos ?? 2, followers: who.followers ?? 9000, email: "never@read.test" }), { status: 200 });
   if (m) return new Response(JSON.stringify(["alpha", "beta"].map((n, i) => ({ name: n, full_name: key + "/" + n, language: "Go", size: 100 + i, fork: false, private: false, archived: false, pushed_at: new Date().toISOString(), created_at: "2020-01-01T00:00:00Z", html_url: `https://github.com/${key}/${n}` }))), { status: 200 });
   return new Response("[]", { status: 200 });
 }
@@ -237,4 +238,33 @@ test("claim page CSS: the full-width Claim button includes its padding (no 390 p
   const { CLAIM_CSS } = await import("../dist/frontierpage.js").catch(() => import("../src/frontierpage.ts"));
   assert.match(CLAIM_CSS, /\n\.cl-go\{box-sizing:border-box;max-width:100%;/);
   assert.ok(CLAIM_CSS.includes(".cl a.cl-go,.cl a.cl-go:visited{color:var(--on-accent)"), "the button text stays white, not link purple");
+});
+
+test("frontier (Mike 11-20): only famous GitHubs, or a member's friend (a claim makes them friends); no code, no land; Caldera's own non-famous lands are pruned", async () => {
+  const { h, base, ids, as, get, ghAs, page } = await hubWith(["ana"]);
+  try {
+    const FR = h.admin.frontier;
+    assert.equal((await get("ana", "/v1/frontier/lookup?u=wren")).body.famous, false); assert.equal((await get("ana", "/v1/frontier/lookup?u=hollis")).body.famous, true);
+    assert.equal((await get("ana", "/v1/frontier/lookup?u=blank")).body.st, "nocode");
+    let r = await as("ana", "/v1/frontier/add", { login: "wren" }); assert.equal(r.status, 422); assert.equal(r.body.st, "friend", "not famous: only as a friend");
+    assert.equal(FR.store.get("wren"), null, "nothing added");
+    r = await as("ana", "/v1/frontier/add", { login: "blank", friend: true }); assert.equal(r.status, 422); assert.equal(r.body.st, "nocode");
+    r = await as("ana", "/v1/frontier/add", { login: "wren", friend: true }); assert.equal(r.status, 200); assert.equal(r.body.st, "added"); assert.equal(FR.store.get("wren").friend, true);
+    r = await as("ana", "/v1/frontier/add", { login: "hollis" }); assert.equal(r.status, 200); assert.equal(FR.store.get("hollis").friend, false, "famous: a plain land");
+    // wren claims: wren and ana become friends
+    const w = C.newIdentity();
+    await fetch(`${base}/v1/profiles/${w.id}/bundle`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ manifest: C.sign(w, "profile.manifest", { name: "Wren", handle: "wren", boxKey: w.boxPublic }), files: { "index.html": Buffer.from("<html></html>").toString("base64") } }) });
+    const cp = await page("/claim/wren?go=1", ghAs("wren", w.id, "wren")); assert.equal(cp.status, 200);
+    assert.equal(FR.store.get("wren").state, "claimed");
+    assert.ok(h.db.prepare("SELECT 1 FROM friends WHERE a=? AND b=?").get(w.id, ids.ana.id) && h.db.prepare("SELECT 1 FROM friends WHERE a=? AND b=?").get(ids.ana.id, w.id), "friends both ways");
+    // the seed: never a non-famous name; Caldera's own non-famous or code-less lands are pruned, not blocked
+    assert.equal(await FR.seedSome(["marrow", "kestrel-dev"], 5), 2);
+    USERS.marrow.followers = 12;
+    FR.store.add({ login: "blank", gh_id: 9005, name: "Blank", repos: 0, adder: "caldera", city: [] }, Date.now());
+    const pr = await FR.pruneSeeds(); assert.deepEqual(pr.pruned.sort(), ["blank", "marrow"]);
+    assert.deepEqual(FR.store.live().map(l => l.login).sort(), ["hollis", "kestrel-dev"]);
+    assert.equal(FR.store.blocked("marrow"), false, "pruned, not blocked: a member can still add them as a friend");
+    assert.equal(await FR.seedSome(["wren2", "marrow"], 5), 0, "a pruned seed is not added again");
+    delete USERS.marrow.followers;
+  } finally { h.server.close(); }
 });
