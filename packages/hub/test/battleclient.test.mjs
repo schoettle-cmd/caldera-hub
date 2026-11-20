@@ -166,7 +166,7 @@ test("Tonight head and order line: the one clock in the title, cyan in the last 
 });
 
 test("Last night: Your city rows from me.last (reusing the morning card's facts), a row with nothing to say is left out", () => {
-  const yc = (me) => new Function("me", "esc", "usd", "BNAME", grabFn("yourCity") + ";return yourCity()")(me, esc, (n) => "$" + (n / 1e6).toFixed(1) + "M", { sparkler: "Sparkler" });
+  const yc = (me) => new Function("me", "esc", "usd", "BNAME", "who", grabFn("yourCity") + ";return yourCity()")(me, esc, (n) => "$" + (n / 1e6).toFixed(1) + "M", { sparkler: "Sparkler" }, (h) => esc(h));
   const full = yc({ war: 1, last: { raids: [{ from: "@a", landed: 1 }, { from: "@b", landed: 1 }], takenUsd: 1.9e6, heldUsd: 4.4e6, bombs: [{ k: "sparkler", word: "HELLO", from: "@meldav" }], fired: 3, landed: 2, on: ["@bartlett-labs"], dealtUsd: 12.9e6, mine: { n: 2, hit: 1 }, mvp: { repo: "app", bricks: 4 }, taken: 0.3, rebuilt: 74, reward: 10 } });
   for (const t of ['<dt>Hits on you</dt><dd><span class="gd">2</span> · $1.9M damage</dd>', '<dt>Your shield blocked</dt><dd><span class="cy">$4.4M</span></dd>', "<dt>Custom bombs on you</dt><dd>1: Sparkler &quot;HELLO&quot; from @meldav</dd>",
     '<dt>You hit</dt><dd>@bartlett-labs · <span class="gd">$12.9M</span></dd>', "<dt>Your bombs</dt><dd>2 flew, 1 hit</dd>", "<dt>Top builder</dt><dd>app, 4 bricks</dd>", '<dt>Rebuilt so far</dt><dd><span class="gr">74%</span></dd>', "<dt>Reward</dt><dd>+10 credits</dd>"])
@@ -193,4 +193,40 @@ test("popovers and tabs: one at a time, Esc and a tap outside close, focus retur
   assert.ok(setH.includes("reportHtml()") && setH.includes("b-waive") && setH.includes("b-leave"));
   assert.ok(aimH.includes("b-doaim") && aimH.includes("b-unaim") && aimH.includes("cap + ' of ' + cap + ' aimed'"));
   assert.ok(pw.includes("act('/v1/world/battle/aim', { target: s.value })") && pw.includes("act('/v1/world/battle/opt', { war: false })") && pw.includes("act('/v1/world/battle/report'"), "same endpoints as before");
+});
+
+// ---------------------------------------------------------------- 11-20 people in the deck: avatar + name link to the Caldera profile (Mike)
+test("people in the deck: members get an avatar and a /@handle/ link; raiders and unclaimed lands stay plain; rows keep their own button", () => {
+  const people = { "@ana": "/@ana/avatar.png", "@bo": "" };
+  const lib = new Function("data", "esc", "document", [grabFn("pOf"), grabFn("avHtml"), grabFn("who"), "var openShot = -1, more = {};", grabFn("wOf"), grabFn("rules"), grabFn("nameOf"), grabFn("shotUsd"),
+    "function hhmm(){return '20:00'} function usd(n){return '$'+n} function shotHtml(){return ''}", grabFn("shotRow")].join("\n") + ";return {who:who,avHtml:avHtml,shotRow:shotRow}")({ people, rules: RULES }, esc, {});
+  const a = lib.who("@ana", "a");
+  assert.equal(a, '<a class="b-who" href="/@ana/"><img class="b-av" src="/@ana/avatar.png" width="20" height="20" loading="lazy" decoding="async" alt="" data-i="A"><span class="a">@ana</span></a>', "avatar + name in one link to the profile");
+  assert.equal(lib.who("@bo"), '<a class="b-who" href="/@bo/"><i class="b-av b-avi" aria-hidden="true">B</i><span>@bo</span></a>', "no photo: an initial circle");
+  assert.equal(lib.who("@torvalds"), "@torvalds", "an unclaimed land (not a member): no link, no avatar");
+  assert.equal(lib.who("raiders", "a", "Raiders"), '<span class="a">Raiders</span>', "sea raiders: plain, keeps the attacker underline class");
+  assert.equal(lib.avHtml("@torvalds"), "");
+  assert.ok(!lib.who("@a\"><x", "a").includes("<x"), "escaped");
+  const row = lib.shotRow(["@ana", "@bo", "rocket", 0.1, Date.now(), 0, 0, 0, null], 3);
+  assert.ok(row.includes('<button type="button" class="b-hit0" data-shot="3" aria-expanded="false" aria-label="@ana fired at @bo: how the damage was worked out"></button>'), "the row's own button opens the worked example");
+  assert.ok(row.includes('<a class="b-who" href="/@ana/">') && row.includes('<span class="a">@ana</span></a> → <a class="b-who" href="/@bo/">') && row.includes('<span class="d">@bo</span>'), "attacker and defender link, underline classes kept");
+  assert.ok(!/<button[^>]*>[^]*<a /.test(row.replace(/<\/button>[^]*$/, "")), "no link inside a button");
+  const raid = lib.shotRow(["raiders", "@ana", "shell", 0.1, 0, 0, 0, 0, null], 0);
+  assert.ok(raid.includes('<span class="a">Raiders</span> → <a class="b-who" href="/@ana/">'));
+});
+
+test("people in the deck: every list uses who() or an avatar; links sit outside the row buttons; CSS sizes and fallback", () => {
+  const js = readFileSync(new URL("../src/battleclient.ts", import.meta.url), "utf8");
+  for (const f of ["lists", "yourCity", "armBody", "aimHtml", "fireHtml"]) assert.ok(/who\(/.test(grabFn(f, js)), f + " links people");
+  assert.ok(/avHtml\(x\.h\)/.test(grabFn("pList", js)) && /avHtml\(r\.target\)/.test(grabFn("armBody", js)), "picker options and the target button show the avatar (they pick, so no link)");
+  const L = grabFn("lists", js);
+  assert.ok(L.includes(`class="b-hit0" data-fly="' + esc(r[0])`) && L.includes(`class="b-hit0" data-fly="' + esc(k)`), "Season and Arming rows keep the fly-to button");
+  assert.ok(js.includes("document.addEventListener('error'") && js.includes("'b-av b-avi'"), "a broken avatar turns into the initial");
+  const css = M.BATTLE_CSS;
+  assert.ok(css.includes(".b-av{flex:none;width:20px;height:20px;border-radius:50%"), "20 px round avatars");
+  const mM = css.slice(css.indexOf("@media (min-width:700px) and (max-width:899px){")), mS = css.slice(css.indexOf("@media (max-width:699px){"));
+  assert.ok(mM.includes(".b-av{width:16px;height:16px"), "16 px on Duo");
+  assert.ok(mS.includes(".b-rk li,.b-al li{min-height:44px}"), "44 px rows on phones");
+  assert.ok(css.includes(".b-hit0{position:absolute;inset:0") && css.includes(".b-who{pointer-events:auto"), "the row button covers the row, the link sits on top");
+  assert.ok(!/\.b-sl button/.test(css), "the shot row is no longer one big button");
 });

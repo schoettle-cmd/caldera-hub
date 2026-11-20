@@ -303,6 +303,8 @@ test("live: Battle is one more view (Now stays the default); every city is in un
     // every city is in the battles (Mike 11-08: "this is a battle between cities"); leaving is the choice
     let s = await (await fetch(base + "/v1/world/battle")).json();
     assert.equal(s.cities, 3); assert.deepEqual(Object.keys(s.members).sort(), ["@pat", "@rae", "@sam"]);
+    // the deck's people (Mike 11-20): every listed member by handle with only a public avatar path ("" = an initial), nothing else
+    assert.deepEqual(Object.keys(s.people).sort(), ["@pat", "@rae", "@sam"]); assert.ok(Object.entries(s.people).every(([h, v]) => v === "" || v.startsWith("/" + h + "/")), JSON.stringify(s.people));
     assert.equal((await post("/v1/world/battle/opt", { war: true }, { origin: "https://hub.test" })).status, 401, "sign in first");
     assert.equal((await post("/v1/world/battle/opt", { war: true }, { cookie: await cookie("rae"), origin: "https://evil.test" })).status, 403, "cross-site refused");
     work(h, ids);

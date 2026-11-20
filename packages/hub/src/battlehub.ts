@@ -39,6 +39,7 @@ export interface BattleHubCtx {
   /** Frontier lands (frontier.ts) on the map now: Armory bombs can aim at them */ lands?: () => { login: string; repos: any[] }[];
   /** the feed post id written for a sysposts key ("battle:<day>"), for the gift email's summary link */ sysPosted?: (key: string) => string | null;
   /** SVG -> PNG (cards.ts toPng), for the bomb images in the gift email */ png?: (svg: string, width: number) => Promise<Buffer>;
+  /** a member's public avatar path on the hub ("/@h/avatar.png"), or null: the battle deck shows it next to their name (Mike 11-20) */ avatar?: (profileId: string) => string | null;
   now?: () => number;
 }
 
@@ -164,10 +165,17 @@ export function battleHub(c: BattleHubCtx) {
     const board = [...sc.entries()].filter(([id]) => on.has(id)).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 10).map(([id, v]) => [x.handle(id), v]);
     // the renderer fires the night resolved before each local noon from 12:00 to 24:00 and repairs it the next morning, so it also needs the night before (citybattle.ts)
     const fall = (ss: Shot[]) => { const f = fallenOf(ss); return f ? x.handle(f) : null; };   // the city that falls at the end of each night's replay (Mike 11-14)
-    const v = { at: new Date(at).toISOString(), night: dayKey(n), t0: battleAt(n), next: battleAt(n + 1), fallen: fall(night), prev: { night: dayKey(n - 1), t0: battleAt(n - 1), shots: prevShots, fallen: fall(S.shots(n - 1)) }, season: { n: se.n, week: se.week }, members, shots, board, rules, usd: night.reduce((t, s) => t + usdOf(s), 0), held: night.reduce((t, s) => t + heldOf(s), 0), fires: night.filter(s => s.x?.sp).length, raiders: (S.night(n)?.raiders || []).map((id: string) => x.handle(id)), cities: Object.keys(members).length };
+    const v = { at: new Date(at).toISOString(), night: dayKey(n), t0: battleAt(n), next: battleAt(n + 1), fallen: fall(night), prev: { night: dayKey(n - 1), t0: battleAt(n - 1), shots: prevShots, fallen: fall(S.shots(n - 1)) }, season: { n: se.n, week: se.week }, members, shots, board, rules, usd: night.reduce((t, s) => t + usdOf(s), 0), held: night.reduce((t, s) => t + heldOf(s), 0), fires: night.filter(s => s.x?.sp).length, raiders: (S.night(n)?.raiders || []).map((id: string) => x.handle(id)), cities: Object.keys(members).length, people: peopleOf(x) };
     cache = { at, v }; return v;
   }
 
+  /** every listed member by "@handle": their public avatar path, or "" (the deck draws an initial). Only listed members, only the
+   *  avatar their public page already shows: a name in the deck links to /@handle/ only when it is a member (Mike 11-20) */
+  function peopleOf(x: Ctx): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const m of x.ms) { let a: string | null = null; try { a = c.avatar ? c.avatar(m.id) : null; } catch { a = null; } out["@" + m.handle] = a && /^\/@[\w.-]+\/[^\s"'<>]+$/.test(a) ? a : ""; }
+    return out;
+  }
   // ---------------------------------------------------------------- one member
   function reportOf(x: Ctx, m: GrowthMember, night: number): Report {
     const sim = x.sims.get(m.id), day = night - 1, sn = sim ? snapOf(sim, dayOf(now())) : null, opt = S.opt(m.id), peace = !!opt?.out;
