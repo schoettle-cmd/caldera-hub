@@ -83,6 +83,18 @@ const SECURITY_HEADERS = { "x-content-type-options": "nosniff", "referrer-policy
 const SITE_CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://mjonesone.com; connect-src 'self' https://mjonesone.com; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const BASE_CSP = "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://mjonesone.com; connect-src 'self' https://mjonesone.com; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 // User-uploaded profile pages run in a sandbox: unique origin, no access to the hub's origin, no forms, no top navigation.
+/** The viewer's Storefronts switch on the city map (Mike 11-19: "allow turning OFF the storefronts on website and on this
+ *  pop out"). City pages are sandboxed, so they have no storage of their own: the switch loads /@handle/sf?on=0|1, which
+ *  sets this first-party cookie for the viewer and goes back to the page; the page then starts with the choice. */
+export const SF_COOKIE = "caldera_sf";
+export function sfOff(req: { headers: Record<string, unknown> }): boolean { return /(?:^|;\s*)caldera_sf=0(?:;|$)/.test(String(req.headers.cookie || "")); }
+export function sfRedirect(res: http.ServerResponse, url: URL): void {
+  const on = url.searchParams.get("on") !== "0", back = String(url.searchParams.get("back") || "");
+  const to = /^[a-z0-9._-]{1,60}\.html(\?[A-Za-z0-9=&._%-]{0,300})?$/.test(back) ? back : "city.html";   // a page beside this one only
+  res.writeHead(303, { location: to, "cache-control": "no-store", "set-cookie": `${SF_COOKIE}=${on ? 1 : 0}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly` });
+  res.end();
+}
+export function sfInject(html: string, req: { headers: Record<string, unknown> }): string { return sfOff(req) ? html.replace(/<\/head>/i, "<script>window.CALDERA_SF=0</script></head>") : html; }
 const PROFILE_CSP = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; manifest-src 'self'; base-uri 'none'; form-action 'none'";
 // The city page may also poll the hub for live traffic on the owner's sites (same hub only).
 const cityCsp = (...origins: string[]) => PROFILE_CSP + `; connect-src 'self' ${origins.filter(Boolean).join(" ")}`.trimEnd();
@@ -2634,6 +2646,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (req.method === "GET" && m) {
         if (modOf(m[1])) { res.writeHead(410, { "content-type": "text/plain" }); return res.end("This profile is not available."); }
         const dir = path.join(opts.dataDir, "profiles", m[1]);
+        if (m[2] === "/sf") return sfRedirect(res, url);   // the Storefronts switch (see sfRedirect)
         if (m[2] === "/card.png") {   // the link-preview picture: the city (or initials), name, headline
           const pr = byHandle(m[1]); if (!pr) { res.writeHead(404); return res.end("not found"); }
           try { const png = await profileCard(pr); res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=3600" }); return res.end(png); }
@@ -2681,7 +2694,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const bar = calderaBar(opts.publicUrl || "https://caldera.social", m[1], own, soc && (inPage || rel === "index.html" || rel === "city.html") ? { ...soc, inPage } : undefined,
             own && prS ? bellFor(prS.id) : viewer ? bellFor(memberOf(req)) : "");
           html = liveBlocks(m[1], rel, html);
-          if (rel === "city.html") html = upgradeCityScript(html);   // hosted cities get the current renderer (LEGO build intro) without a republish
+          if (rel === "city.html") html = sfInject(upgradeCityScript(html), req);   // hosted cities get the current renderer (LEGO build intro) without a republish
           if (prS && !privCity) html = privatePage(prS, rel, html);   // private repos: anonymous or hidden, whatever version built the page
           html = rewriteFriendLinks(html, m[1], viewer, !!own);
           if (prS && rel === "index.html") html = realLeaderboard(html, prS, !!own);
@@ -3370,6 +3383,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         const r0 = url.searchParams.get("view") === "public" ? null : q("SELECT built FROM owner_private WHERE owner=?").get(pr0.id) as any;
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }); return res.end(JSON.stringify({ build: buildOf(mine, r0?.built) }));
       }
+      if (m[2] === "/sf") return sfRedirect(res, url);   // the Storefronts switch (see sfRedirect)
       if (m[2] === "/live.json") {   // the private city polls this; the token in the page stops other sites reading it through your browser
         const t = url.searchParams.get("t") || "", pr0 = byHandle(mine);
         if (!pr0 || !liveTokenOk(mine, t)) { res.writeHead(403, { "content-type": "application/json" }); return res.end("{}"); }
@@ -3391,7 +3405,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       const headers = { "content-type": own ? "text/html; charset=utf-8" : MIME[path.extname(file).toLowerCase()] || "application/octet-stream", "content-security-policy": PROFILE_CSP };
       if (!own && path.extname(file).toLowerCase() !== ".html") { res.writeHead(200, headers); return fs.createReadStream(file).pipe(res); }
       let html = own || liveBlocks(mine, rel, fs.readFileSync(file, "utf8"));
-      if (rel === "city.html") html = upgradeCityScript(html);
+      if (rel === "city.html") html = sfInject(upgradeCityScript(html), req);
       if (pub && !own && pr) html = privatePage(pr, rel, html);   // "Public view" shows exactly what visitors get
       const ago = (iso: string) => { const mn = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000)); return mn < 60 ? `${mn} min ago` : mn < 2880 ? `${Math.floor(mn / 60)} h ago` : `${Math.floor(mn / 1440)} days ago`; };
       // the same bar as the public page signed in as owner: [Public view | Private view] in the same place, account menu on the right
