@@ -100,10 +100,14 @@ export function frontierStore(q: Q) {
 export type FrontierStore = ReturnType<typeof frontierStore>;
 
 /** the land's buildings: its busiest public repos, capped (the frontier draws many lands) */
+/** Mike 11-20 ("added non-claimed properties are all flat, they all have code in github"): GitHub's commit stats cover only the last
+ *  year, so an older repo came in as 1 commit and drew flat. A land's building height is the bigger of that count and the repo's
+ *  size (1 per 20 KB, at most 3000), so years of code stand tall. */
+export function landHeight(r: { commits?: number; size?: number }): number { return Math.max(r.commits || 0, Math.min(3000, Math.round((Number(r.size) || 0) / 20))); }
 export function landRepos(repos: CityRepo[], login: string): CityRepo[] {
   return [...(repos || [])].filter(r => r && r.public !== false && !r.kind && !(r as any).locked)
-    .sort((a, b) => (b.week || 0) * 20 + (b.commits || 0) - ((a.week || 0) * 20 + (a.commits || 0)) || String(a.name).localeCompare(String(b.name)))
-    .slice(0, FRONTIER.perLand).map(r => ({ name: String(r.name).slice(0, 60), project: "@" + login + "/GitHub", public: true, language: r.language || "Other", commits: r.commits || 0, weeks: [], week: 0, today: 0,
+    .sort((a, b) => (b.week || 0) * 20 + landHeight(b) - ((a.week || 0) * 20 + landHeight(a)) || String(a.name).localeCompare(String(b.name)))
+    .slice(0, FRONTIER.perLand).map(r => ({ name: String(r.name).slice(0, 60), project: "@" + login + "/GitHub", public: true, language: r.language || "Other", commits: landHeight(r), weeks: [], week: 0, today: 0,
       pushed: r.pushed, created: r.created, size: r.size, url: r.url, description: String(r.description || "").slice(0, 160) }) as CityRepo);
 }
 
@@ -378,6 +382,8 @@ ${l ? `<p class="cl-fine">Is this your GitHub? <a href="${signIn(`/claim/${u}?go
   /** Mike 11-20: "remove any and all auto (agent) added non-claimed properties if they are not famous or dont have rendered
    *  cities due to no code". Caldera's own live lands (not friends) go when they have no code or fewer than FRONTIER.famous
    *  followers. One GitHub look at a time; stops when GitHub is busy and carries on next run. */
+  /** lands stored before landHeight: lift their buildings once (idempotent) */
+  function reheight(): number { let n = 0; for (const l of S.live()) { let ch = false; const city = l.city.map(r => { const h = landHeight(r); if (h !== (r.commits || 0)) ch = true; return { ...r, commits: h }; }); if (ch) { S.setCity(l.login, city, l.repos); n++; } } if (n) c.changed?.(); return n; }
   let pruning = false;
   async function pruneSeeds(): Promise<{ checked: number; pruned: string[] }> {
     const out = { checked: 0, pruned: [] as string[] }; if (pruning) return out; pruning = true;
@@ -428,5 +434,5 @@ ${l ? `<p class="cl-fine">Is this your GitHub? <a href="${signIn(`/claim/${u}?go
     return /<\/main>/i.test(html) ? html.replace(/<\/main>/i, () => sec + "</main>") : html.replace(/<\/body>/i, () => sec + "</body>");
   }
 
-  return { route, look, add, districts, meta, claimedSlots, landData, recentLands, addPage, store: S, seedSome, pruneSeeds, claimNow, profileSection, erase: (p: string) => S.erase(p) };
+  return { route, look, add, districts, meta, claimedSlots, landData, recentLands, addPage, store: S, seedSome, pruneSeeds, reheight, claimNow, profileSection, erase: (p: string) => S.erase(p) };
 }

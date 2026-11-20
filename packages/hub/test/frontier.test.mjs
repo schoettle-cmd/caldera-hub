@@ -27,7 +27,10 @@ test("frontier: GitHub username rule, Pacific day start, the seed list", () => {
   assert.ok(SEED.FRONTIER_SEED.every(x => F.GH_LOGIN.test(x)), "every seed is a valid username");
   // land buildings: public repos only, the busiest first, capped
   const R = F.landRepos([...Array(20)].map((_, i) => ({ name: "r" + i, commits: i, public: true, language: "Go" })).concat([{ name: "shop", kind: "app", commits: 999 }]), "kes");
-  assert.equal(R.length, F.FRONTIER.perLand); assert.equal(R[0].name, "r19"); assert.ok(R.every(r => r.project === "@kes/GitHub" && !r.kind));
+  assert.equal(R.length, F.FRONTIER.perLand); assert.equal(R[0].name, "r19");
+  // Mike 11-20: old repos (no commits in the last year) still stand tall, by size
+  assert.equal(F.landHeight({ commits: 1, size: 29400 }), 1470); assert.equal(F.landHeight({ commits: 500, size: 100 }), 500); assert.equal(F.landHeight({ commits: 0, size: 9e9 }), 3000);
+  const T = F.landRepos([{ name: "old-big", commits: 1, size: 40000, public: true }, { name: "new-small", commits: 3, size: 10, public: true }], "kes"); assert.equal(T[0].name, "old-big"); assert.equal(T[0].commits, 2000); assert.ok(R.every(r => r.project === "@kes/GitHub" && !r.kind));
 });
 
 // GitHub, faked: three people, one organization; each person has two public repos
