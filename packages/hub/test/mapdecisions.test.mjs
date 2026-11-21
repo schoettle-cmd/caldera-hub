@@ -69,8 +69,16 @@ test("D4 behaviour: a ?view=battle link opens in Battle with the switch on Battl
 });
 
 test("D6: the replay bar has a Sound button wired to the renderer's sound(); M toggles it", () => {
-  assert.match(BC, /<button type="button" data-p="snd" aria-pressed="true" aria-label="Sound" title="Sound \(M\)">Sound<\/button><button type="button" data-p="stop"/);
+  assert.match(BC, /<button type="button" data-p="snd" aria-pressed="true" aria-label="Sound" title="Sound \(M\)">Sound<\/button><button type="button" data-p="full"/);
   assert.match(BC, /hudEl\.querySelector\('\[data-p="snd"\]'\)\.onclick = function \(\) \{ if \(A\(\) && A\(\)\.sound\) A\(\)\.sound\(!A\(\)\.sound\(\)\); refresh\(\); \}/);
   assert.match(BC, /e\.key === 'm' \|\| e\.key === 'M' \? 'snd'/);
   assert.match(BC, /sb\.textContent = son \? 'Sound' : 'Muted'/);
+});
+
+test("Mike 11-21: the replay bar has the viewer's own Full screen button (F key); End leaves full screen; nothing forces it", () => {
+  assert.match(BC, /<button type="button" data-p="full" aria-pressed="false" aria-label="Full screen" title="Full screen \(F\)"><\/button><button type="button" data-p="stop"/);
+  assert.match(BC, /hudEl\.querySelector\('\[data-p="full"\]'\)\.onclick = function \(\) \{ if \(A\(\) && A\(\)\.full\) \{ A\(\)\.full\(!A\(\)\.full\(\)\);/);
+  assert.match(BC, /e\.key === 'f' \|\| e\.key === 'F' \? 'full'/);
+  assert.match(BC, /function stopPlay\(\) \{ try \{ if \(api\(\) && api\(\)\.full && api\(\)\.full\(\)\) api\(\)\.full\(false\);/);
+  assert.match(BC, /document\.addEventListener\('fullscreenchange', fsSync\)/);
 });

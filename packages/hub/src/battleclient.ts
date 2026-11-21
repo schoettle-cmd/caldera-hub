@@ -41,6 +41,10 @@ export function battleClient() {
   var qp = U && U.searchParams.get('layers'); if (qp !== null && qp !== undefined && U.searchParams.has('layers')) { var want = qp.split(','); LAYERS.forEach(function (k) { layers[k] = want.indexOf(k) >= 0; }); }
   var replayNight = U && U.searchParams.has('replay'), replayMode = U && U.searchParams.get('replay') === 'demo' ? 'demo' : undefined; if (replayNight) layers.replay = true;
   function api() { return window.CALDERA_BATTLE_API; }
+  var FS_ICO = function (on) { return '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="' + (on ? 'M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4' : 'M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4') + '"/></svg>'; };
+  function fsSync() { var b = hudEl && hudEl.querySelector('[data-p="full"]'); if (!b) return; var on = !!(api() && api().full && api().full());
+    if (b.getAttribute('data-on') === String(on) && b.firstChild) return; b.setAttribute('data-on', String(on)); b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen'); b.title = (on ? 'Exit full screen' : 'Full screen') + ' (F)'; b.innerHTML = FS_ICO(on) + '<span>' + (on ? 'Exit full screen' : 'Full screen') + '</span>'; }
   function q(sel) { return bar ? bar.querySelector(sel) : null; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function setText(k, v) { var el = q('[data-b="' + k + '"]'); if (el) el.textContent = v; }
@@ -268,7 +272,7 @@ export function battleClient() {
       hudEl.innerHTML = '<div class="b-pt"><div class="b-l1"><b data-p="beat"></b><span data-p="label"></span></div><button type="button" data-p="hit" class="b-hit" aria-live="polite" hidden></button></div><div class="b-pb">'
         + '<button type="button" data-p="prev" aria-label="Previous strike">Prev</button><button type="button" data-p="pause" aria-pressed="false">Pause</button><button type="button" data-p="skip">Next</button>'
         + '<button type="button" data-p="speed">1x</button><button type="button" data-p="fit" aria-label="Fit all: show the whole battlefield">Fit</button><button type="button" data-p="follow" aria-label="Follow the action again" hidden>Follow</button>'
-        + '<button type="button" data-p="snd" aria-pressed="true" aria-label="Sound" title="Sound (M)">Sound</button><button type="button" data-p="stop" aria-label="End the replay">End</button></div>';
+        + '<button type="button" data-p="snd" aria-pressed="true" aria-label="Sound" title="Sound (M)">Sound</button><button type="button" data-p="full" aria-pressed="false" aria-label="Full screen" title="Full screen (F)"></button><button type="button" data-p="stop" aria-label="End the replay">End</button></div>';
       var A = function () { return api(); }, refresh = function () { var p = A() && A().phase ? A().phase() : null; if (p && p.replay) hud(p); };
       hudEl.querySelector('[data-p="pause"]').onclick = function () { if (A() && A().pause) { var on = A().pause(); this.setAttribute('aria-pressed', String(on)); this.textContent = on ? 'Play' : 'Pause'; } };
       hudEl.querySelector('[data-p="skip"]').onclick = function () { if (A() && A().skip) A().skip(); refresh(); };
@@ -277,11 +281,14 @@ export function battleClient() {
       hudEl.querySelector('[data-p="fit"]').onclick = function () { if (A() && A().fit) A().fit(); refresh(); };
       hudEl.querySelector('[data-p="follow"]').onclick = function () { if (A() && A().follow) A().follow(true); refresh(); };
       hudEl.querySelector('[data-p="stop"]').onclick = function () { stopPlay(); };
+      // Mike 11-21: the replay starts in the page; full screen is the viewer's own tap (Fable design). Leaving it keeps the replay
+      hudEl.querySelector('[data-p="full"]').onclick = function () { if (A() && A().full) { A().full(!A().full()); setTimeout(fsSync, 60); } };
+      document.addEventListener('fullscreenchange', fsSync); fsSync();
       hudEl.querySelector('[data-p="snd"]').onclick = function () { if (A() && A().sound) A().sound(!A().sound()); refresh(); };   // D6 (Mike 11-20): sound on by default for a pressed replay; a mute is remembered
       hudEl.querySelector('[data-p="hit"]').onclick = function () { if (!hudHit) return; var s = nightShots(hudHit.night)[hudHit.ix]; if (!s) return; if (A() && A().pause) A().pause(true); refresh(); openHow(s); };
       document.addEventListener('keydown', function (e) {   // 11-20: keys during a replay (right/left: next/previous strike, space: pause)
         if (!hudEl || !document.documentElement.classList.contains('w-replay') || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
-        var k = e.key === 'ArrowRight' ? 'skip' : e.key === 'ArrowLeft' ? 'prev' : e.key === ' ' ? 'pause' : e.key === 'm' || e.key === 'M' ? 'snd' : ''; if (!k) return;
+        var k = e.key === 'ArrowRight' ? 'skip' : e.key === 'ArrowLeft' ? 'prev' : e.key === ' ' ? 'pause' : e.key === 'm' || e.key === 'M' ? 'snd' : e.key === 'f' || e.key === 'F' ? 'full' : ''; if (!k) return;
         var b = hudEl.querySelector('[data-p="' + k + '"]'); if (b) { e.preventDefault(); b.click(); } });
       stage.appendChild(hudEl); }
     if (api() && api().viewer) api().viewer(me && me.h ? me.h : null);   // the strike card: the viewer's own cities read YOU and YOUR on screen (citycard.ts)
@@ -407,7 +414,7 @@ export function battleClient() {
   addEventListener('hashchange', function () { var h = location.hash.slice(1); if (TABS.indexOf(h) >= 0) setTab(h); });
   // ---------------------------------------------------------------- replay: the cinematic strike-by-strike replay (or the demo)
   var cap = q('[data-b="cap"]'), hudT = 0;
-  function stopPlay() { if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); document.documentElement.classList.remove('fb-hide'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); }
+  function stopPlay() { try { if (api() && api().full && api().full()) api().full(false); } catch (e) {} setTimeout(fsSync, 60); if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); document.documentElement.classList.remove('fb-hide'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); }
   function play(mode, auto) {
     if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0;
     closeHow();
@@ -726,10 +733,11 @@ export const BATTLE_CLIENT_JS = "(function(BSPD){return (" + battleClient.toStri
 
 export const BATTLE_CSS = `
 .b-chip{position:absolute;left:10px;top:10px;z-index:6;display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(15,16,22,.92);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:6px 11px 6px 9px;font-variant-numeric:tabular-nums;pointer-events:none;max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.b-play{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;display:grid;gap:4px;width:min(470px,calc(100% - 20px));padding:6px 6px 6px;border-radius:14px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);font:500 12px/1.2 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;font-variant-numeric:tabular-nums;box-sizing:border-box}
+.b-play{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;display:grid;gap:4px;width:min(560px,calc(100% - 20px));padding:6px 6px 6px;border-radius:14px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);font:500 12px/1.2 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;font-variant-numeric:tabular-nums;box-sizing:border-box}
 .b-play .b-pt{display:grid;gap:1px;min-width:0;padding:0 4px}.b-play .b-l1{display:flex;gap:7px;min-width:0;align-items:baseline}.b-play .b-pt b{color:#fff;font-weight:600;white-space:nowrap;flex:none}.b-play .b-pt span{color:#C9D2E6;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.b-play .b-pt span:empty{display:none}.b-play .b-pt span[data-p="hit"]{color:#FFB347}
 .b-play .b-pb{display:flex;flex-wrap:wrap;gap:4px;justify-content:space-between}
 .b-play button{font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.22);border-radius:9px;padding:0 6px;min-height:44px;min-width:44px;cursor:pointer;flex:1 1 44px;white-space:nowrap;touch-action:manipulation}
+.b-play button[data-p="full"]{display:inline-flex;align-items:center;justify-content:center;gap:5px}.b-play button[data-p="full"] svg{color:#3DF2FF;flex:none}
 .b-play button[hidden]{display:none}.b-play button[data-p="follow"]{background:#8B6CF6;border-color:#8B6CF6;color:#fff;font-weight:600}
 .b-play button[aria-pressed="true"]{background:rgba(61,242,255,.18);border-color:#3DF2FF}.b-play button:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
 .b-chip i{width:7px;height:7px;border-radius:50%;background:#FFB347;box-shadow:0 0 8px #FFB347;flex:none}.b-chip.rebuild i{background:#4FD1C5;box-shadow:0 0 8px #4FD1C5}.b-chip b{font-weight:600;color:#fff}.b-chip span{color:#C9D2E6}
@@ -756,7 +764,7 @@ html.w-replay #drRail,html.w-replay .cal-nb{display:none!important}
 html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, cities, last hit) and the chip would sit on the Labels chip at the top left */
 .w-main .c-stage.c-full{height:100%;min-height:0}
 .w-battle-only{display:none}html.w-battle .w-battle-only{display:revert}html.w-battle .w-now-only,html.w-battle .w-grow-only{display:none}
-@media (max-width:600px){.b-chip{top:auto;bottom:10px}.b-play{bottom:10px;left:10px;right:10px;transform:none;width:auto;padding:5px 5px 5px}.b-play .b-pb{gap:3px}.b-play button{font-size:11px;padding:0 2px}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
+@media (max-width:600px){.b-chip{top:auto;bottom:10px}.b-play{bottom:10px;left:10px;right:10px;transform:none;width:auto;padding:5px 5px 5px}.b-play .b-pb{gap:3px}.b-play button{font-size:11px;padding:0 2px}.b-play button[data-p="full"],.b-play button[data-p="stop"]{flex:1 1 40%}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
 .b-un{flex:none;font:600 10px/1 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.06em;text-transform:uppercase;padding:3px 5px;border-radius:4px;border:1px dashed rgba(201,210,230,.55);color:#C9D2E6}
 .b-tp{grid-area:p;display:grid;gap:8px;margin:2px 0 4px;padding:8px;border-radius:10px;border:1px solid rgba(61,242,255,.28);background:#12141D;min-width:0}
 .b-tp-in{position:relative}
