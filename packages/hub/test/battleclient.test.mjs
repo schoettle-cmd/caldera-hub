@@ -42,8 +42,8 @@ test("battle client script: parses, reads the saved speed at start, starts repla
   assert.ok(/data-p="follow"[^>]*hidden/.test(js) && js.includes("fo.hidden = ph.follow !== false"), "Follow shows only once the viewer has moved the camera");
   assert.ok(js.includes("A().prev()") && js.includes("A().fit()") && js.includes("A().follow(true)"), "wired to the renderer API");
   const css = M.BATTLE_CSS, play = css.slice(css.indexOf(".b-play{"), css.indexOf(".b-chip i{"));
-  assert.ok(/\.b-play button\{[^}]*min-height:44px;min-width:44px/.test(play), "44 px tap targets"); assert.ok(/\.b-play \.b-pb\{display:flex;flex-wrap:wrap/.test(play), "one bar that wraps rather than overflows a narrow phone");
-  const mq = css.slice(css.indexOf("@media (max-width:600px)"));
+  assert.ok(/\.b-play \.b-pb button\{width:40px;height:40px\}/.test(css), "40 px tap targets on phones (Mike accepts density)"); assert.ok(/\.b-play \.b-pt\{flex:1 1 0;min-width:0/.test(play), "the text zone shrinks, the controls never leave the bar");
+  const mq = css.slice(css.indexOf("@media (max-width:600px){.b-chip"));
   assert.ok(/html\.w-replay \.b-chip\{display:none\}/.test(css) && !/w-replay \.b-chip/.test(mq), "during a replay the status chip is gone at every width, not only on a phone (the bar says the same, and the chip sat on the Labels chip)");
   assert.ok(!/—/.test(js + css), "no em dashes");
 });

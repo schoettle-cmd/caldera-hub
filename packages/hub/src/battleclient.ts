@@ -41,10 +41,15 @@ export function battleClient() {
   var qp = U && U.searchParams.get('layers'); if (qp !== null && qp !== undefined && U.searchParams.has('layers')) { var want = qp.split(','); LAYERS.forEach(function (k) { layers[k] = want.indexOf(k) >= 0; }); }
   var replayNight = U && U.searchParams.has('replay'), replayMode = U && U.searchParams.get('replay') === 'demo' ? 'demo' : undefined; if (replayNight) layers.replay = true;
   function api() { return window.CALDERA_BATTLE_API; }
-  var FS_ICO = function (on) { return '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="' + (on ? 'M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4' : 'M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4') + '"/></svg>'; };
-  function fsSync() { var b = hudEl && hudEl.querySelector('[data-p="full"]'); if (!b) return; var on = !!(api() && api().full && api().full());
-    if (b.getAttribute('data-on') === String(on) && b.firstChild) return; b.setAttribute('data-on', String(on)); b.setAttribute('aria-pressed', String(on));
-    b.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen'); b.title = (on ? 'Exit full screen' : 'Full screen') + ' (F)'; b.innerHTML = FS_ICO(on) + '<span>' + (on ? 'Exit full screen' : 'Full screen') + '</span>'; }
+  // Mike 11-21 (Fable design, reports/2026-11-21-replay-bar): a compact icon bar; Speed, Fit, Sound and Full screen sit in one menu
+  var BI = { prev: ['24', 'M19 19 9 12l10-7v14ZM5 5v14', 'f'], pause: ['24', 'M7.5 5.5h2v13h-2zM14.5 5.5h2v13h-2z', 'f'], play: ['24', 'M7 5l12 7-12 7V5Z', 'f'], next: ['24', 'M5 5l10 7-10 7V5ZM19 5v14', 'f'],
+    follow: ['24', 'M12 2v4M12 18v4M2 12h4M18 12h4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z'], more: ['24', 'M5 12h.01M12 12h.01M19 12h.01', 'dots'], stop: ['24', 'M6 6l12 12M18 6 6 18'],
+    speed: ['24', 'M12 14l4-4M3.34 19a10 10 0 1 1 17.32 0'], fit: ['24', 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM20 20l-4.05-4.05M8 11h6'], snd: ['24', 'M11 5 6 9H3v6h3l5 4V5ZM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9.5 9.5 0 0 1 0 13'],
+    muted: ['24', 'M11 5 6 9H3v6h3l5 4V5ZM16 9.5l5 5M21 9.5l-5 5'], full: ['16', 'M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4'], unfull: ['16', 'M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4'] };
+  function bIco(n) { var i = BI[n]; return '<svg' + (i[2] ? ' class="' + i[2] + '"' : '') + ' viewBox="0 0 ' + i[0] + ' ' + i[0] + '" aria-hidden="true"><path d="' + i[1] + '"/></svg>'; }
+  function fsSync() { var b = hudEl && hudEl.querySelector('[data-p="full"]'); if (!b) return; var on = !!(api() && api().full && api().full()), u = hudEl.querySelector('[data-p="unfull"]'); if (u) u.hidden = !on;
+    if (b.getAttribute('data-on') === String(on)) return; b.setAttribute('data-on', String(on));
+    b.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen'); b.title = (on ? 'Exit full screen' : 'Full screen') + ' (F)'; b.innerHTML = bIco(on ? 'unfull' : 'full') + '<span>' + (on ? 'Exit full screen' : 'Full screen') + '</span><kbd>F</kbd>'; }
   function q(sel) { return bar ? bar.querySelector(sel) : null; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function setText(k, v) { var el = q('[data-b="' + k + '"]'); if (el) el.textContent = v; }
@@ -269,46 +274,67 @@ export function battleClient() {
   function hud(ph) {
     if (!stage) return;
     if (!hudEl) { hudEl = document.createElement('div'); hudEl.className = 'b-play'; hudEl.setAttribute('role', 'group'); hudEl.setAttribute('aria-label', 'Replay controls');
-      hudEl.innerHTML = '<div class="b-pt"><div class="b-l1"><b data-p="beat"></b><span data-p="label"></span></div><button type="button" data-p="hit" class="b-hit" aria-live="polite" hidden></button></div><div class="b-pb">'
-        + '<button type="button" data-p="prev" aria-label="Previous strike">Prev</button><button type="button" data-p="pause" aria-pressed="false">Pause</button><button type="button" data-p="skip">Next</button>'
-        + '<button type="button" data-p="speed">1x</button><button type="button" data-p="fit" aria-label="Fit all: show the whole battlefield">Fit</button><button type="button" data-p="follow" aria-label="Follow the action again" hidden>Follow</button>'
-        + '<button type="button" data-p="snd" aria-pressed="true" aria-label="Sound" title="Sound (M)">Sound</button><button type="button" data-p="full" aria-pressed="false" aria-label="Full screen" title="Full screen (F)"></button><button type="button" data-p="stop" aria-label="End the replay">End</button></div>';
+      hudEl.innerHTML = '<div class="b-pt"><div class="b-l1"><b data-p="beat"></b><span data-p="label" title=""></span></div><button type="button" data-p="hit" class="b-hit" aria-live="polite" hidden></button></div><div class="b-pb">'
+        + '<button type="button" data-p="follow" aria-label="Follow the action again" title="Follow the action again" hidden>' + bIco('follow') + '<span>Follow</span></button>'
+        + '<button type="button" data-p="prev" aria-label="Previous strike" title="Previous strike (\u2190)">' + bIco('prev') + '</button><button type="button" data-p="pause" aria-pressed="false" aria-label="Pause" title="Pause (Space)">' + bIco('pause') + '</button><button type="button" data-p="skip" aria-label="Next strike" title="Next strike (\u2192)">' + bIco('next') + '</button>'
+        + '<i class="b-sep" aria-hidden="true"></i><button type="button" data-p="unfull" aria-label="Exit full screen" title="Exit full screen (F)" hidden>' + bIco('unfull') + '</button>'
+        + '<button type="button" data-p="more" aria-haspopup="menu" aria-controls="b-menu" aria-expanded="false" aria-label="More controls" title="More controls">' + bIco('more') + '</button>'
+        + '<button type="button" data-p="stop" aria-label="End the replay" title="End the replay">' + bIco('stop') + '</button></div>'
+        + '<div class="b-menu" id="b-menu" role="menu" aria-label="More replay controls" hidden>'
+        + '<button type="button" role="menuitem" data-p="speed" title="Change speed: 0.5x, 1x or 2x">' + bIco('speed') + '<span>Speed</span><em>1x</em></button>'
+        + '<button type="button" role="menuitem" data-p="fit" aria-label="Fit all: show the whole battlefield" title="Fit all: show the whole battlefield">' + bIco('fit') + '<span>Fit all</span></button>'
+        + '<button type="button" role="menuitemcheckbox" data-p="snd" aria-checked="true" aria-label="Sound" title="Sound (M)">' + bIco('snd') + '<span>Sound</span><em>On</em><kbd>M</kbd></button>'
+        + '<button type="button" role="menuitem" data-p="full" aria-label="Full screen" title="Full screen (F)"></button></div>';
       var A = function () { return api(); }, refresh = function () { var p = A() && A().phase ? A().phase() : null; if (p && p.replay) hud(p); };
-      hudEl.querySelector('[data-p="pause"]').onclick = function () { if (A() && A().pause) { var on = A().pause(); this.setAttribute('aria-pressed', String(on)); this.textContent = on ? 'Play' : 'Pause'; } };
+      hudEl.querySelector('[data-p="pause"]').onclick = function () { if (A() && A().pause) { var on = A().pause(); pauseSet(this, on); } };
       hudEl.querySelector('[data-p="skip"]').onclick = function () { if (A() && A().skip) A().skip(); refresh(); };
       hudEl.querySelector('[data-p="prev"]').onclick = function () { if (A() && A().prev) A().prev(); refresh(); };
       hudEl.querySelector('[data-p="speed"]').onclick = function () { speed = BSPD.next(speed); BSPD.save(speed); if (A() && A().speed) A().speed(speed); refresh(); };
-      hudEl.querySelector('[data-p="fit"]').onclick = function () { if (A() && A().fit) A().fit(); refresh(); };
+      hudEl.querySelector('[data-p="fit"]').onclick = function () { if (A() && A().fit) A().fit(); menuSet(false); refresh(); };
       hudEl.querySelector('[data-p="follow"]').onclick = function () { if (A() && A().follow) A().follow(true); refresh(); };
-      hudEl.querySelector('[data-p="stop"]').onclick = function () { stopPlay(); };
+      hudEl.querySelector('[data-p="stop"]').onclick = function () { menuSet(false); stopPlay(); };
+      hudEl.querySelector('[data-p="more"]').onclick = function () { menuSet(hudEl.querySelector('.b-menu').hidden, true); };
+      hudEl.querySelector('[data-p="unfull"]').onclick = function () { if (A() && A().full) { A().full(false); setTimeout(fsSync, 60); } };
+      hudEl.querySelector('.b-menu').addEventListener('keydown', function (e) {   // Esc closes, arrows move between the items
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); menuSet(false); var mb = hudEl.querySelector('[data-p="more"]'); if (mb) mb.focus(); return; }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); var it = Array.prototype.slice.call(this.querySelectorAll('button:not([hidden])')), ix = it.indexOf(document.activeElement); ix = (ix + (e.key === 'ArrowDown' ? 1 : it.length - 1)) % it.length; if (it[ix]) it[ix].focus(); }
+        if (e.key === 'Tab') menuSet(false); });
       // Mike 11-21: the replay starts in the page; full screen is the viewer's own tap (Fable design). Leaving it keeps the replay
-      hudEl.querySelector('[data-p="full"]').onclick = function () { if (A() && A().full) { A().full(!A().full()); setTimeout(fsSync, 60); } };
+      hudEl.querySelector('[data-p="full"]').onclick = function () { if (A() && A().full) { A().full(!A().full()); menuSet(false); setTimeout(fsSync, 60); } };
       document.addEventListener('fullscreenchange', fsSync); fsSync();
       hudEl.querySelector('[data-p="snd"]').onclick = function () { if (A() && A().sound) A().sound(!A().sound()); refresh(); };   // D6 (Mike 11-20): sound on by default for a pressed replay; a mute is remembered
-      hudEl.querySelector('[data-p="hit"]').onclick = function () { if (!hudHit) return; var s = nightShots(hudHit.night)[hudHit.ix]; if (!s) return; if (A() && A().pause) A().pause(true); refresh(); openHow(s); };
+      hudEl.querySelector('[data-p="hit"]').onclick = function () { menuSet(false); if (!hudHit) return; var s = nightShots(hudHit.night)[hudHit.ix]; if (!s) return; if (A() && A().pause) A().pause(true); refresh(); openHow(s); };
       document.addEventListener('keydown', function (e) {   // 11-20: keys during a replay (right/left: next/previous strike, space: pause)
-        if (!hudEl || !document.documentElement.classList.contains('w-replay') || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
+        if (!hudEl || !document.documentElement.classList.contains('w-replay') || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '') || (e.target && e.target.closest && e.target.closest('.b-menu'))) return;
         var k = e.key === 'ArrowRight' ? 'skip' : e.key === 'ArrowLeft' ? 'prev' : e.key === ' ' ? 'pause' : e.key === 'm' || e.key === 'M' ? 'snd' : e.key === 'f' || e.key === 'F' ? 'full' : ''; if (!k) return;
         var b = hudEl.querySelector('[data-p="' + k + '"]'); if (b) { e.preventDefault(); b.click(); } });
-      stage.appendChild(hudEl); }
+      document.addEventListener('pointerdown', function (e) { if (!hudEl || hudEl.querySelector('.b-menu').hidden) return; var t = e.target; if (t && t.closest && (t.closest('.b-menu') || t.closest('[data-p="more"]'))) return; menuSet(false); }, true);
+      stage.appendChild(hudEl); fsSync(); }
     if (api() && api().viewer) api().viewer(me && me.h ? me.h : null);   // the strike card: the viewer's own cities read YOU and YOUR on screen (citycard.ts)
     var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'fall' ? 'Final strike' : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
-    hudEl.querySelector('[data-p="beat"]').textContent = (ph.demo ? 'Demo \u00b7 ' : '') + beat; hudEl.querySelector('[data-p="label"]').textContent = ph.label || '';
+    var sbeat = st === 'beat' || st === 'pre' ? ph.beat + '/' + ph.beats : st === 'fall' ? 'Final' : st === 'wide' ? 'All ' + ph.beats + ' in' : beat, dm = ph.demo ? 'Demo \u00b7 ' : '', bt = dm + beat + '|' + dm + sbeat, be = hudEl.querySelector('[data-p="beat"]');
+    if (be.getAttribute('data-t') !== bt) { be.setAttribute('data-t', bt); be.innerHTML = '<span class="sr">' + esc(dm + beat) + '</span><span aria-hidden="true">' + esc(dm + sbeat) + '</span>'; }
+    var lb = hudEl.querySelector('[data-p="label"]'); lb.textContent = ph.label || ''; lb.title = ph.label || '';
     var hs = ph.hit && !ph.demo ? nightShots(ph.night)[ph.hit.ix] : null, ht = ph.hit ? hitLine(ph.hit) + bombTail(hs) : '';
     var mh = me && me.h ? String(me.h) : null, fl = hudEl.querySelector('[data-p="flag"]'), canFlag = !!(me && bombOf(hs) && !hs[8].hid && hs[0] !== mh && !flagBusy);
     if (canFlag && !fl) { hudEl.querySelector('.b-pt').insertAdjacentHTML('beforeend', flagHtml(hs)); fl = hudEl.querySelector('[data-p="flag"]'); }
     if (fl) { if (!canFlag) fl.remove(); else { fl.setAttribute('aria-label', 'Report the word ' + hs[8].word); fl.onclick = function () { flagAsk(hs); }; } }
     var hb = hudEl.querySelector('[data-p="hit"]'); hb.textContent = ht + (ht && !ph.demo ? ' \u00b7 math' : ''); hb.hidden = !ht; hb.classList.toggle('sh', !!(ph.hit && (ph.hit.shield || ph.hit.sh > 0))); hudHit = ph.hit && !ph.demo ? { night: ph.night, ix: ph.hit.ix } : null;
-    var pb = hudEl.querySelector('[data-p="pause"]'); pb.setAttribute('aria-pressed', String(!!ph.paused)); pb.textContent = ph.paused ? 'Play' : 'Pause';
-    var sk = hudEl.querySelector('[data-p="skip"]'); sk.textContent = st === 'rebuild' ? 'Finish' : st === 'wide' ? 'Cranes' : 'Next';
-    var sp = hudEl.querySelector('[data-p="speed"]'), cur = ph.speed || speed; sp.textContent = BSPD.label(cur); sp.setAttribute('aria-label', 'Speed ' + BSPD.label(cur) + '. Change speed: 0.5x, 1x or 2x.');
+    pauseSet(hudEl.querySelector('[data-p="pause"]'), !!ph.paused);
+    var sk = hudEl.querySelector('[data-p="skip"]'), skw = st === 'rebuild' ? 'Finish' : st === 'wide' ? 'Cranes' : '';
+    if (sk.getAttribute('data-w') !== skw) { sk.setAttribute('data-w', skw); sk.classList.toggle('t', !!skw); sk.innerHTML = bIco('next') + (skw ? '<span>' + skw + '</span>' : ''); var skl = st === 'rebuild' ? 'Finish the replay' : st === 'wide' ? 'Skip to the cranes' : 'Next strike'; sk.setAttribute('aria-label', skl); sk.title = skl + ' (\u2192)'; }
+    var sp = hudEl.querySelector('[data-p="speed"]'), cur = ph.speed || speed, spl = BSPD.label(cur); sp.querySelector('em').textContent = spl; sp.setAttribute('aria-label', 'Speed ' + spl + '. Change speed: 0.5x, 1x or 2x.');
+    var mo = hudEl.querySelector('[data-p="more"]'); if (spl === '1x') mo.removeAttribute('data-sp'); else mo.setAttribute('data-sp', spl);
     var fo = hudEl.querySelector('[data-p="follow"]'); fo.hidden = ph.follow !== false;
-    var sb = hudEl.querySelector('[data-p="snd"]'), son = !!(api() && api().sound && api().sound()); sb.hidden = !(api() && api().sound); sb.setAttribute('aria-pressed', String(son)); sb.textContent = son ? 'Sound' : 'Muted'; sb.setAttribute('aria-label', son ? 'Sound on. Mute.' : 'Sound off. Turn sound on.');
+    var sb = hudEl.querySelector('[data-p="snd"]'), son = !!(api() && api().sound && api().sound()); sb.hidden = !(api() && api().sound); if (sb.getAttribute('aria-checked') !== String(son) || !sb.getAttribute('data-i')) { sb.setAttribute('data-i', '1'); sb.setAttribute('aria-checked', String(son)); sb.innerHTML = bIco(son ? 'snd' : 'muted') + '<span>Sound</span><em>' + (son ? 'On' : 'Off') + '</em><kbd>M</kbd>'; } sb.setAttribute('aria-label', son ? 'Sound on. Mute.' : 'Sound off. Turn sound on.');
+    fsSync();
   }
   function hudOff() { if (hudEl) { hudEl.remove(); hudEl = null; } }
+  function pauseSet(b, on) { if (!b || b.getAttribute('aria-pressed') === String(on) && b.firstChild) return; b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-label', on ? 'Play' : 'Pause'); b.title = (on ? 'Play' : 'Pause') + ' (Space)'; b.innerHTML = bIco(on ? 'play' : 'pause'); }
+  function menuSet(open, focus) { if (!hudEl) return; var m = hudEl.querySelector('.b-menu'), mb = hudEl.querySelector('[data-p="more"]'); if (!m || !mb) return; m.hidden = !open; mb.setAttribute('aria-expanded', String(!!open)); if (open && focus) { var f = m.querySelector('button:not([hidden])'); if (f) f.focus(); } }
   var flagBusy = false;
   function flagAsk(s) {
-    if (!hudEl) return; if (api() && api().pause) api().pause(true); flagBusy = true;
+    if (!hudEl) return; menuSet(false); if (api() && api().pause) api().pause(true); flagBusy = true;
     var pt = hudEl.querySelector('.b-pt'), keep = pt.innerHTML, q2 = document.createElement('div'); q2.className = 'b-flagq'; q2.setAttribute('role', 'group'); q2.setAttribute('aria-label', 'Report word');
     q2.innerHTML = '<span>Report "' + esc(s[8].word) + '" from ' + esc(s[0]) + '? We hide it for you now and review it.</span><button type="button" data-p="flagyes">Report</button><button type="button" data-p="flagno">Cancel</button>';
     var fl = pt.querySelector('[data-p="flag"]'); if (fl) fl.remove(); pt.appendChild(q2); q2.querySelector('[data-p="flagyes"]').focus();
@@ -670,7 +696,7 @@ export function battleClient() {
   // the report flag on a custom bomb's word in the replay (armory-design D1)
   function bombOf(s) { return s && s[8] && s[8].bk ? s[8] : null; }
   function bombTail(s) { var x = bombOf(s); return x ? ' · ' + (BNAME[x.bk] || x.bk) + ' "' + x.word + '" from ' + s[0] : ''; }
-  function flagHtml(s) { return '<button type="button" data-p="flag" class="b-flag" aria-label="Report the word ' + esc(s[8].word) + '"><svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M5 21V4m0 0h11l-2 4 2 4H5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Report</button>'; }
+  function flagHtml(s) { return '<button type="button" data-p="flag" class="b-flag" aria-label="Report the word ' + esc(s[8].word) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4m0 0h11l-2 4 2 4H5"/></svg>Report</button>'; }
   // ---------------------------------------------------------------- the Tonight card (PAGE.md 5a and 8): the member's own panel
   var panel = q('[data-b="me"]'), meLoaded = false;
   function mine() {
@@ -750,19 +776,69 @@ export const BATTLE_CLIENT_JS = "(function(BSPD){return (" + battleClient.toStri
 
 export const BATTLE_CSS = `
 .b-chip{position:absolute;left:10px;top:10px;z-index:6;display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(15,16,22,.92);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:6px 11px 6px 9px;font-variant-numeric:tabular-nums;pointer-events:none;max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.b-play{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;display:grid;gap:4px;width:min(560px,calc(100% - 20px));padding:6px 6px 6px;border-radius:14px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);font:500 12px/1.2 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;font-variant-numeric:tabular-nums;box-sizing:border-box}
-.b-play .b-pt{display:grid;gap:1px;min-width:0;padding:0 4px}.b-play .b-l1{display:flex;gap:7px;min-width:0;align-items:baseline}.b-play .b-pt b{color:#fff;font-weight:600;white-space:nowrap;flex:none}.b-play .b-pt span{color:#C9D2E6;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.b-play .b-pt span:empty{display:none}.b-play .b-pt span[data-p="hit"]{color:#FFB347}
-.b-play .b-pb{display:flex;flex-wrap:wrap;gap:4px;justify-content:space-between}
-.b-play button{font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.22);border-radius:9px;padding:0 6px;min-height:44px;min-width:44px;cursor:pointer;flex:1 1 44px;white-space:nowrap;touch-action:manipulation}
-.b-play button[data-p="full"]{display:inline-flex;align-items:center;justify-content:center;gap:5px}.b-play button[data-p="full"] svg{color:#3DF2FF;flex:none}
-.b-play button[hidden]{display:none}.b-play button[data-p="follow"]{background:#8B6CF6;border-color:#8B6CF6;color:#fff;font-weight:600}
-.b-play button[aria-pressed="true"]{background:rgba(61,242,255,.18);border-color:#3DF2FF}.b-play button:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+/* replay bar, Mike 11-21 (Fable design reports/2026-11-21-replay-bar/BAR.md) */
+.b-play{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;display:flex;align-items:center;gap:8px;width:min(560px,calc(100% - 20px));min-height:44px;padding:4px 4px 4px 12px;border-radius:12px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);font:500 12px/1.3 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;font-variant-numeric:tabular-nums;box-sizing:border-box}
+.b-play [hidden]{display:none!important}
+.b-play .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.b-play button{-webkit-appearance:none;appearance:none;margin:0;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.b-play button:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+.b-play svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none;pointer-events:none}
+.b-play svg.f{fill:currentColor;stroke-width:1.5}
+.b-play svg.dots{stroke-width:3}
+.b-play svg[viewBox="0 0 16 16"]{stroke-width:1.5}
+/* text zone: line 1 = beat + label, line 2 = hit (+ Report pill) */
+.b-play .b-pt{flex:1 1 0;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:8px;row-gap:1px;align-items:center}
+.b-play .b-l1{grid-column:1/-1;display:flex;gap:7px;align-items:baseline;min-width:0}
+.b-play .b-l1 b{flex:none;color:#fff;font-weight:600;white-space:nowrap}
+.b-play [data-p="label"]{min-width:0;color:#C9D2E6;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.b-play [data-p="label"]:empty{display:none}
+.b-play .b-hit{justify-self:start;min-width:0;max-width:100%;padding:8px 0;margin:-8px 0;border:0;background:none;font:500 11px/1.3 var(--font-mono,'IBM Plex Mono',monospace);color:#FFD9A0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:underline;text-decoration-color:rgba(255,217,160,.45);text-underline-offset:2px}
+.b-play .b-hit.sh{color:#9FF6FF;text-decoration-color:rgba(61,242,255,.5)}
+.b-play .b-flag{position:relative;display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:999px;background:transparent;border:1px solid rgba(255,154,154,.4);color:#FFB4B4;font:500 10.5px/1 var(--font-mono,'IBM Plex Mono',monospace)}
+.b-play .b-flag::after{content:"";position:absolute;inset:-10px -4px}
+.b-play .b-flag svg{width:11px;height:11px}
+.b-play .b-flag:hover{background:rgba(255,154,154,.1)}
+/* controls */
+.b-play .b-pb{flex:none;display:flex;align-items:center;gap:2px}
+.b-play .b-pb button{position:relative;flex:none;display:inline-flex;align-items:center;justify-content:center;gap:5px;width:36px;height:36px;padding:0;border:0;border-radius:8px;background:transparent;color:#E8EEF8;font:600 11px/1 var(--font-mono,'IBM Plex Mono',monospace);white-space:nowrap}
+.b-play .b-pb svg{width:18px;height:18px}
+@media (hover:hover){.b-play .b-pb button:hover{background:rgba(255,255,255,.1)}.b-play .b-pb [data-p="follow"]:hover{background:#7A5BEA}.b-play .b-pb [data-p="stop"]:hover{background:rgba(255,154,154,.16);color:#FFB4B4}.b-play .b-menu button:hover{background:rgba(255,255,255,.08)}}
+.b-play .b-pb button:active{background:rgba(255,255,255,.16)}
+.b-play .b-pb [data-p="pause"]{background:rgba(255,255,255,.1)}
+.b-play .b-pb [data-p="pause"][aria-pressed="true"]{background:rgba(61,242,255,.18);color:#3DF2FF;box-shadow:inset 0 0 0 1px #3DF2FF}
+.b-play .b-pb [data-p="skip"].t{width:auto;padding:0 9px 0 6px}
+.b-play .b-pb [data-p="follow"]{width:auto;padding:0 11px 0 8px;margin-right:4px;border-radius:999px;background:#8B6CF6;color:#fff}
+.b-play .b-pb [data-p="follow"] svg{width:16px;height:16px}
+.b-play .b-pb [data-p="unfull"]{color:#3DF2FF}
+.b-play .b-pb [data-p="stop"]{color:#C9D2E6}
+.b-play .b-pb [data-p="more"][aria-expanded="true"]{background:rgba(255,255,255,.16)}
+.b-play .b-pb [data-p="more"][data-sp]::after{content:attr(data-sp);position:absolute;top:-5px;right:-4px;padding:2px 3px;border-radius:5px;background:#3DF2FF;color:#0F1016;font:600 9px/1 var(--font-mono,'IBM Plex Mono',monospace)}
+.b-play .b-sep{flex:none;width:1px;height:20px;margin:0 4px;background:rgba(255,255,255,.16)}
+/* overflow menu, opens upward from the right end of the bar */
+.b-play .b-menu{position:absolute;right:0;bottom:calc(100% + 6px);width:208px;display:grid;gap:1px;padding:4px;border-radius:12px;background:rgba(15,16,22,.97);border:1px solid rgba(255,255,255,.18);box-shadow:0 14px 34px -12px rgba(0,0,0,.85);animation:b-menu .12s ease-out}
+@keyframes b-menu{from{opacity:0;transform:translateY(4px)}}
+@media (prefers-reduced-motion:reduce){.b-play .b-menu{animation:none}}
+.b-play .b-menu button{display:flex;align-items:center;gap:9px;width:100%;height:36px;padding:0 8px;border:0;border-radius:8px;background:transparent;color:#E8EEF8;font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);text-align:left;white-space:nowrap}
+.b-play .b-menu button:focus-visible{outline-offset:-2px}
+.b-play .b-menu svg{width:16px;height:16px;color:#C9D2E6}
+.b-play .b-menu span{flex:1 1 auto;min-width:0}
+.b-play .b-menu em{font-style:normal;font-weight:600;color:#3DF2FF}
+.b-play .b-menu [aria-checked="false"] em{color:#9A9AA5}
+.b-play .b-menu kbd{min-width:9px;padding:2px 4px;border:1px solid rgba(255,255,255,.16);border-radius:4px;font:500 10px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#8B8E9C;text-align:center}
+/* Report confirm row: the bar stacks while the question is open */
+.b-play:has(.b-flagq){flex-direction:column;align-items:stretch;gap:6px;padding:8px 4px 4px}
+.b-play:has(.b-flagq) .b-pt{flex:none;padding:0 6px}
+.b-play:has(.b-flagq) .b-pb{justify-content:flex-end}
+.b-play:has(.b-flagq) .b-hit{display:none}
+.b-play .b-flagq{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:3px;color:#F2F2F5;font:500 12px/1.35 var(--font-sans,'IBM Plex Sans',sans-serif)}
+.b-play .b-flagq span{flex:1 1 200px;min-width:0}
+.b-play .b-flagq button{flex:none;height:32px;padding:0 12px;border-radius:8px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.06);color:#E8EEF8;font:600 12px/1 var(--font-mono,'IBM Plex Mono',monospace)}
+.b-play .b-flagq [data-p="flagyes"]{background:#8B6CF6;border-color:#8B6CF6;color:#fff}
+@media (max-width:600px){.b-play{left:10px;right:10px;bottom:10px;transform:none;width:auto;flex-direction:column;align-items:stretch;gap:5px;padding:6px 5px 5px}.b-play .b-pt{flex:none;padding:0 5px}.b-play .b-hit{padding:13px 0;margin:-13px 0}.b-play .b-pb{gap:3px}.b-play .b-pb button{width:40px;height:40px}.b-play .b-pb [data-p="prev"],.b-play .b-pb [data-p="skip"]{flex:1 1 40px;width:auto;background:rgba(255,255,255,.06)}.b-play .b-pb [data-p="pause"]{flex:1 1 40px;width:auto}.b-play .b-pb [data-p="follow"]{width:auto;margin-right:2px}.b-play .b-sep{margin:0 2px}.b-play .b-menu{width:220px}.b-play .b-menu button{height:44px;padding:0 10px}.b-play .b-menu kbd{display:none}.b-play:has(.b-flagq){padding:8px 5px 5px}.b-play .b-flagq span{flex-basis:100%}.b-play .b-flagq button{flex:1 1 0;height:40px}}
 .b-chip i{width:7px;height:7px;border-radius:50%;background:#FFB347;box-shadow:0 0 8px #FFB347;flex:none}.b-chip.rebuild i{background:#4FD1C5;box-shadow:0 0 8px #4FD1C5}.b-chip b{font-weight:600;color:#fff}.b-chip span{color:#C9D2E6}
 @media (prefers-reduced-motion: reduce){.b-chip i{box-shadow:none}}
 .b-szs{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}.b-sz{display:inline-flex;align-items:center;gap:4px;font:600 11.5px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#9A9AA5;border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:3px 6px 3px 3px;font-variant-numeric:tabular-nums}
 .b-sz i{font-style:normal;font-size:10px;min-width:18px;text-align:center;padding:2px 3px;border-radius:4px;background:rgba(255,255,255,.08);color:#C9D2E6}.b-sz.has{color:#fff;border-color:rgba(255,179,71,.55)}.b-sz.has i{background:#FFB347;color:#1A1206}.b-sz.lock{opacity:.45;border-style:dashed}
-.b-play .b-hit{background:none!important;border:0!important;color:#FFD9A0!important;text-align:left;padding:0!important;min-height:0!important;font:inherit!important;cursor:pointer;text-decoration:underline;text-decoration-color:rgba(255,217,160,.45);text-underline-offset:2px}
-.b-play .b-hit.sh{color:#9FF6FF!important;text-decoration-color:rgba(61,242,255,.5)}
 .b-how{position:fixed;z-index:80;right:12px;top:12px;bottom:12px;width:min(520px,calc(100% - 24px));background:#0F1016;color:#D7DDEA;border:1px solid rgba(255,179,71,.45);border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;font:13.5px/1.55 var(--font-sans,'IBM Plex Sans',sans-serif)}
 .b-how[hidden]{display:none}.b-how:focus{outline:none}.b-hb{overflow:auto;padding:16px 18px 20px;overscroll-behavior:contain}
 .b-hx{position:absolute;right:6px;top:6px;width:44px;height:44px;border:0;background:transparent;color:#C9D2E6;font-size:22px;cursor:pointer;border-radius:50%}.b-hx:focus-visible,.b-how a:focus-visible{outline:2px solid #FFB347;outline-offset:2px}
@@ -781,7 +857,7 @@ html.w-replay #drRail,html.w-replay .cal-nb{display:none!important}
 html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, cities, last hit) and the chip would sit on the Labels chip at the top left */
 .w-main .c-stage.c-full{height:100%;min-height:0}
 .w-battle-only{display:none}html.w-battle .w-battle-only{display:revert}html.w-battle .w-now-only,html.w-battle .w-grow-only{display:none}
-@media (max-width:600px){.b-chip{top:auto;bottom:10px}.b-play{bottom:10px;left:10px;right:10px;transform:none;width:auto;padding:5px 5px 5px}.b-play .b-pb{gap:3px}.b-play button{font-size:11px;padding:0 2px}.b-play button[data-p="full"],.b-play button[data-p="stop"]{flex:1 1 40%}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
+@media (max-width:600px){.b-chip{top:auto;bottom:10px}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
 .b-un{flex:none;font:600 10px/1 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.06em;text-transform:uppercase;padding:3px 5px;border-radius:4px;border:1px dashed rgba(201,210,230,.55);color:#C9D2E6}
 .b-tp{grid-area:p;display:grid;gap:8px;margin:2px 0 4px;padding:8px;border-radius:10px;border:1px solid rgba(61,242,255,.28);background:#12141D;min-width:0}
 .b-tp-in{position:relative}
@@ -813,12 +889,6 @@ html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, c
 @media (prefers-reduced-motion:reduce){.b-spin{animation:none;border-top-color:rgba(255,255,255,.2);border-right-color:#3DF2FF}.b-ar-tb::after{transition:none}}
 @media (max-width:600px){.b-ar-tb,.b-tp-in input,.b-gh-go{min-height:44px}.b-tp-in input{font-size:16px}.b-tp-l li{min-height:44px}}
 .b-tp-r{display:contents}
-.b-play .b-pt{grid-template-columns:minmax(0,1fr) auto;align-items:center}.b-play .b-l1{grid-column:1/-1}
-.b-play .b-flag{display:inline-flex;align-items:center;gap:4px;flex:none;min-height:28px!important;min-width:0!important;padding:0 8px!important;border-radius:999px!important;background:transparent!important;border:1px solid rgba(255,154,154,.4)!important;color:#FFB4B4!important;font:500 11px/1 var(--font-mono,'IBM Plex Mono',monospace)!important}
-.b-play .b-flag:hover{background:rgba(255,154,154,.1)!important}
-.b-flagq{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:#F2F2F5;font:500 12px/1.35 var(--font-sans,'IBM Plex Sans',sans-serif)}
-.b-flagq span{flex:1 1 200px;min-width:0}
-.b-play .b-flagq button{flex:0 0 auto;min-height:36px;padding:0 12px}.b-play .b-flagq [data-p="flagyes"]{background:#8B6CF6;border-color:#8B6CF6;color:#fff;font-weight:600}
 @media (min-width:601px){.b-chip{top:48px;max-width:min(360px,calc(100% - 20px));font-size:11px;padding:5px 10px 5px 8px}
 html.w-battle:not(.w-replay) .c-stage:has(.b-chip) .g-today{top:80px;max-height:calc(100% - 90px);overflow-y:auto}}
 .b-arm{min-width:0}
