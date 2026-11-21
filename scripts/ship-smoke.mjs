@@ -5,7 +5,7 @@ import { chromium } from './playwright.mjs';
 const BASE = process.argv[2] || 'https://caldera.social', fails = [];
 const b = await chromium.launch({ channel: 'chrome' });
 try {
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true });
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true }); await ctx.addInitScript(() => { window.ES_TRACE_BOT = true; });   // ES tracer: robot session
   for (const [path, must] of [['/', /caldera/i], ['/@mike/', /Michael|Mike/], ['/people', /@[a-z0-9-]+/i]]) {
     const p = await ctx.newPage(), errs = []; p.on('pageerror', e => errs.push(e.message));
     const r = await p.goto(BASE + path, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(e => null);

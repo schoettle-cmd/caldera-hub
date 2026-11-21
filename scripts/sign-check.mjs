@@ -7,7 +7,7 @@ import { chromium } from './playwright.mjs';
 const url = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : 'https://caldera.social/@mike/city.html';
 const phone = process.argv.includes('--phone'), fails = [];
 const b = await chromium.launch({ channel: 'chrome' });
-const ctx = await b.newContext(phone ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, reducedMotion: 'reduce' } : { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, reducedMotion: 'reduce' });
+const ctx = await b.newContext(phone ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, reducedMotion: 'reduce' } : { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, reducedMotion: 'reduce' }); await ctx.addInitScript(() => { window.ES_TRACE_BOT = true; });   // ES tracer: robot session
 const p = await ctx.newPage(); p.on('pageerror', e => fails.push('page error: ' + e.message));
 await p.addInitScript(() => { const o = window.open; window.__opened = []; window.open = function (u, ...a) { window.__opened.push(String(u)); return o.call(window, u, ...a); }; });   // where the tab was sent, before any redirect
 await p.goto(url + '#test&sky=day', { waitUntil: 'load', timeout: 60000 });

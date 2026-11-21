@@ -10,7 +10,7 @@ const b = await chromium.launch({ channel: 'chrome' }); const fails = [];
 // INJECT=<file.js>: check a fix before deploying (the live page with that script added before </body>)
 const INJ = process.env.INJECT ? (await import('node:fs')).readFileSync(process.env.INJECT, 'utf8') : null;
 for (const view of ['battle', 'now']) for (const [w, h, mob] of sizes) {
-  const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: mob, hasTouch: mob, deviceScaleFactor: mob ? 2 : 1 });
+  const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: mob, hasTouch: mob, deviceScaleFactor: mob ? 2 : 1 }); await ctx.addInitScript(() => { window.ES_TRACE_BOT = true; });   // ES tracer: robot session
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
   if (INJ) await p.route(/\/world(\?.*)?$/, async r => { const res = await r.fetch(); const t = await res.text(); await r.fulfill({ response: res, body: t.replace('</body>', '<script>' + INJ.replace(/<\/script/gi, '<\\/script') + '</script></body>') }); });
   await p.goto(`${BASE}/world?view=${view}`, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -39,7 +39,7 @@ for (const view of ['battle', 'now']) for (const [w, h, mob] of sizes) {
 const CITY = process.env.CITY || '@mike';
 let NEU = null, OLD = null; if (process.env.CITYJS) { NEU = (await import(process.env.CITYJS)).CITY_JS; OLD = (await import(process.env.CITYOLD)).CITY_JS; }
 for (const [w, h, mob] of sizes) {
-  const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: mob, hasTouch: mob, deviceScaleFactor: mob ? 2 : 1 });
+  const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: mob, hasTouch: mob, deviceScaleFactor: mob ? 2 : 1 }); await ctx.addInitScript(() => { window.ES_TRACE_BOT = true; });   // ES tracer: robot session
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
   if (NEU) await p.route(/\/city\.html/, async r => { const res = await r.fetch(); let t = await res.text(); const i = t.indexOf(OLD.slice(0, 300)); if (i >= 0) t = t.slice(0, i) + NEU.replace(/<\/script/gi, '<\\/script') + t.slice(i + OLD.length); else errs.push('bundle not found'); await r.fulfill({ response: res, body: t }); });
   await p.goto(`${BASE}/${CITY}/city.html#test`, { waitUntil: 'domcontentloaded', timeout: 45000 }); await p.waitForTimeout(5000);

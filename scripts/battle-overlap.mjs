@@ -9,7 +9,7 @@ const b = await chromium.launch({ channel: 'chrome' });
 const sizes = [[360, 740, true], [390, 844, true], [1366, 800, false]];
 let bad = 0;
 for (const [w, h, mob] of sizes) {
-  const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: mob, hasTouch: mob, deviceScaleFactor: mob ? 2 : 1 });
+  const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: mob, hasTouch: mob, deviceScaleFactor: mob ? 2 : 1 }); await ctx.addInitScript(() => { window.ES_TRACE_BOT = true; });   // ES tracer: robot session
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
   if (html) await p.route(/caldera\.social\/world(\?.*)?$/, r => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }));
   await p.goto('https://caldera.social/world?view=battle&replay=demo', { waitUntil: 'domcontentloaded', timeout: 45000 });

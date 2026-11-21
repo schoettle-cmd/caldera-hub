@@ -35,7 +35,7 @@ test("everything else carries a policy too: the API, other files, a 404", async 
 });
 test("a page that sets its own policy keeps it", async () => {
   const csp = (await head("/leaderboard")).get("content-security-policy") || "";
-  assert.match(csp, /connect-src 'self'; base-uri 'none'; form-action 'self'/);
+  assert.match(csp, /connect-src 'self' https:\/\/mjonesone\.com; base-uri 'none'; form-action 'self'/, "its own policy, plus the ES tracer host (MB 11-21)");
   assert.doesNotMatch(csp, /object-src/, "the leaderboard's own policy, not the default one");
 });
 test("security.txt: contact, an expiry in the future, canonical on this hub", async () => {

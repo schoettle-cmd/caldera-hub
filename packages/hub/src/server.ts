@@ -81,6 +81,28 @@ const SECURITY_HEADERS = { "x-content-type-options": "nosniff", "referrer-policy
 // Content-Security-Policy. Pages that set their own keep it (a writeHead header replaces these). SITE_CSP: the static site
 // pages (own scripts and the feedback widget only, forms post to this hub only). BASE_CSP: every other response that names
 // none; looser where hub pages need it (photos and avatars from other hosts, a sign-in form that hands off to GitHub).
+// ES session tracer (Mike 11-21 "Use the tracer", MB order): the 2-line snippet in every public page head, collector key
+// 'caldera'. Never on private or sign-in routes, and never on the sandboxed city pages (no origin there).
+export const TRACE_HEAD = '<script>window.esTrace=window.esTrace||function(){(esTrace.q=esTrace.q||[]).push(arguments)}</script><script src="https://mjonesone.com/estrace/t.js" data-product="caldera" defer></script>';
+const TRACE_SKIP = /^\/(auth|login|api|v1|settings|admin|messages|signin|start|claim|email|setup|watch|me)(\/|$)/;
+const TRACE_HOST = "https://mjonesone.com";
+/** The page CSP with the tracer host allowed for script and connect ("" stays ""; 'none' stays 'none'). */
+export function cspWithTrace(csp: string): string {
+  if (!csp || /(^|;)\s*sandbox/.test(csp)) return csp;
+  const parts = csp.split(";").map(x => x.trim()).filter(Boolean), has = (k: string) => parts.findIndex(x => x.split(/\s+/)[0] === k);
+  for (const k of ["script-src", "connect-src"]) {
+    const i = has(k);
+    if (i < 0) parts.push(k + " 'self' " + TRACE_HOST);
+    else if (!parts[i].includes(TRACE_HOST) && !/'none'/.test(parts[i])) parts[i] += " " + TRACE_HOST;
+  }
+  return parts.join("; ");
+}
+/** The snippet right after <head>, for a public HTML page whose CSP is not a sandbox. */
+export function traceInject(html: string, pathname: string, csp: string): string {
+  if (TRACE_SKIP.test(pathname) || /(^|;)\s*sandbox/.test(csp || "") || html.includes("/estrace/t.js")) return html;
+  const m = /<head(\s[^>]*)?>/i.exec(html); if (!m) return html;
+  return html.slice(0, m.index + m[0].length) + TRACE_HEAD + html.slice(m.index + m[0].length);
+}
 const SITE_CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://mjonesone.com; connect-src 'self' https://mjonesone.com; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const BASE_CSP = "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://mjonesone.com; connect-src 'self' https://mjonesone.com; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 // User-uploaded profile pages run in a sandbox: unique origin, no access to the hub's origin, no forms, no top navigation.
@@ -2305,6 +2327,12 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           } catch (err: any) { console.error("header", err?.message); }
         }
         try { out = C.externalLinksNewWindow(out, hosts); } catch { /* never break a page */ }
+        try {   // ES session tracer: snippet + the page's CSP allows the tracer host
+          const h0 = held ? held.find((x: any) => x && typeof x === "object" && !Array.isArray(x)) : null, ck = h0 ? Object.keys(h0).find(k => k.toLowerCase() === "content-security-policy") : undefined;
+          const csp = String((h0 && ck ? h0[ck] : res.getHeader("content-security-policy")) || ""), pn = (() => { try { return new URL(req.url || "/", "http://hub").pathname; } catch { return "/"; } })();
+          const o2 = traceInject(out, pn, csp);
+          if (o2 !== out && !res.headersSent) { out = o2; const c2 = cspWithTrace(csp); if (h0 && ck) h0[ck] = c2; else if (csp) res.setHeader("content-security-policy", c2); }
+        } catch { /* never break a page */ }
         try { const gk = gateKindFor(req); if (gk && res.statusCode < 300 && !(held && held[0] >= 300)) out = out.replace(/<\/body>(?![\s\S]*<\/body>)/i, () => gateScript({ hub: PUB(), kind: gk }) + "</body>"); } catch { /* never break a page */ }
         chunk = out;
       }
