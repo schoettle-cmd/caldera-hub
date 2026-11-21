@@ -25,7 +25,8 @@ for (const s of signs) {
   if (!inStage(px)) continue;   // off screen
   const buf = await p.screenshot({ clip: { x: px.x, y: px.y, width: 1, height: 1 } });
   const rgb = await p.evaluate(async b64 => { const im = new Image(); im.src = 'data:image/png;base64,' + b64; await im.decode(); const c = document.createElement('canvas'); c.width = c.height = 1; const g = c.getContext('2d'); g.drawImage(im, 0, 0); return [...g.getImageData(0, 0, 1, 1).data].slice(0, 3); }, buf.toString('base64'));
-  if (Math.min(...rgb) < 225) fails.push(`${s.name}: something covers the sign (pixel ${rgb})`);
+  // MB 11-21: the card's own light tint (e.g. teal edge 218,240,239) counts as clear; anything drawn over it is far darker
+  if (rgb.reduce((a, v) => a + v, 0) / 3 < 225 || Math.min(...rgb) < 200) fails.push(`${s.name}: something covers the sign (pixel ${rgb})`);
 }
 for (let i = 0; i < signs.length; i++) for (let j = i + 1; j < signs.length; j++) { const a = signs[i].box, c = signs[j].box; if (a[0] < c[2] && a[2] > c[0] && a[1] < c[3] && a[3] > c[1]) fails.push(`${signs[i].group} and ${signs[j].group}: targets overlap`); }
 // click each visible sign: a new tab with its URL, or the directory when it has none
