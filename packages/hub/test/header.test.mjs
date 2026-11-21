@@ -119,6 +119,7 @@ test("Mike 11-20 nav float: the phone tab bar is pinned to the bottom of the vis
 
 test("Mike 11-20 profile sideways scroll: the Friends line wraps on phones and the page clips sideways overflow", () => {
   const src = fs.readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
+  assert.match(src, /@media \(max-width:520px\)\{\.cb-social \.cb-stats\{display:flex;flex-wrap:wrap;/);   // the items are joined with no space: block layout could not break between them
   assert.match(src, /\.cb-social \.cb-stats>span\.cb-why\{white-space:normal;overflow-wrap:anywhere\}/);
   assert.match(src, /const BAR_ACT_CSS = `<style>\/\* Mike 11-20: no sideways scroll on any profile \*\/html,body\{overflow-x:clip\}\.cb-row,\.cb-social,\.cb-stats,\.cb-acts\{min-width:0;max-width:100%\}/);
   const pin = fs.readFileSync(new URL("../src/header.ts", import.meta.url), "utf8").match(/export const BN_PIN_JS = `[^`]*`/)[0];
