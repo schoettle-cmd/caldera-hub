@@ -299,3 +299,7 @@ test("leaderboard: while the results board shows (html.w-board) the replay bar a
   assert.ok(hud.includes(N("if (ph.board) { menuSet(false); puDisarm(); if (playing) { clearTimeout(playing); playing = null; } }")), "the menu closes, an armed power-up disarms, and no safety-net timer takes the board away");
   assert.ok(/if \(!p2 \|\| !p2\.replay\) \{\s*stopPlay\(\)/.test(js) || J.includes("if(!p2||!p2.replay){stopPlay()"), "the poll still ends a replay that ended (Exit) through stopPlay");
 });
+
+test("Leaderboard: the map tool buttons hide while the board shows (they covered its top on phones)", () => {
+  assert.match(M.BATTLE_CSS, /html\.w-board \.c-tools\{display:none!important\}/);
+});

@@ -971,6 +971,7 @@ html.pu-armed #stage canvas{cursor:none}
 html.w-replay .b-how{top:auto;height:min(46vh,420px)}
 @media (max-width:700px){.b-how{left:0;right:0;top:auto;bottom:0;width:auto;max-height:72vh;border-radius:16px 16px 0 0;border-width:1px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}}
 html.w-replay #drRail,html.w-replay .cal-nb{display:none!important}
+html.w-board .c-tools{display:none!important}   /* the map buttons sat on the leaderboard's top edge on phones (11-21) */
 html.w-board .b-play,html.w-board .b-pu,html.w-board .b-puret,html.w-board .b-putoast{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .15s,visibility 0s .15s}   /* LEADERBOARD.md: the results board (plugin citycard.ts) covers the stage; the replay bar and the power-up tray fade out in 150 ms */
 @media (prefers-reduced-motion:reduce){html.w-board .b-play,html.w-board .b-pu{transition:none}}
 html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, cities, last hit) and the chip would sit on the Labels chip at the top left */
