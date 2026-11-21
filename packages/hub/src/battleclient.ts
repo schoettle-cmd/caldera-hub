@@ -30,6 +30,31 @@ export function battleSpeedLib() {
   return { SPEEDS: SPEEDS, KEY: KEY, ok: ok, next: next, label: label, load: load, save: save };
 }
 
+/** Viewer power-ups v1 (map-audit DESIGN.md item 10, mockup 05; Mike D1 11-20): the tray's charges and limits, pure. Three slots
+ *  (repair crate, fireworks, cheer; keys 1 2 3), 3 charges each, 1 back every 8 s; at most 1 drop every 1.5 s and 20 per replay
+ *  ("More next replay"). Cosmetic, free, local to this viewer: no network call, no storage (a fresh state per replay). */
+export function powerupLib() {
+  var KINDS = [
+    { k: 'heal', key: '1', name: 'Repair crate', col: '#4BE38A', act: 'drop a repair crate', sent: 'a repair crate' },
+    { k: 'fw', key: '2', name: 'Fireworks', col: '#FFC83D', act: 'set off fireworks', sent: 'fireworks' },
+    { k: 'cheer', key: '3', name: 'Cheer', col: '#FF7BD0', act: 'send a cheer', sent: 'a cheer' }];
+  var MAX = 3, EVERY = 8000, GAP = 1500, CAP = 20;
+  function kind(k) { for (var i = 0; i < KINDS.length; i++) if (KINDS[i].k === k || KINDS[i].key === String(k)) return KINDS[i]; return null; }
+  function fresh() { var s = { c: {}, t: {}, last: -Infinity, used: 0 }; KINDS.forEach(function (o) { s.c[o.k] = MAX; s.t[o.k] = null; }); return s; }
+  /** charges now: one comes back every 8 s while a slot is below 3 */
+  function left(s, k, now) { if (!(k in s.c)) return 0; while (s.c[k] < MAX && s.t[k] != null && now - s.t[k] >= EVERY) { s.c[k]++; s.t[k] += EVERY; } if (s.c[k] >= MAX) s.t[k] = null; return s.c[k]; }
+  /** 'ok', or why not: 'kind', 'cap' (20 this replay), 'empty' (no charge), 'wait' (1.5 s since the last drop) */
+  function why(s, k, now) { if (!(k in s.c)) return 'kind'; if (s.used >= CAP) return 'cap'; if (left(s, k, now) <= 0) return 'empty'; if (now - s.last < GAP) return 'wait'; return 'ok'; }
+  function canArm(s, k, now) { var w = why(s, k, now); return w === 'ok' || w === 'wait'; }
+  function use(s, k, now) { if (why(s, k, now) !== 'ok') return false; if (s.c[k] >= MAX) s.t[k] = now; s.c[k]--; s.last = now; s.used++; return true; }
+  /** one slot's look: Ready (3), Armed, Recharging (1 or 2: sweep p 0..1 and seconds to the next charge), Empty (0, or 20 used) */
+  function view(s, k, now, armed) { var n = left(s, k, now), cap = s.used >= CAP, w = s.t[k] == null ? 0 : Math.max(0, EVERY - (now - s.t[k]));
+    return { n: cap ? 0 : n, state: cap ? 'empty' : armed === k && n > 0 ? 'armed' : n <= 0 ? 'empty' : n < MAX ? 'cool' : 'ready', sec: cap || n >= MAX ? 0 : Math.ceil(w / 1000), p: cap || n >= MAX ? 1 : 1 - w / EVERY }; }
+  function hint(s, k, now) { if (s.used >= CAP) return 'More next replay'; var o = kind(k); if (!o) return ''; return 'Tap the map to ' + o.act + ' · ' + left(s, o.k, now) + ' left'; }
+  function toast(k, handle) { var o = kind(k); if (!o) return ''; var h = handle ? String(handle) : ''; if (h && h.charAt(0) !== '@') h = '@' + h; return 'You sent ' + o.sent + (h ? ' to ' + h : ''); }
+  return { KINDS: KINDS, MAX: MAX, EVERY: EVERY, GAP: GAP, CAP: CAP, kind: kind, fresh: fresh, left: left, why: why, canArm: canArm, use: use, view: view, hint: hint, toast: toast };
+}
+
 export function battleClient() {
   'use strict';
   var B0 = window.CALDERA_BATTLE; if (!B0) return;
@@ -306,10 +331,12 @@ export function battleClient() {
       hudEl.querySelector('[data-p="hit"]').onclick = function () { menuSet(false); if (!hudHit) return; var s = nightShots(hudHit.night)[hudHit.ix]; if (!s) return; if (A() && A().pause) A().pause(true); refresh(); openHow(s); };
       document.addEventListener('keydown', function (e) {   // 11-20: keys during a replay (right/left: next/previous strike, space: pause)
         if (!hudEl || !document.documentElement.classList.contains('w-replay') || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '') || (e.target && e.target.closest && e.target.closest('.b-menu'))) return;
+        if (puEl && /^[123]$/.test(e.key)) { e.preventDefault(); puToggle(BPU.kind(e.key).k); return; }   // power-ups: 1 2 3 arm, Esc disarms
+        if (e.key === 'Escape' && puDisarm()) { e.preventDefault(); return; }
         var k = e.key === 'ArrowRight' ? 'skip' : e.key === 'ArrowLeft' ? 'prev' : e.key === ' ' ? 'pause' : e.key === 'm' || e.key === 'M' ? 'snd' : e.key === 'f' || e.key === 'F' ? 'full' : ''; if (!k) return;
         var b = hudEl.querySelector('[data-p="' + k + '"]'); if (b) { e.preventDefault(); b.click(); } });
       document.addEventListener('pointerdown', function (e) { if (!hudEl || hudEl.querySelector('.b-menu').hidden) return; var t = e.target; if (t && t.closest && (t.closest('.b-menu') || t.closest('[data-p="more"]'))) return; menuSet(false); }, true);
-      stage.appendChild(hudEl); fsSync(); }
+      stage.appendChild(hudEl); fsSync(); puOn(); }
     if (api() && api().viewer) api().viewer(me && me.h ? me.h : null);   // the strike card: the viewer's own cities read YOU and YOUR on screen (citycard.ts)
     var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'fall' ? 'Final strike' : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
     var sbeat = st === 'beat' || st === 'pre' ? ph.beat + '/' + ph.beats : st === 'fall' ? 'Final' : st === 'wide' ? 'All ' + ph.beats + ' in' : beat, dm = ph.demo ? 'Demo \u00b7 ' : '', bt = dm + beat + '|' + dm + sbeat, be = hudEl.querySelector('[data-p="beat"]');
@@ -327,11 +354,68 @@ export function battleClient() {
     var mo = hudEl.querySelector('[data-p="more"]'); if (spl === '1x') mo.removeAttribute('data-sp'); else mo.setAttribute('data-sp', spl);
     var fo = hudEl.querySelector('[data-p="follow"]'); fo.hidden = ph.follow !== false;
     var sb = hudEl.querySelector('[data-p="snd"]'), son = !!(api() && api().sound && api().sound()); sb.hidden = !(api() && api().sound); if (sb.getAttribute('aria-checked') !== String(son) || !sb.getAttribute('data-i')) { sb.setAttribute('data-i', '1'); sb.setAttribute('aria-checked', String(son)); sb.innerHTML = bIco(son ? 'snd' : 'muted') + '<span>Sound</span><em>' + (son ? 'On' : 'Off') + '</em><kbd>M</kbd>'; } sb.setAttribute('aria-label', son ? 'Sound on. Mute.' : 'Sound off. Turn sound on.');
-    fsSync();
+    fsSync(); puTick();
   }
-  function hudOff() { if (hudEl) { hudEl.remove(); hudEl = null; } }
+  // ---- power-ups start: viewer power-ups v1 (DESIGN.md item 10; Mike D1 11-20): cosmetic, free, local to this viewer, no network
+  // call, no storage. The tray shows only during a replay, bottom right of the map, never over the replay bar (Mike 11-21: the bar
+  // had "too many options", so the tray sits beside it, or right above it on a phone) and hides while the bar's menu is open.
+  var puEl = null, puS = null, puArm = null, puToastEl = null, puToastT = 0, puRet = null;
+  var PUI = { heal: '<path d="M4.5 9a7.5 5.5 0 0 1 15 0"/><path d="M4.5 9 9 14M19.5 9 15 14M12 3.5V9"/><rect x="8" y="14" width="8" height="7" rx="1"/><path d="M12 15.8v3.4M10.3 17.5h3.4"/>',
+    fw: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>',
+    cheer: '<path d="M4 10v4l3 .6V9.4L4 10zM7 9.4 17 5v14L7 14.6"/><path d="M9 15.2V19h3v-2.6M20 9.5v5"/>' };
+  function puNow() { return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now(); }
+  function puOn() {
+    if (puEl || !stage || !(api() && api().drop)) return;
+    puS = BPU.fresh(); puArm = null; puEl = document.createElement('div'); puEl.className = 'b-pu'; puEl.setAttribute('role', 'group'); puEl.setAttribute('aria-label', 'Power-ups: tap one, then tap the map');
+    puEl.innerHTML = '<div class="b-puhint" aria-live="polite" hidden></div><div class="b-putray">' + BPU.KINDS.map(function (o) {
+      return '<button type="button" class="b-puslot" data-pu="' + o.k + '" style="--c:' + o.col + '" aria-pressed="false" aria-label="' + o.name + ' (key ' + o.key + ')" title="' + o.name + ' (' + o.key + ')">'
+        + '<span class="b-pukey" aria-hidden="true">' + o.key + '</span><span class="b-pucd" aria-hidden="true"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + PUI[o.k] + '</svg>'
+        + '<span class="b-pupips" aria-hidden="true"><i></i><i></i><i></i></span></button>'; }).join('') + '</div>';
+    Array.prototype.forEach.call(puEl.querySelectorAll('[data-pu]'), function (b) { b.onclick = function () { puToggle(b.getAttribute('data-pu')); }; });
+    puRet = document.createElement('div'); puRet.className = 'b-puret'; puRet.hidden = true; puRet.setAttribute('aria-hidden', 'true');
+    puToastEl = document.createElement('div'); puToastEl.className = 'b-putoast'; puToastEl.setAttribute('role', 'status'); puToastEl.hidden = true;
+    stage.appendChild(puEl); stage.appendChild(puRet); stage.appendChild(puToastEl);
+    stage.addEventListener('pointermove', puMove); stage.addEventListener('pointerleave', puLeave);
+    window.CALDERA_BATTLE_TAP = puTap; puTick(); }
+  function puOff() {
+    if (!puEl) return; [puEl, puRet, puToastEl].forEach(function (x) { if (x) x.remove(); }); puEl = puRet = puToastEl = null; puS = null; puArm = null; clearTimeout(puToastT);
+    if (stage) { stage.removeEventListener('pointermove', puMove); stage.removeEventListener('pointerleave', puLeave); }
+    if (window.CALDERA_BATTLE_TAP === puTap) window.CALDERA_BATTLE_TAP = null; document.documentElement.classList.remove('pu-armed'); }
+  /** a slot tap or its key: arm it; again (or Esc, or its last charge) disarms */
+  function puToggle(k) { if (!puS) return; if (puArm === k) puArm = null; else if (BPU.canArm(puS, k, puNow())) puArm = k; puTick(); }
+  function puDisarm() { if (!puArm) return false; puArm = null; puTick(); return true; }
+  /** city.ts hands a replay tap here (under 180 ms and 8 px). Armed: drop at the tap; true = the tap was the tray's */
+  function puTap(x, y) {
+    if (!puArm || !puS) return false; var now = puNow(), k = puArm; if (BPU.why(puS, k, now) !== 'ok') return true;
+    var r = api() && api().drop ? api().drop(k, x, y) : null; if (!r || !r.ok) return true;
+    BPU.use(puS, k, now); if (BPU.left(puS, k, now) <= 0 || puS.used >= BPU.CAP) puArm = null; puToast(k, r.handle); puTick(); return true; }
+  function puToast(k, h) { if (!puToastEl) return; var o = BPU.kind(k); puToastEl.style.setProperty('--c', o.col); puToastEl.innerHTML = '<b aria-hidden="true">+</b> ' + esc(BPU.toast(k, h)); puToastEl.hidden = false;
+    clearTimeout(puToastT); puToastT = setTimeout(function () { if (puToastEl) puToastEl.hidden = true; }, 2000); }
+  function puMove(e) { if (!puRet) return; var cv = e.target && e.target.tagName === 'CANVAS'; if (!puArm || e.pointerType !== 'mouse' || !cv) { puRet.hidden = true; return; }
+    var r = stage.getBoundingClientRect(); puRet.style.left = (e.clientX - r.left) + 'px'; puRet.style.top = (e.clientY - r.top) + 'px'; puRet.hidden = false; }
+  function puLeave() { if (puRet) puRet.hidden = true; }
+  /** the tray's look (every hud tick, 200 ms): slot states, pips, sweep, seconds, the hint chip, and its place beside the bar */
+  function puTick() {
+    if (!puEl || !puS) return; var now = puNow(); if (puArm && !BPU.canArm(puS, puArm, now)) puArm = null;
+    BPU.KINDS.forEach(function (o) { var b = puEl.querySelector('[data-pu="' + o.k + '"]'), v = BPU.view(puS, o.k, now, puArm); if (!b) return;
+      if (b.getAttribute('data-st') !== v.state) { b.setAttribute('data-st', v.state); b.className = 'b-puslot ' + v.state; }
+      b.setAttribute('aria-pressed', String(v.state === 'armed')); b.disabled = v.state === 'empty';
+      b.style.setProperty('--p', Math.round(v.p * 100) + '%'); var cd = b.querySelector('.b-pucd'), ct = v.sec > 0 ? v.sec + 's' : ''; if (cd.textContent !== ct) cd.textContent = ct;
+      Array.prototype.forEach.call(b.querySelectorAll('.b-pupips i'), function (pip, i) { pip.className = i < v.n ? 'f' : ''; });
+      b.setAttribute('aria-label', o.name + ' (key ' + o.key + '), ' + v.n + ' of ' + BPU.MAX + (v.state === 'armed' ? ', armed' : '')); });
+    var hn = puEl.querySelector('.b-puhint'), ht = puS.used >= BPU.CAP ? BPU.hint(puS, null, now) : puArm ? BPU.hint(puS, puArm, now) : '';
+    if (hn.textContent !== ht) hn.textContent = ht; hn.hidden = !ht;
+    document.documentElement.classList.toggle('pu-armed', !!puArm); if (puRet) { if (puArm) puRet.style.setProperty('--c', BPU.kind(puArm).col); else puRet.hidden = true; }
+    puPlace(); }
+  /** never over the replay bar: lift the tray above it when they meet (phones: always); hide it while the bar's menu is open */
+  function puPlace() {
+    if (!puEl || !stage) return; var m = hudEl && hudEl.querySelector('.b-menu'); puEl.classList.toggle('mhide', !!(m && !m.hidden)); puEl.style.bottom = '';
+    if (!hudEl) return; var a = puEl.getBoundingClientRect(), b = hudEl.getBoundingClientRect(), s = stage.getBoundingClientRect();
+    if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) puEl.style.bottom = Math.round(s.bottom - b.top + 8) + 'px'; }
+  // ---- power-ups end
+  function hudOff() { puOff(); if (hudEl) { hudEl.remove(); hudEl = null; } }
   function pauseSet(b, on) { if (!b || b.getAttribute('aria-pressed') === String(on) && b.firstChild) return; b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-label', on ? 'Play' : 'Pause'); b.title = (on ? 'Play' : 'Pause') + ' (Space)'; b.innerHTML = bIco(on ? 'play' : 'pause'); }
-  function menuSet(open, focus) { if (!hudEl) return; var m = hudEl.querySelector('.b-menu'), mb = hudEl.querySelector('[data-p="more"]'); if (!m || !mb) return; m.hidden = !open; mb.setAttribute('aria-expanded', String(!!open)); if (open && focus) { var f = m.querySelector('button:not([hidden])'); if (f) f.focus(); } }
+  function menuSet(open, focus) { if (!hudEl) return; var m = hudEl.querySelector('.b-menu'), mb = hudEl.querySelector('[data-p="more"]'); if (!m || !mb) return; m.hidden = !open; mb.setAttribute('aria-expanded', String(!!open)); puPlace(); if (open && focus) { var f = m.querySelector('button:not([hidden])'); if (f) f.focus(); } }
   var flagBusy = false;
   function flagAsk(s) {
     if (!hudEl) return; menuSet(false); if (api() && api().pause) api().pause(true); flagBusy = true;
@@ -772,10 +856,38 @@ export function battleClient() {
   render(); setTab(tab);
   mine();
 }
-export const BATTLE_CLIENT_JS = "(function(BSPD){return (" + battleClient.toString() + ")();})((" + battleSpeedLib.toString() + ")());";
+export const BATTLE_CLIENT_JS = "(function(BSPD,BPU){return (" + battleClient.toString() + ")();})((" + battleSpeedLib.toString() + ")(),(" + powerupLib.toString() + ")());";
 
 export const BATTLE_CSS = `
 .b-chip{position:absolute;left:10px;top:10px;z-index:6;display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(15,16,22,.92);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:6px 11px 6px 9px;font-variant-numeric:tabular-nums;pointer-events:none;max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* viewer power-ups v1 (map-audit DESIGN.md item 10, mockup 05): only during a replay; bottom right, beside the replay bar or above it */
+.b-pu{position:absolute;right:12px;bottom:12px;z-index:7;pointer-events:none}
+.b-pu.mhide{visibility:hidden}
+.b-putray{display:flex;gap:8px;align-items:flex-end;pointer-events:auto}
+.b-puslot{--c:#fff;position:relative;width:56px;height:56px;padding:0;border-radius:14px;display:grid;place-items:center;cursor:pointer;color:var(--c);background:rgba(9,11,17,.76);border:1px solid rgba(255,255,255,.14);-webkit-backdrop-filter:blur(10px) saturate(1.2);backdrop-filter:blur(10px) saturate(1.2);-webkit-appearance:none;appearance:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform .15s,background-color .15s,box-shadow .15s}
+.b-puslot svg{width:26px;height:26px;fill:none;stroke:currentColor;pointer-events:none}
+.b-puslot:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+@media (hover:hover){.b-puslot.ready:hover,.b-puslot.cool:hover{border-color:rgba(255,255,255,.34)}}
+.b-puslot .b-pukey{position:absolute;left:5px;top:4px;font:600 9px/1 var(--font-mono,'IBM Plex Mono',monospace);color:rgba(244,246,250,.44)}
+.b-puslot .b-pucd{position:absolute;right:5px;top:4px;z-index:1;font:600 9px/1 var(--font-mono,'IBM Plex Mono',monospace);color:rgba(244,246,250,.68)}
+.b-puslot .b-pupips{position:absolute;left:50%;bottom:5px;width:auto;height:auto;background:none;transform:translateX(-50%);display:flex;gap:2px}
+.b-puslot .b-pupips i{width:8px;height:3px;border-radius:1.5px;background:rgba(255,255,255,.22)}.b-puslot .b-pupips i.f{background:var(--c)}
+.b-puslot.armed{background:var(--c);border-color:#fff;color:#0B0D13;transform:translateY(-4px);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 40%,transparent),0 0 26px color-mix(in srgb,var(--c) 60%,transparent)}
+.b-puslot.armed .b-pukey{color:rgba(0,0,0,.6)}.b-puslot.armed .b-pupips i{background:rgba(0,0,0,.25)}.b-puslot.armed .b-pupips i.f{background:#0B0D13}
+.b-puslot.cool svg{opacity:.35}
+.b-puslot.cool::after{content:"";position:absolute;inset:-1px;border-radius:14px;background:conic-gradient(rgba(255,255,255,0) var(--p,0%),rgba(9,11,17,.62) 0);pointer-events:none}
+.b-puslot.empty{border-style:dashed;cursor:default}.b-puslot.empty svg{opacity:.22}
+.b-puhint{position:absolute;right:0;bottom:calc(100% + 10px);height:28px;padding:0 10px;border-radius:8px;display:inline-flex;align-items:center;white-space:nowrap;font:500 12px/1 var(--font-sans,'IBM Plex Sans',sans-serif);color:#F4F6FA;background:rgba(9,11,17,.76);border:1px solid rgba(255,255,255,.14);-webkit-backdrop-filter:blur(10px) saturate(1.2);backdrop-filter:blur(10px) saturate(1.2)}
+.b-puhint[hidden],.b-putoast[hidden],.b-puret[hidden]{display:none}
+.b-putoast{--c:#4BE38A;position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:8;max-width:calc(100% - 20px);height:30px;padding:0 12px;border-radius:8px;display:inline-flex;align-items:center;gap:6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:500 12px/1 var(--font-sans,'IBM Plex Sans',sans-serif);color:#F4F6FA;background:rgba(9,11,17,.76);border:1px solid color-mix(in srgb,var(--c) 60%,transparent);-webkit-backdrop-filter:blur(10px) saturate(1.2);backdrop-filter:blur(10px) saturate(1.2);pointer-events:none;animation:b-putoast .2s ease-out}
+.b-putoast b{color:var(--c);font-weight:700}
+@keyframes b-putoast{from{opacity:0;transform:translate(-50%,-4px)}}
+.b-puret{--c:#4BE38A;position:absolute;z-index:6;width:64px;height:32px;margin:-16px 0 0 -32px;border:2px dashed var(--c);border-radius:50%;box-shadow:0 0 18px color-mix(in srgb,var(--c) 60%,transparent);pointer-events:none}
+.b-puret::after{content:"";position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:var(--c)}
+html.pu-armed #stage canvas{cursor:none}
+@media (max-width:899px){.b-puslot{width:48px;height:48px}.b-puslot svg{width:24px;height:24px}}
+@media (max-width:600px){.b-pu{right:10px;bottom:94px}.b-putoast{top:56px}}
+@media (prefers-reduced-motion:reduce){.b-puslot{transition:none}.b-putoast{animation:none}}
 /* replay bar, Mike 11-21 (Fable design reports/2026-11-21-replay-bar/BAR.md) */
 .b-play{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;display:flex;align-items:center;gap:8px;width:min(560px,calc(100% - 20px));min-height:44px;padding:4px 4px 4px 12px;border-radius:12px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);font:500 12px/1.3 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;font-variant-numeric:tabular-nums;box-sizing:border-box}
 .b-play [hidden]{display:none!important}

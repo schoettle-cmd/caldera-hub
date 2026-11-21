@@ -238,3 +238,47 @@ test("armory yard: a tap on your own yard opens the Armory panel in the Battle v
   assert.ok(fn.includes("u.hash = 'armory'") && fn.includes("render.did = 0") && fn.includes("document.querySelector('[data-gmode=\"battle\"]')"), "yours: the Battle view with #armory scrolled into view");
   assert.ok(fn.includes("fetch('/v1/world/battle/me'") && fn.includes("m.war ? m.h : ''"), "asks who you are once");
 });
+
+// ---- viewer power-ups v1 (map-audit DESIGN.md item 10, mockup 05; Mike D1 11-20: cosmetic, free, local to the viewer)
+test("power-ups: 3 slots (repair crate 1, fireworks 2, cheer 3), 3 charges each, 1 back every 8 s; 1 drop per 1.5 s, 20 per replay", () => {
+  const P = M.powerupLib(); assert.deepEqual(P.KINDS.map((k) => [k.k, k.key, k.name, k.col]), [["heal", "1", "Repair crate", "#4BE38A"], ["fw", "2", "Fireworks", "#FFC83D"], ["cheer", "3", "Cheer", "#FF7BD0"]]);
+  assert.equal(P.kind("2").k, "fw"); assert.equal(P.kind("cheer").key, "3"); assert.equal(P.kind("9"), null);
+  const s = P.fresh(); assert.deepEqual(P.KINDS.map((k) => P.view(s, k.k, 0, null).state), ["ready", "ready", "ready"]);
+  assert.equal(P.view(s, "heal", 0, "heal").state, "armed");
+  assert.equal(P.use(s, "heal", 1000), true); assert.equal(P.left(s, "heal", 1000), 2);
+  assert.equal(P.why(s, "heal", 2000), "wait", "under 1.5 s since the last drop"); assert.equal(P.use(s, "fw", 2400), false, "the gap is for every slot");
+  assert.equal(P.canArm(s, "heal", 2000), true, "a slot can still be armed while waiting");
+  let v = P.view(s, "heal", 5000, null); assert.equal(v.state, "cool"); assert.equal(v.sec, 4); assert.ok(Math.abs(v.p - .5) < 1e-9, "half the sweep done");
+  assert.equal(P.use(s, "heal", 2500), true); assert.equal(P.use(s, "heal", 4000), true); assert.equal(P.left(s, "heal", 4000), 0);
+  assert.equal(P.why(s, "heal", 6000), "empty"); assert.equal(P.view(s, "heal", 6000, "heal").state, "empty", "no charge: never armed"); assert.equal(P.canArm(s, "heal", 6000), false);
+  assert.equal(P.left(s, "heal", 9000), 1, "8 s after the first use: one back"); assert.equal(P.left(s, "heal", 17000), 2); assert.equal(P.left(s, "heal", 25000), 3); assert.equal(P.left(s, "heal", 99000), 3, "never more than 3");
+  assert.equal(P.view(s, "heal", 99000, null).state, "ready");
+  const c = P.fresh(); let t = 0, n = 0; while (n < 40 && t < 1e6) { const k = P.KINDS[n % 3].k; if (P.use(c, k, t)) n++; t += 1500; if (P.why(c, k, t) === "cap") break; }
+  assert.equal(c.used, 20, "20 drops per replay"); assert.equal(P.why(c, "fw", t + 1e5), "cap"); assert.equal(P.hint(c, "fw", t), "More next replay");
+  assert.ok(P.KINDS.every((k) => P.view(c, k.k, t + 1e5, null).state === "empty"), "after 20 every slot reads Empty");
+  assert.equal(P.fresh().used, 0, "a new replay starts fresh");
+  assert.equal(P.hint(P.fresh(), "heal", 0), "Tap the map to drop a repair crate · 3 left");
+  assert.equal(P.toast("heal", "@bartlett-labs"), "You sent a repair crate to @bartlett-labs"); assert.equal(P.toast("fw", "ana"), "You sent fireworks to @ana"); assert.equal(P.toast("cheer", null), "You sent a cheer");
+});
+
+test("power-ups: the tray only in a replay, keys 1 2 3 and Esc in the replay key handler (never inside the menu or an input), the tap from city.ts, no network or storage", () => {
+  const js = M.BATTLE_CLIENT_JS; new Function(js);
+  const N = (x) => String(x).replace(/\s+/g, "").replace(/"/g, "'"), J = N(js), has = (frag) => J.includes(N(frag));
+  const a = J.indexOf("varpuEl=null"), b = J.indexOf("functionhudOff()"); assert.ok(a > 0 && b > a, "the tray block");
+  const tray = J.slice(a, b), lib = N(M.powerupLib.toString());
+  for (const bad of ["fetch(", "post(", "XMLHttpRequest", "sendBeacon", "localStorage", "sessionStorage", "indexedDB", "document.cookie", "WebSocket"]) { assert.ok(!tray.includes(bad), `no ${bad} in the tray`); assert.ok(!lib.includes(bad), `no ${bad} in the lib`); }
+  assert.ok(has("(function(BSPD,BPU){") && has("function powerupLib()"), "the lib ships ahead of the client as BPU");
+  assert.ok(has("stage.appendChild(hudEl); fsSync(); puOn(); }"), "the tray is made with the replay bar"); assert.ok(has("function hudOff() { puOff();"), "and goes with it");
+  assert.ok(tray.includes("api().drop") && tray.includes("window.CALDERA_BATTLE_TAP=puTap"), "drops through the plugin API from the map tap");
+  const k0 = J.indexOf("/^[123]$/.test(e.key)"), kd = J.slice(J.lastIndexOf("addEventListener('keydown'", k0), k0 + 300);
+  assert.ok(k0 > 0 && kd.includes("closest('.b-menu')") && kd.includes("INPUT|TEXTAREA|SELECT"), "keys are ignored in the menu and inputs");
+  assert.ok(kd.includes("puToggle(BPU.kind(e.key).k)") && kd.includes("e.key==='Escape'&&puDisarm()"), "1 2 3 arm, Esc disarms");
+  assert.ok(tray.includes("puEl.classList.toggle('mhide',!!(m&&!m.hidden))"), "hidden while the bar's menu is open"); assert.ok(has("mb.setAttribute('aria-expanded', String(!!open)); puPlace();"), "at once when it opens");
+  assert.ok(tray.includes("s.bottom-b.top+8"), "lifted above the replay bar when they meet");
+  for (const k of ["data-pu=", "class='b-pukey'", "class='b-pucd'", "class='b-pupips'", "aria-pressed", "b-puhint", "b-putoast", "b-puret"]) assert.ok(tray.includes(N(k)), `markup ${k}`);
+  const css = M.BATTLE_CSS;
+  assert.ok(/\.b-puslot\{[^}]*width:56px;height:56px[^}]*border-radius:14px/.test(css), "56 px slots, radius 14"); assert.ok(/max-width:899px\)\{\.b-puslot\{width:48px;height:48px\}/.test(css), "48 px on Duo and phone");
+  assert.ok(/\.b-putray\{display:flex;gap:8px/.test(css)); assert.ok(css.includes(".b-puslot.armed{") && css.includes("translateY(-4px)") && css.includes(".b-puslot.cool::after") && css.includes("conic-gradient") && /\.b-puslot\.empty\{border-style:dashed/.test(css), "Ready, Armed, Recharging, Empty");
+  assert.ok(/max-width:600px\)\{\.b-pu\{right:10px;bottom:94px\}/.test(css), "phone: right aligned above the full-width bar"); assert.ok(css.includes(".b-pu.mhide{visibility:hidden}"));
+  assert.ok(/\.b-puret\{[^}]*width:64px;height:32px[^}]*dashed/.test(css), "the 64 x 32 dashed reticle"); assert.ok(/prefers-reduced-motion:reduce\)\{\.b-puslot\{transition:none\}/.test(css));
+});
