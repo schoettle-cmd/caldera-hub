@@ -116,3 +116,11 @@ test("Mike 11-20 nav float: the phone tab bar is pinned to the bottom of the vis
   assert.equal(run({ vh: -33554432, ih: 844, barBottom: 754 }), "");              // insane Duo value: stands still
   assert.equal(run({ vh: 844, ih: 844, barBottom: 754, cls: ["ch-duo"] }), "");   // Duo rail: not the tab bar
 });
+
+test("Mike 11-20 profile sideways scroll: the Friends line wraps on phones and the page clips sideways overflow", () => {
+  const src = fs.readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
+  assert.match(src, /\.cb-social \.cb-stats>span\.cb-why\{white-space:normal;overflow-wrap:anywhere\}/);
+  assert.match(src, /const BAR_ACT_CSS = `<style>\/\* Mike 11-20: no sideways scroll on any profile \*\/html,body\{overflow-x:clip\}\.cb-row,\.cb-social,\.cb-stats,\.cb-acts\{min-width:0;max-width:100%\}/);
+  const pin = fs.readFileSync(new URL("../src/header.ts", import.meta.url), "utf8").match(/export const BN_PIN_JS = `[^`]*`/)[0];
+  assert.doesNotMatch(pin, /style\.(width|left|right)/);   // the tab-bar pin sets only a vertical transform
+});
