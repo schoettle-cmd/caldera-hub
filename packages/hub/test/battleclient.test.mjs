@@ -230,3 +230,11 @@ test("people in the deck: every list uses who() or an avatar; links sit outside 
   assert.ok(css.includes(".b-hit0{position:absolute;inset:0") && css.includes(".b-who{pointer-events:auto"), "the row button covers the row, the link sits on top");
   assert.ok(!/\.b-sl button/.test(css), "the shot row is no longer one big button");
 });
+
+// ---------------------------------------------------------------- 11-21 the Armory yard on the map (plugin cityarmory.ts)
+test("armory yard: a tap on your own yard opens the Armory panel in the Battle view; anyone else's falls back to the card", () => {
+  const js = readFileSync(new URL("../src/battleclient.ts", import.meta.url), "utf8"), fn = js.slice(js.indexOf("window.CALDERA_ARMORY_OPEN = function"), js.indexOf("window.CALDERA_BATTLE_UI ="));
+  assert.ok(fn.includes("if (!armWho || armWho !== h) { if (fallback) fallback(); return; }"), "not yours (or signed out): the card");
+  assert.ok(fn.includes("u.hash = 'armory'") && fn.includes("render.did = 0") && fn.includes("document.querySelector('[data-gmode=\"battle\"]')"), "yours: the Battle view with #armory scrolled into view");
+  assert.ok(fn.includes("fetch('/v1/world/battle/me'") && fn.includes("m.war ? m.h : ''"), "asks who you are once");
+});

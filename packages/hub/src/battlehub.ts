@@ -153,7 +153,9 @@ export function battleHub(c: BattleHubCtx) {
       if (!on.has(m.id)) continue;
       const f = fighterOf(x, m, today, !!opts.get(m.id)?.waive); if (!f) continue;
       const h = "@" + m.handle, last = S.shots(n).filter(s => s.d === m.id && s.f > 0), taken = last.reduce((t, s) => t + dmgAt(s, at), 0), left = last.reduce((t, s) => t + remaining(dmgAt(s, at), s.t, at, x.pts(m.id)), 0);
-      members[h] = { sh: f.sh, beg: f.beg ? 1 : 0, ammo: f.ars.ammo, usd: f.ars.usd, n: f.ars.n, tech: f.ars.tech, guide: f.ars.guide, cep: f.ars.cepX, reach: f.ars.reach, best: f.ars.best, shots: f.ars.shots.length, hits: open.get(h) || [], reb: taken > 0 ? Math.round(100 * (1 - left / taken)) : 100, tgt: targetable(f) ? 1 : 0 };
+      // nx: the arsenal that fires at `next` while it is not today's (00:00 to 10:00 UTC: yesterday's), for the map's Armory yard
+      const fy = at < battleAt(today) ? fighterOf(x, m, today - 1, !!opts.get(m.id)?.waive) : null;
+      members[h] = { sh: f.sh, beg: f.beg ? 1 : 0, ammo: f.ars.ammo, usd: f.ars.usd, n: f.ars.n, ...(fy ? { nx: fy.ars.n } : {}), tech: f.ars.tech, guide: f.ars.guide, cep: f.ars.cepX, reach: f.ars.reach, best: f.ars.best, shots: f.ars.shots.length, hits: open.get(h) || [], reb: taken > 0 ? Math.round(100 * (1 - left / taken)) : 100, tgt: targetable(f) ? 1 : 0 };
     }
     const hid = A.hiddenIds([...S.shots(n), ...S.shots(n - 1)].map(s => s.x?.bid).filter((v): v is number => v != null));
     const xOut = (s: any) => s.x && s.x.bid != null && hid.has(s.x.bid) ? { ...s.x, word: (bombOf(s.x.bk)?.name || "").toUpperCase(), hid: 1 } : s.x || null;   // a hidden word shows as the bomb's name (armory-design B8)

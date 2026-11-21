@@ -312,6 +312,11 @@ test("live: Battle is one more view (Now stays the default); every city is in un
     assert.equal((await as("pat", "/v1/world/battle/opt", { war: false })).body.war, 0, "@pat leaves");
     s = await (await fetch(base + "/v1/world/battle")).json();
     assert.deepEqual(Object.keys(s.members).sort(), ["@rae", "@sam"], "a city that left is a peaceful zone; everyone else fights");
+    // the map's Armory yard: nx is the arsenal that fires at `next` while that is not today's (00:00 to 10:00 UTC), else absent
+    const tod = Math.floor(Date.now() / DAY), sum = o => Object.values(o || {}).reduce((t, v) => t + v, 0);
+    if (Date.now() < B.battleAt(tod)) assert.ok(s.next === B.battleAt(tod) && sum(s.members["@rae"].nx) > 0, "yesterday's arsenal fires at 10:00: " + JSON.stringify(s.members["@rae"]));
+    else assert.ok(!("nx" in s.members["@rae"]) && s.next === B.battleAt(tod + 1), "after the battle today's arsenal (n) is next");
+    assert.ok(sum(s.members["@rae"].n) > 0, "today's arsenal");
     const me = (await as("rae", "/v1/world/battle/opt", {})).body;
     assert.ok(me.arsenal && me.arsenal.ammo > 0 && me.arsenal.c === 20, "tonight's arsenal from today's real commits: " + JSON.stringify(me.arsenal));
     assert.deepEqual(me.rivals.map(r => r.h), ["@sam"]);
