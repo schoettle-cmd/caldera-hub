@@ -282,3 +282,20 @@ test("power-ups: the tray only in a replay, keys 1 2 3 and Esc in the replay key
   assert.ok(/max-width:600px\)\{\.b-pu\{right:10px;bottom:94px\}/.test(css), "phone: right aligned above the full-width bar"); assert.ok(css.includes(".b-pu.mhide{visibility:hidden}"));
   assert.ok(/\.b-puret\{[^}]*width:64px;height:32px[^}]*dashed/.test(css), "the 64 x 32 dashed reticle"); assert.ok(/prefers-reduced-motion:reduce\)\{\.b-puslot\{transition:none\}/.test(css));
 });
+
+// ---- the leaderboard at the end of the replay (LEADERBOARD.md, Fable design 11-21; Mike 11-21; plugin citycard.ts bLb*)
+test("leaderboard: while the results board shows (html.w-board) the replay bar and the power-up tray hide, no replay key acts behind it, and its buttons reuse play() and stopPlay()", () => {
+  const js = M.BATTLE_CLIENT_JS; new Function(js);
+  const N = (x) => String(x).replace(/\s+/g, "").replace(/"/g, "'"), J = N(js), css = M.BATTLE_CSS;
+  const hide = css.slice(css.indexOf("html.w-board .b-play"), css.indexOf("}", css.indexOf("html.w-board .b-play")) + 1);
+  for (const k of [".b-play", ".b-pu", ".b-puret", ".b-putoast"]) assert.ok(hide.includes("html.w-board " + k + ",") || hide.includes("html.w-board " + k + "{"), `hides ${k}`);
+  assert.ok(hide.includes("opacity:0;visibility:hidden;pointer-events:none;transition:opacity .15s"), "a 150 ms fade, then gone and not clickable");
+  const k0 = J.indexOf("/^[123]$/.test(e.key)"), kd = J.slice(J.lastIndexOf("addEventListener('keydown'", k0), k0 + 400);
+  assert.ok(kd.indexOf("contains('w-board')") > 0 && kd.indexOf("contains('w-board')") < kd.indexOf("/^[123]$/"), "F, M, 1 2 3, arrows and Space do nothing behind the board (the plugin's board handles Esc, R and S)");
+  const play = J.slice(J.indexOf("functionplay(mode,auto){"), J.indexOf("functionmine()"));
+  assert.ok(play.includes(N("api().boardHooks({ again: function (demo) { play(demo ? 'demo' : void 0); }, exit: function () { stopPlay(); }, add: '/#start', signedIn: function () { return !!me; } })")), "Watch again = play() in the same mode, Exit = stopPlay(), Add your city = the /world action");
+  assert.ok(play.indexOf("boardHooks") < play.indexOf("api().replay(mode"), "the hooks are in place before the replay starts");
+  const hud = J.slice(J.indexOf("functionhud(ph){"), J.indexOf("varpuEl=null"));
+  assert.ok(hud.includes(N("if (ph.board) { menuSet(false); puDisarm(); if (playing) { clearTimeout(playing); playing = null; } }")), "the menu closes, an armed power-up disarms, and no safety-net timer takes the board away");
+  assert.ok(/if \(!p2 \|\| !p2\.replay\) \{\s*stopPlay\(\)/.test(js) || J.includes("if(!p2||!p2.replay){stopPlay()"), "the poll still ends a replay that ended (Exit) through stopPlay");
+});

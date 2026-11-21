@@ -330,7 +330,7 @@ export function battleClient() {
       hudEl.querySelector('[data-p="snd"]').onclick = function () { if (A() && A().sound) A().sound(!A().sound()); refresh(); };   // D6 (Mike 11-20): sound on by default for a pressed replay; a mute is remembered
       hudEl.querySelector('[data-p="hit"]').onclick = function () { menuSet(false); if (!hudHit) return; var s = nightShots(hudHit.night)[hudHit.ix]; if (!s) return; if (A() && A().pause) A().pause(true); refresh(); openHow(s); };
       document.addEventListener('keydown', function (e) {   // 11-20: keys during a replay (right/left: next/previous strike, space: pause)
-        if (!hudEl || !document.documentElement.classList.contains('w-replay') || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '') || (e.target && e.target.closest && e.target.closest('.b-menu'))) return;
+        if (!hudEl || !document.documentElement.classList.contains('w-replay') || document.documentElement.classList.contains('w-board') || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '') || (e.target && e.target.closest && e.target.closest('.b-menu'))) return;
         if (puEl && /^[123]$/.test(e.key)) { e.preventDefault(); puToggle(BPU.kind(e.key).k); return; }   // power-ups: 1 2 3 arm, Esc disarms
         if (e.key === 'Escape' && puDisarm()) { e.preventDefault(); return; }
         var k = e.key === 'ArrowRight' ? 'skip' : e.key === 'ArrowLeft' ? 'prev' : e.key === ' ' ? 'pause' : e.key === 'm' || e.key === 'M' ? 'snd' : e.key === 'f' || e.key === 'F' ? 'full' : ''; if (!k) return;
@@ -338,6 +338,9 @@ export function battleClient() {
       document.addEventListener('pointerdown', function (e) { if (!hudEl || hudEl.querySelector('.b-menu').hidden) return; var t = e.target; if (t && t.closest && (t.closest('.b-menu') || t.closest('[data-p="more"]'))) return; menuSet(false); }, true);
       stage.appendChild(hudEl); fsSync(); puOn(); }
     if (api() && api().viewer) api().viewer(me && me.h ? me.h : null);   // the strike card: the viewer's own cities read YOU and YOUR on screen (citycard.ts)
+    // LEADERBOARD.md (Mike 11-21): at the end of the replay the plugin holds the clock and puts the results board up (html.w-board):
+    // the bar, its menu and the power-up tray step aside (CSS below) and no key acts behind it; the board stays until a button
+    if (ph.board) { menuSet(false); puDisarm(); if (playing) { clearTimeout(playing); playing = null; } }
     var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'fall' ? 'Final strike' : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
     var sbeat = st === 'beat' || st === 'pre' ? ph.beat + '/' + ph.beats : st === 'fall' ? 'Final' : st === 'wide' ? 'All ' + ph.beats + ' in' : beat, dm = ph.demo ? 'Demo \u00b7 ' : '', bt = dm + beat + '|' + dm + sbeat, be = hudEl.querySelector('[data-p="beat"]');
     if (be.getAttribute('data-t') !== bt) { be.setAttribute('data-t', bt); be.innerHTML = '<span class="sr">' + esc(dm + beat) + '</span><span aria-hidden="true">' + esc(dm + sbeat) + '</span>'; }
@@ -545,6 +548,8 @@ export function battleClient() {
   function play(mode, auto) {
     if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0;
     closeHow();
+    // the results board's buttons (LEADERBOARD.md): Watch again = play() in the same mode, Exit = stopPlay(), Add your city = /#start
+    if (api() && api().boardHooks) api().boardHooks({ again: function (demo) { play(demo ? 'demo' : undefined); }, exit: function () { stopPlay(); }, add: '/#start', signedIn: function () { return !!me; } });
     var n = on && api() && api().replay ? api().replay(mode, { speed: speed, auto: !!auto }) : 0;
     if (!n) { if (cap) cap.textContent = mode === 'demo' ? 'The demo needs two cities with repo towers on the map.' : 'No battle to replay. Watch a demo battle instead.'; playing = setTimeout(stopPlay, 3500); return; }
     var ph = api().phase(), b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', String(mode !== 'demo')); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', String(mode === 'demo')); layers.replay = mode !== 'demo';
@@ -966,6 +971,8 @@ html.pu-armed #stage canvas{cursor:none}
 html.w-replay .b-how{top:auto;height:min(46vh,420px)}
 @media (max-width:700px){.b-how{left:0;right:0;top:auto;bottom:0;width:auto;max-height:72vh;border-radius:16px 16px 0 0;border-width:1px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}}
 html.w-replay #drRail,html.w-replay .cal-nb{display:none!important}
+html.w-board .b-play,html.w-board .b-pu,html.w-board .b-puret,html.w-board .b-putoast{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .15s,visibility 0s .15s}   /* LEADERBOARD.md: the results board (plugin citycard.ts) covers the stage; the replay bar and the power-up tray fade out in 150 ms */
+@media (prefers-reduced-motion:reduce){html.w-board .b-play,html.w-board .b-pu{transition:none}}
 html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, cities, last hit) and the chip would sit on the Labels chip at the top left */
 .w-main .c-stage.c-full{height:100%;min-height:0}
 .w-battle-only{display:none}html.w-battle .w-battle-only{display:revert}html.w-battle .w-now-only,html.w-battle .w-grow-only{display:none}
