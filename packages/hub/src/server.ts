@@ -57,6 +57,7 @@ import { mentionSearch } from "./mentions.js";
 import { privateModes, scrubPrivateLive } from "./privatemode";
 import { profileMeta } from "./seometa";
 import { agencySuper } from "./agencysuper";
+import { tie, tieBanner, tieCard, tieHref } from "./tie";
 export { profileMeta } from "./seometa";
 
 const hashToken = (t: string) => crypto.createHash("sha256").update(t).digest("hex");
@@ -1053,7 +1054,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     // they were active, intros, preferences, message-email marks, and GitHub sign-in rows and sessions. Some tables only
     // exist once their feature has run, so each one is best effort.
     const del = (sql: string, ...a: unknown[]) => { try { q(sql).run(...a); } catch { /* table not created yet */ } };
-    for (const [t, col] of [["alert_reads", "owner"], ["member_tags", "member"], ["tag_edits", "member"], ["member_days", "owner"], ["feed_seen", "member"], ["search_prefs", "owner"], ["msg_emailed", "owner"], ["msg_emailed", "sender"], ["private_mode_prompted", "owner"]])
+    for (const [t, col] of [["alert_reads", "owner"], ["member_tags", "member"], ["tag_edits", "member"], ["member_days", "owner"], ["feed_seen", "member"], ["search_prefs", "owner"], ["msg_emailed", "owner"], ["msg_emailed", "sender"], ["private_mode_prompted", "owner"], ["tie_seen", "owner"]])
       del(`DELETE FROM ${t} WHERE ${col}=?`, id);
     del("DELETE FROM intros WHERE a=? OR b=?", id, id);
     try { for (const g of q("SELECT gh_id FROM gh_accounts WHERE profile_id=?").all(id) as any[]) del("DELETE FROM gh_sessions WHERE gh_id=?", g.gh_id); } catch { /* no GitHub sign-in */ }
@@ -1741,9 +1742,14 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   // sign-up flows, one shape for every way in (flows.ts); caldera-agg reads them as .flows
   const PUB_HOST = (() => { try { return new URL(opts.publicUrl || "https://caldera.social").host; } catch { return ""; } })();
   const doorOf = (r: http.IncomingMessage, u?: URL) => doorOfRaw(r, u, PUB_HOST);
-  const FLOWS = flows({ q, vid: (r) => FUNNEL.vid(r), emailOf: (id) => {
+  const memberEmail = (id: string) => {
     try { const a = q("SELECT email_sealed FROM email_accounts WHERE profile_id=?").get(id) as any; if (a?.email_sealed) return unseal(a.email_sealed); } catch { /* fall through */ }
-    try { return mail.suggestion(id)?.email || null; } catch { return null; } } });
+    try { return mail.suggestion(id)?.email || null; } catch { return null; } };
+  const FLOWS = flows({ q, vid: (r) => FUNNEL.vid(r), emailOf: memberEmail });
+  // Caldera x Orpheus tie (tie.ts): the first-value card, once per member, and tie_show / tie_click per day for Growth
+  const TIE = tie({ q, botUa: BOT_UA, ipOf, tooMany: (k, m) => tooMany(k, m), memberOf: r => memberOf(r), emailOf: memberEmail,
+    founder: () => (opts.founder ? byHandle(String(opts.founder).toLowerCase())?.id : null) || null });
+  (admin as any).tieStats = (days?: number) => TIE.stats(days);   // admin.js tie-stats
   // Agency Super (caldera-signups, src/agencysuper.ts): every account made through a request (email, Google, GitHub)
   // passes FLOWS.ok with created=true, so the click is fixed and the signup postback queued there
   const AS = agencySuper({ q, emailOf: (id) => { try { const a = q("SELECT email_sealed FROM email_accounts WHERE profile_id=?").get(id) as any; return a?.email_sealed ? unseal(a.email_sealed) : null; } catch { return null; } } });
@@ -2345,7 +2351,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   const emailPage = (res: http.ServerResponse, status: number, title: string, body: string) => { res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" });
     res.end(navify(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} - Caldera</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"></head><body>${body}</body></html>`)); };
   JOIN = joinModule({ googleFirst: (u) => !!EMP?.googleFirst(u), googleOn: () => !!EMP?.googleOn(), q, ipOf, page: emailPage, memberOf, byHandle, track: (req, step) => FUNNEL.track(req, step as any), devArm: (req) => { const v = FUNNEL.vid(req); return v ? devArm(v) : null; } });
-  EMP = emailPages({ asRemember: (r, e) => AS.remember(r, e), flows: { start: (r, m, d) => FLOWS.start(r, m, d), fail: (r, m) => FLOWS.fail(r, m), ok: (r, m, o, cr) => FLOWS.ok(r, m, o, cr), firstValue: (o) => FLOWS.firstValue(o), door: (r, u) => doorOf(r, u) }, googleFetch: (opts.githubFetch || fetch) as typeof fetch, ghRead: (l, r) => GHP.get(l, r ?? null) as any, ghMember: (l) => memberOfLogin(l), ghVerified: (id) => !!q("SELECT 1 FROM gh_links WHERE profile_id=?").get(id), q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
+  EMP = emailPages({ tie: (o) => { const t = TIE.take(o, "settings"); return t ? tieCard(tieHref("first_value"), t.counted) : ""; }, asRemember: (r, e) => AS.remember(r, e), flows: { start: (r, m, d) => FLOWS.start(r, m, d), fail: (r, m) => FLOWS.fail(r, m), ok: (r, m, o, cr) => FLOWS.ok(r, m, o, cr), firstValue: (o) => FLOWS.firstValue(o), door: (r, u) => doorOf(r, u) }, googleFetch: (opts.githubFetch || fetch) as typeof fetch, ghRead: (l, r) => GHP.get(l, r ?? null) as any, ghMember: (l) => memberOfLogin(l), ghVerified: (id) => !!q("SELECT 1 FROM gh_links WHERE profile_id=?").get(id), q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
     startOwner, memberOf, sameOrigin, allowNewProfile, tooMany, note: (m) => mail.note(m),
     page: emailPage,
     hasFollower: (id) => !!q("SELECT 1 FROM friends WHERE a=? OR b=? LIMIT 1").get(id, id) || !!q("SELECT 1 FROM friend_intents WHERE target=? AND kind='add' LIMIT 1").get(id),
@@ -2759,7 +2765,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           // just claimed (from /settings?welcome=1): one short line on the city, nothing else competing with it
           const welcome = own && prS && (rel === "city.html" || rel === "index.html") && url.searchParams.get("welcome") ? welcomeBanner(m[1], rel === "city.html") : "";
           if (welcome) FUNNEL.track(req, "landed");
-          const sum = welcome || (own && prS && (rel === "index.html" || rel === "city.html") && memberOf(req) === prS.id ? summaryBanner(prS.id, m[1]) : "");
+          const tieT = welcome && prS ? TIE.take(prS.id, "page") : null;   // the Orpheus tie row under the strip, once per member
+          const sum = welcome ? welcome + (tieT ? tieBanner(tieHref("first_value"), tieT.counted ? originOf(opts.publicUrl || "https://caldera.social") : null) : "") : (own && prS && (rel === "index.html" || rel === "city.html") && memberOf(req) === prS.id ? summaryBanner(prS.id, m[1]) : "");
           let out = /<body[^>]*>/i.test(html) ? html.replace(/<body[^>]*>/i, b => b + bar + sum) : bar + sum + html;
           // signed-out people (never crawlers, link previews, members or the owner): the deeper page blurs under a
           // "Create your profile" card (profile) or a nudge (city). The text stays in the HTML; the blur is paint only.
@@ -2805,6 +2812,12 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         let s = ""; for await (const c of req) { s += c; if (s.length > 40) break; }
         const k = okGateKind(s.trim()); if (k) FUNNEL.track(req, "gate", k);
         res.writeHead(204, { "access-control-allow-origin": "*", "cache-control": "no-store" }); res.end(); return;
+      }
+      if (req.method === "POST" && p === "/v1/tie") return TIE.route(req, res);
+      if (req.method === "GET" && p === "/v1/admin/tie") {   // founder: the tie's daily counts (caldera-agg reads them as .tie)
+        const me = memberOf(req), f = opts.founder ? byHandle(String(opts.founder).toLowerCase()) : null;
+        if (!me || !f || me !== f.id) return json(res, 403, { error: "founder only" });
+        return json(res, 200, TIE.stats(Math.min(400, Number(url.searchParams.get("days")) || 30)));
       }
       if (req.method === "POST" && p === "/v1/act") {
         if (tooMany("act-ip:" + ipOf(req), 120)) return json(res, 429, { error: "slow down" });

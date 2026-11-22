@@ -160,8 +160,12 @@
       <h2 id="orph-h">More agents, more commits, more ammo.</h2>
       <p><b>Orpheus</b> puts every Claude account you pay for on one board: how much of the weekly and 5-hour limit is used and when it resets. When one is about to run out, it moves idle agents to the account with the most room. On the web and on your phone.</p>
     </div>
-    <a class="btn orph-btn" href="https://useorpheus.com/?utm_source=caldera&amp;utm_medium=home" target="_blank" rel="noopener noreferrer">Get Orpheus</a>
+    <a class="btn orph-btn" href="https://useorpheus.com/?utm_source=caldera&amp;utm_medium=home&amp;utm_campaign=tie" target="_blank" rel="noopener noreferrer">Get Orpheus</a>
   </aside>
+  <script>(function(){var A=document.querySelector('.orph'),B=A&&A.querySelector('.orph-btn');if(!A||!B)return;
+function s(ev){try{window.esTrace&&esTrace(ev,{place:'home'})}catch(e){}try{var d=JSON.stringify({ev:ev,place:'home'});if(navigator.sendBeacon)navigator.sendBeacon('/v1/tie',d);else fetch('/v1/tie',{method:'POST',headers:{'content-type':'text/plain'},body:d,keepalive:true})}catch(e){}}
+B.addEventListener('click',function(){s('tie_click')});
+if('IntersectionObserver' in window){var o=new IntersectionObserver(function(es){for(var i=0;i<es.length;i++)if(es[i].isIntersecting){o.disconnect();s('tie_show');return}},{threshold:.5});o.observe(A)}})();</script>
 
   <section id="great" class="great" aria-labelledby="great-h">
     <style>.great{max-width:1100px;margin:0 auto;padding:8px 16px 24px}.great h2{margin:0 0 8px}.great>p{color:var(--text-muted,#9A9AA6);max-width:68ch}

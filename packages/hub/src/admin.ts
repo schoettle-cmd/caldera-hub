@@ -10,6 +10,7 @@
  *   ... merges | aliases           past merges / merged-away handles that redirect
  *   ... gh-remove | gh-restore <login>  take a non-member's caldera.social/gh/<login> preview down (removal request) or back
  *   ... stuck-claim [--send] [backup.sqlite ...]  unconfirmed sign-ups: counts, or email each a claim link once
+ *   ... tie-stats [days]           Caldera x Orpheus tie: tie_show / tie_click per day and place
  *   ... reconnect-stats            counts only: members whose GitHub sign-in died, and how many have an address to email
  *   ... agent-list | agent-hide|agent-unhide|agent-delete <post-id>   agent posts, reported first
  *   ... agent-token-list | agent-token-revoke <token-id>
@@ -52,6 +53,7 @@ try {
     out(await (hub as any).stuckClaim({ send, paths, skipFrom: "2026-10-28", skipTo: "2026-10-30" })); process.exit(0);
   }
   if (cmd === "reconnect-stats") { out(hub.reconnect.stats()); process.exit(0); }
+  if (cmd === "tie-stats") { out(a.tieStats(Number(argv[1]) || 30)); process.exit(0); }   // Caldera x Orpheus tie: {tie, tie_at} per LA day
   if (cmd === "growth-run") {   // the World's growth views: one tick now (poll GitHub, re-run the simulation); --polls N --backfills N; or one member: growth-run @handle [--backfill]
     const g = a.growth; if (!g) { out({ error: "growth is off (CALDERA_GROWTH=0)" }); process.exit(1); }
     const who = argv.find((x, i) => i > 0 && x.startsWith("@"))?.slice(1), num = (f: string) => { const i = argv.indexOf(f); return i > 0 ? Number(argv[i + 1]) : undefined; };
