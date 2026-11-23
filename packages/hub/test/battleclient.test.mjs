@@ -234,7 +234,7 @@ test("people in the deck: every list uses who() or an avatar; links sit outside 
 // ---------------------------------------------------------------- 11-21 the Armory yard on the map (plugin cityarmory.ts)
 test("armory yard: a tap on your own yard opens the Armory panel in the Battle view; anyone else's falls back to the card", () => {
   const js = readFileSync(new URL("../src/battleclient.ts", import.meta.url), "utf8"), fn = js.slice(js.indexOf("window.CALDERA_ARMORY_OPEN = function"), js.indexOf("window.CALDERA_BATTLE_UI ="));
-  assert.ok(fn.includes("if (!armWho || armWho !== h) { if (fallback) fallback(); return; }"), "not yours (or signed out): the card");
+  assert.ok(fn.includes("if (!armOwner || armOwner !== h) { if (fallback) fallback(); return; }"), "not yours (or signed out): the card");
   assert.ok(fn.includes("u.hash = 'armory'") && fn.includes("render.did = 0") && fn.includes("document.querySelector('[data-gmode=\"battle\"]')"), "yours: the Battle view with #armory scrolled into view");
   assert.ok(fn.includes("fetch('/v1/world/battle/me'") && fn.includes("m.war ? m.h : ''"), "asks who you are once");
 });
@@ -302,4 +302,10 @@ test("leaderboard: while the results board shows (html.w-board) the replay bar a
 
 test("Leaderboard: the map tool buttons hide while the board shows (they covered its top on phones)", () => {
   assert.match(M.BATTLE_CSS, /html\.w-board \.c-tools\{display:none!important\}/);
+});
+
+test("armWho stays a function: no var of the same name overwrites it (armory panel threw 'armWho is not a function', 11-22)", () => {
+  const src = readFileSync(new URL("../src/battleclient.ts", import.meta.url), "utf8");
+  assert.ok(/\bfunction armWho\(/.test(src));
+  assert.ok(!/\b(var|let|const) armWho\b|\barmWho\s*=[^=]/.test(src), "armWho is never assigned");
 });

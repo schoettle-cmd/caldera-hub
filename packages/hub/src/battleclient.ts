@@ -447,19 +447,19 @@ export function battleClient() {
   }
   // the Armory yard on the map (plugin cityarmory.ts): a tap on your own yard opens the Armory panel in the Battle view; anyone
   // else's (or a signed-out viewer) gets the city card as before. Who you are is asked once, on the first tap of a yard.
-  var armWho = null;
+  var armOwner = null;
   window.CALDERA_ARMORY_OPEN = function (h, fallback) {
     var go = function () {
-      if (!armWho || armWho !== h) { if (fallback) fallback(); return; }
+      if (!armOwner || armOwner !== h) { if (fallback) fallback(); return; }
       try { var u = new URL(location.href); u.hash = 'armory'; history.replaceState(history.state, '', u.pathname + u.search + u.hash); } catch (e) {}
       render.did = 0;
       if (on) { if (meLoaded) render(); return; }
       var b = document.querySelector('[data-gmode="battle"]'); if (b) b.click(); else show();
     };
-    if (meLoaded) armWho = me && me.war ? me.h : '';
-    if (armWho !== null) { go(); return true; }
+    if (meLoaded) armOwner = me && me.war ? me.h : '';
+    if (armOwner !== null) { go(); return true; }
     fetch('/v1/world/battle/me', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (m) { armWho = m && m.h && m.war ? m.h : ''; go(); }, function () { armWho = ''; go(); });
+      .then(function (m) { armOwner = m && m.h && m.war ? m.h : ''; go(); }, function () { armOwner = ''; go(); });
     return true;
   };
   window.CALDERA_BATTLE_UI = { show: show, hide: hide, play: function (mode) { if (mode === 'demo') play('demo'); else setLayer('replay', true); } };
