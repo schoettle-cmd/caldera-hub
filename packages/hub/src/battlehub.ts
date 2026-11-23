@@ -333,10 +333,12 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
       cache = null; c.json(res, 200, me(id)); return true;
     }
     if (p === "/v1/world/battle/aim") {
-      const opt = S.opt(id); if (!opt?.war) { c.json(res, 409, { error: "join the battles first" }); return true; }
-      const x = ctxFor(), h = String(b.target || "").replace(/^@/, "").toLowerCase(), t = x.ms.find(m => m.handle.toLowerCase() === h);
-      const night = lastNight(now()) + 1;
-      if (!t || t.id === id || !S.opt(t.id)?.war) { c.json(res, 400, { error: "that city isn't in the battles" }); return true; }
+      // the same rule as the picker's rivals and the night itself (Mike 11-22: "It's letting me choose cities not in the battle"):
+      // every city is in unless it left, and a target must be hittable (towers, not idle)
+      const x = ctxFor(), on = warSet(Infinity, x); if (!on.has(id)) { c.json(res, 409, { error: "join the battles first" }); return true; }
+      const h = String(b.target || "").replace(/^@/, "").toLowerCase(), t = x.ms.find(m => m.handle.toLowerCase() === h);
+      const night = lastNight(now()) + 1, tf = t && t.id !== id && on.has(t.id) ? fighterOf(x, t, dayOf(now()), !!S.opt(t.id)?.waive) : null;
+      if (!t || (!b.off && (!tf || !targetable(tf))) || (b.off && t.id === id)) { c.json(res, 400, { error: "that city isn't in tonight's battle" }); return true; }
       if (b.off) S.unaim(night, id, t.id);
       else { if (S.aimsOf(night, id).length >= WAR.manualCap) { c.json(res, 409, { error: `you've aimed all ${WAR.manualCap} shots for tonight` }); return true; } S.aim(night, id, t.id, now()); }
       c.json(res, 200, me(id)); return true;

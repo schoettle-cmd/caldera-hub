@@ -207,6 +207,7 @@ test("frontier UI: the World add box, the Armory target picker, and the owner-on
   assert.match(w.html, /class="b-ar-tb"/, "the picker replaces the target select");
   assert.ok(!/<select id="b-ar-t-/.test(w.html));
   assert.match(w.html, /window\.CALDERA_ARMORY_TARGET = function/);
+  assert.ok(w.html.includes("if (!isLand(h) && me.armory.targets.indexOf(h) < 0) return false;"), "a map tap on a city not in tonight's battle can't aim (Mike 11-22)");
   assert.match(w.html, /function ucCard\(/, "the unclaimed card is in the renderer");
   const mine = await page("/@ana/", await cookie("ana"));
   assert.match(mine.html, /Put a friend on the map/);

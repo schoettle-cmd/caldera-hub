@@ -470,3 +470,18 @@ test("fallen: the city that took the most damage in dollars falls at the end of 
   assert.equal(B.fallenOf([sh("a", "b", 100), sh("a", "c", 50), sh("a", "c", 50)]), "c", "a tie on dollars goes to more hits");
   assert.equal(B.fallenOf([sh("x", "d", 100), sh("x", "b", 100)]), "b", "then the id");
 });
+
+test("aim uses the night's rule (Mike 11-22: 'It's letting me choose cities not in the battle'): every rival the picker lists can be aimed at, a city that left can't", async () => {
+  const { h, ids, as } = await hubWith(["kai", "lu", "mo"]);
+  try {
+    work(h, ids);   // nobody has touched the battle switch: every city is in by default
+    assert.equal((await as("mo", "/v1/world/battle/opt", { war: false })).body.war, 0, "@mo leaves");
+    const me = (await as("kai", "/v1/world/battle/opt", {})).body;
+    assert.deepEqual(me.rivals.map(r => r.h), ["@lu"], "the picker lists only cities in tonight's battle");
+    for (const r of me.rivals) assert.equal((await as("kai", "/v1/world/battle/aim", { target: r.h })).status, 200, "every listed rival can be aimed at: " + r.h);
+    const no = await as("kai", "/v1/world/battle/aim", { target: "@mo" });
+    assert.equal(no.status, 400); assert.equal(no.body.error, "that city isn't in tonight's battle");
+    assert.equal((await as("kai", "/v1/world/battle/aim", { target: "@kai" })).status, 400, "not yourself");
+    assert.equal((await as("kai", "/v1/world/battle/aim", { target: "@lu", off: true })).status, 200, "Remove still works");
+  } finally { h.server?.close?.(); }
+});

@@ -667,7 +667,7 @@ export function battleClient() {
   // "Target in the Armory" on an unclaimed land's card (cityfrontier.ts): open the Armory and aim a bomb there
   window.CALDERA_ARMORY_TARGET = function (h) {
     if (!me || !me.armory) return false; if (h === null) return true;
-    if (!isLand(h) && me.armory.targets.indexOf(h) < 0) (me.armory.lands = me.armory.lands || []).push(h);
+    if (!isLand(h) && me.armory.targets.indexOf(h) < 0) return false;   // a city not in tonight's battle can't be aimed at (Mike 11-22)
     var r = cart.filter(function (x) { return !x.target; })[0];
     if (r) { r.target = h; armOk = 'Bomb ' + (cart.indexOf(r) + 1) + ' now aims at ' + h + '.'; armRender('#b-ar-t-' + (cart.indexOf(r) + 1)); }
     else { armAim = h; armOk = 'Pick a bomb. It aims at ' + h + '.'; armRender('.b-bc:not([disabled])'); }
