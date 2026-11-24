@@ -424,7 +424,10 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
     if (apply) cache = null;
     return out;
   }
-  return { route, tick, resolve, restrikeNight, fairRecount, state, me, postSummary, sendReports, store: S, armory: A, prefs: PR, armoryAlerts, gift: G, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
+  /** the time from which work counts for the season in progress (the next night's season): the battle before its first night.
+   *  Settings > Activity reads it (LOOP e). */
+  const seasonStart = () => battleAt(season(lastNight(now()) + 1, launch()).from - 1);
+  return { seasonStart, route, tick, resolve, restrikeNight, fairRecount, state, me, postSummary, sendReports, store: S, armory: A, prefs: PR, armoryAlerts, gift: G, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
     /** operator: opt a member in; since (ms) backdates it so a seed night can include them */
     optIn: (id: string, o: { waive?: boolean; since?: number } = {}) => { S.setWar(id, true, o.since ?? now()); if (o.waive !== undefined) S.setWaive(id, o.waive); cache = null; } };
 }

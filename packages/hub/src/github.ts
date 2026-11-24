@@ -19,13 +19,15 @@ import { renderProfile, type ProfileData, type DailyEntry } from "../../../../ca
 import { cityData, publicCity, cleanSites, type CityRepo } from "../../../../caldera/packages/plugin/src/city";
 import { listingLine, parseListingLine, cleanLabel, MAX_LABEL, toListing, withListingsPublic, MAX_LISTINGS, type ListingKind, type ListingMeta, type ListingRef } from "../../../../caldera/packages/plugin/src/listings";
 import { cleanImage } from "./images";
-import { connectionsPanel, settingsNav, sectionHead, SETTINGS_CSS, type Conn } from "./settings";
+import { connectionsPanel, settingsNav, sectionHead, activityCard, SETTINGS_CSS, type Conn, type ActivityData } from "./settings";
 import { alertItem, ALERT_CSS, ALERT_JS, type AlertRow } from "./alerts";
 
 export interface GhPerson { login: string; avatar: string; url: string; relation: string; invited: boolean; canEmail: boolean }
 export interface GhCtx {
   /** the Battles group (Armory alerts) under Settings > Notifications; empty when not in the battles */
   battleSettings?: (owner: string) => string;
+  /** Settings > Activity (LOOP e): the owner's counted work this season and the commits left out as farm, per repo */
+  activity?: (owner: string) => ActivityData | null;
   /** an email page's unverified public-GitHub city (emailpages.ts): mark it as this login's, then rebuild once linked */
   verifyPublicCity?: (id: string, login: string) => boolean;
   republishEmail?: (id: string) => void;
@@ -538,7 +540,7 @@ ${hookCheck}
       agentPrompt: agentPrompt || C.featurePrompt("agents", { hubUrl: pub, handle: a.handle, hosted: true }) });
     page(res, 200, "Settings", `${SETTINGS_CSS}${note ? `<div class="card">${note}</div>` : ""}${emailCaptureCard(a.profile_id)}
 <div class="who"><img src="${esc(url)}${esc(photoPath(pr))}" alt=""><div><h1>${esc(pr?.name || a.login)}</h1><div class="mut">@${esc(a.handle)} &middot; signed in with GitHub as ${esc(a.login)} &middot; <a href="${esc(url)}">your page</a></div></div></div>
-${settingsNav([["connections", "Connections"], ["alerts", "Alerts"], ["page", "Your page"], ["people", "People"], ["/me/building", "What you're building"], ["notifications", "Notifications"], ["/settings/agents", "Agents"], ["privacy", "Privacy"], ["account", "Account"]])}
+${settingsNav([["connections", "Connections"], ["alerts", "Alerts"], ["page", "Your page"], ["people", "People"], ["/me/building", "What you're building"], ...(ctx.activity ? [["activity", "Activity"] as [string, string]] : []), ["notifications", "Notifications"], ["/settings/agents", "Agents"], ["privacy", "Privacy"], ["account", "Account"]])}
 ${sectionHead("connections", "Connections", "Green means it's working. Tap anything grey to set it up right here.")}${panel}
 ${sectionHead("alerts", "Alerts")}${alertsList(a.profile_id, "set")}
 ${sectionHead("page", "Your page")}<div class="card"><b>Your page:</b> <a href="${esc(url)}">${esc(url)}</a><br><span class="mut">Built from your GitHub and refreshed every 6 hours${a.refreshed ? `; last ${esc(new Date(a.refreshed).toUTCString().slice(5, 22))} UTC` : ""}. Your repos are a city at <a href="${esc(url)}city.html">city.html</a>.</span></div>
@@ -552,7 +554,7 @@ ${finishCard(a)}
 <div class="row" style="margin-top:12px"><button class="btn small" type="submit">Save and republish</button></div></form>
 ${listingsForm(edits)}
 ${sectionHead("people", "People")}${growth}
-${sectionHead("notifications", "Notifications")}${emailCard(a, edits)}${ctx.battleSettings?.(a.profile_id) || ""}
+${activitySection(a.profile_id)}${sectionHead("notifications", "Notifications")}${emailCard(a, edits)}${ctx.battleSettings?.(a.profile_id) || ""}
 ${sectionHead("privacy", "Privacy")}<div class="card"><b>&#128274; What Caldera can see on GitHub</b><p class="mut" style="margin:6px 0 0">Your public profile, your email address and your public repos: read-only. Not your code, not your private repos (unless you install the app for chosen repos, and then only names, sizes and commit counts). GitHub enforces this. <a href="/security">Details</a> &middot; Revoke any time at <a href="https://github.com/settings/applications" target="_blank" rel="noopener">github.com/settings/applications</a>, or delete your page below.</p></div><form method="post" class="card" id="privacy-form"><input type="hidden" name="do" value="privacy">
 <label><input type="checkbox" name="listed" ${edits.listed === false ? "" : "checked"}> Show me in the <a href="/people">People</a> directory and on the World map</label>
 <label><input type="checkbox" name="autoConnectRepos" ${edits.autoConnectRepos === false ? "" : "checked"}> Connect me automatically with people I know from GitHub (shared repos, mutual follows)</label>
@@ -565,6 +567,12 @@ ${sectionHead("account", "Account")}<div class="card danger-zone"><div class="ro
 
   /** /settings for a page published from Obsidian: the vault is the source of truth, so page fields are read-only here;
    *  connections, people, notifications and sign-out work on the web. */
+  /** Settings > Activity: owner only (both Settings pages are the signed-in owner's); nothing when growth is off */
+  function activitySection(owner: string): string {
+    if (!ctx.activity) return "";
+    let d: ActivityData | null = null; try { d = ctx.activity(owner); } catch { d = null; }
+    return `${sectionHead("activity", "Activity", "What counted toward your city and your missiles this season. Only you see this.")}${activityCard(d)}`;
+  }
   function vaultPage(res: http.ServerResponse, pr: any, note = "") {
     const owner = pr.id as string, handle = pr.handle as string, url = `${pub}/@${handle}/`;
     let b: any = {}; try { b = JSON.parse(pr.manifest).body || {}; } catch { /* empty */ }
@@ -580,14 +588,14 @@ ${sectionHead("account", "Account")}<div class="card danger-zone"><div class="ro
     const yes = (on: boolean, t: string) => `<div style="margin:6px 0"><span class="conn-dot${on ? " on" : ""}" style="display:inline-block;margin-right:8px;vertical-align:middle"></span>${t}</div>`;
     page(res, 200, "Settings", `${SETTINGS_CSS}${note ? `<div class="card">${note}</div>` : ""}${emailCaptureCard(owner)}
 <div class="who">${b.photos?.avatar ? `<img src="${esc(url)}${esc(String(b.photos.avatar).replace(/^\.?\//, ""))}" alt="">` : ""}<div><h1>${esc(pr.name || handle)}</h1><div class="mut">@${esc(handle)} &middot; published from Obsidian &middot; <a href="${esc(url)}">your page</a></div></div></div>
-${settingsNav([["connections", "Connections"], ["alerts", "Alerts"], ["page", "Your page"], ["people", "People"], ["/me/building", "What you're building"], ["notifications", "Notifications"], ["/settings/agents", "Agents"], ["privacy", "Privacy"], ["account", "Account"]])}
+${settingsNav([["connections", "Connections"], ["alerts", "Alerts"], ["page", "Your page"], ["people", "People"], ["/me/building", "What you're building"], ...(ctx.activity ? [["activity", "Activity"] as [string, string]] : []), ["notifications", "Notifications"], ["/settings/agents", "Agents"], ["privacy", "Privacy"], ["account", "Account"]])}
 ${sectionHead("connections", "Connections", "Green means it's working. Tap anything grey to set it up right here.")}${panel}
 ${sectionHead("alerts", "Alerts")}${alertsList(owner, "set")}
 ${sectionHead("page", "Your page", "Edited from Obsidian (<code>Caldera/profile.md</code>). Change it there, or have your AI do it; the page republishes about a minute after you save.")}
 <div class="card">${ro("Name", esc(pr.name || ""))}${ro("Headline", esc(pr.headline || ""))}${ro("Links", links.map(([l, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(l)}</a>`).join(" &middot; "))}${ro("Groups", esc((Array.isArray(b.groups) ? b.groups : []).join(", ")))}
 ${(() => { const t = C.editPrompt({ hubUrl: pub, handle }); return `<pre id="pr-edit" style="max-height:120px">${esc(t)}</pre><button class="btn small" type="button" data-copy-text="pr-edit">Copy prompt for my AI</button>`; })()}</div>
 ${sectionHead("people", "People")}${growthCards({ profile_id: owner, handle }, {})}
-${sectionHead("notifications", "Notifications")}${emailCard({ profile_id: owner, handle }, {})}${ctx.battleSettings?.(owner) || ""}
+${activitySection(owner)}${sectionHead("notifications", "Notifications")}${emailCard({ profile_id: owner, handle }, {})}${ctx.battleSettings?.(owner) || ""}
 ${sectionHead("privacy", "Privacy", "Set in Obsidian: Settings &rarr; Caldera, or in <code>Caldera/profile.md</code>.")}<div class="card">${yes(b.listed !== false, "Listed in People and on the World map")}${yes(b.showViews !== false, "View count shown on your page")}${yes(b.autoConnectGithub !== false && b.autoConnectRepos !== false, "Connect automatically with people you know from GitHub")}</div>${ctx.privateMode ? privateReposForm(ctx.privateMode.modeFor(pr), !!ctx.privateMode.chosen(pr)) : ""}${ctx.searchPref ? searchForm(ctx.searchPref.on(pr)) : ""}
 ${sectionHead("account", "Account")}<div class="card danger-zone"><a class="btn small ghost" href="/signout?h=${encodeURIComponent(handle)}">Sign out of this browser</a>
 <p class="mut" style="margin-top:10px">To delete your Caldera profile, run <b>Caldera: Delete my profile from the hub</b> in Obsidian. Your vault is never touched.</p></div>`, ctx.owner?.bar?.(owner) || "");
