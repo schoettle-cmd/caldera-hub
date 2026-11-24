@@ -45,6 +45,7 @@ export interface BattleHubCtx {
   /** the bytes of that public avatar, read on the server (the battle picture embeds it); absent: fetched from the hub with a short timeout */ avatarBytes?: (profileId: string) => Buffer | null;
   /** SVG -> PNG for the battle picture, with its fonts (cards.ts toPng + battlecard.ts cardFonts) */ cardPng?: (svg: string) => Promise<Buffer>;
   /** one live promoted card for the battle mail (Caldera Points, part d), or null */ promo?: () => MailOpts["promo"];
+  /** after a night is saved (Caldera Points, points.ts awardNight): the night, its shots, and an earlier night's stored shots */ onNight?: (night: number, shots: Shot[], prior: (n: number) => Shot[]) => void;
   now?: () => number;
 }
 
@@ -124,6 +125,7 @@ export function battleHub(c: BattleHubCtx) {
     for (const f of r.fired) A.fired(f.id, f.k);
     for (const id of r.unfired) A.refund(id, "could not fire", now());
     for (const id of new Set(r.shots.map(s => s.a))) if (x.byId.has(id)) A.reward(id, night, now());
+    try { c.onNight?.(night, r.shots, n => S.shots(n)); } catch (e: any) { console.error("[points] night", e?.message); }
     S.prune(night - 120); cache = null;
     console.log(`[battle] night ${dayKey(night)}: ${fighters.length} cities, ${r.shots.length} shots, ${r.shots.filter(s => s.f > 0).length} landed, ${fmtUsd(r.shots.reduce((t, s) => t + usdOf(s), 0))} damage, raiders ${r.raiders.length}`);
     return meta;
