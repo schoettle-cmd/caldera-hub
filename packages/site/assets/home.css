@@ -204,7 +204,9 @@
 .pr-by a.rep{margin-left:10px;color:var(--text-muted);text-decoration:underline}
 .pr-card.empty .pr-main{grid-template-columns:minmax(0,1fr)}.pr-card.empty .pr-l{white-space:normal}
 :root[data-theme="light"] .ln{--fire:#B5650A;--fire-ink:#fff}
-@media (max-width:860px){.ln-grid{grid-template-columns:1fr}.ln-sub{font-size:16px}}
+@media (max-width:860px){.ln-grid{grid-template-columns:minmax(0,1fr)}.ln-sub{font-size:16px}}
 @media (max-width:520px){.ln{padding:18px 16px;margin-left:-8px;margin-right:-8px}.ln-cta .btn{flex:1 1 100%;justify-content:center}.ln-next{order:3}
   .pr-card{grid-template-columns:1fr}.pr-card .btn{justify-self:start}.pr-l{white-space:normal}}
 @media (prefers-reduced-motion:reduce){.ln-dot{animation:none}.ln-stage .ln-frame{transition:none}}
+
+@media (max-width:520px){.ln-row .nm .ln-tag{display:table;margin:2px 0 0}}

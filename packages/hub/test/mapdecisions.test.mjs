@@ -26,7 +26,7 @@ test("D4 CSS: phone header is one 44px row; the switch sits top left with the st
   assert.match(css, /\.w-mode\{position:absolute;left:12px;top:12px;z-index:7;/);
   assert.match(css, /\.w-mode button\[aria-pressed="true"\]\{background:#F4F6FA;color:#0B0D13\}/, "selected segment white");
   assert.match(css, /html\.w-battle \.w-main \.c-stage:has\(\.w-mode\) \.b-chip\{left:136px;top:12px/);
-  assert.match(css, /html\.w-battle \.w-main \.c-stage:has\(\.w-mode\) \.b-chip\{left:12px;top:52px;bottom:auto\}/, "phone: the chip sits under the switch (BATTLE.md U2, the bottom edge is for Replay)");
+  assert.match(css, /html\.w-battle \.w-main \.c-stage:has\(\.w-mode\) \.b-chip\{left:12px;top:52px;bottom:auto;max-width:calc\(100% - 24px\)\}/, "phone: the chip sits under the switch (BATTLE.md U2, the bottom edge is for Replay)");
   assert.match(css, /\.c-tools>\.w-time\{display:none\}/, "hidden until the renderer moves it into Layers");
   assert.match(css, /html\.w-replay \.w-mode,html\.w-replay \.w-main \.g-today\{display:none\}/, "the theater shows only the replay");
   assert.match(W.CARD_CLEAR_JS, /'\.b-chip,\.w-mode,\.w-of-chip,\.c-tools,/, "the city card opens under the switch");

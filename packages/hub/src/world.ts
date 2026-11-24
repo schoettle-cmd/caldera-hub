@@ -264,7 +264,7 @@ html.w-battle .w-main .c-stage:not(.c-full){height:calc(100vh - 200px);height:ca
   .w-extras{gap:8px;margin-top:14px}.w-ex{min-height:36px;padding:6px 10px;font-size:11px}.w-ex-a{font-size:11px}}
 @media (max-width:699px){.w-main{padding:0 12px 28px}.w-main .w-maps{margin:0 -4px}
   .w-head{height:44px;padding:2px 0;gap:10px}.w-head h1{font-size:19px;line-height:40px}
-  .w-mode{left:8px;top:8px}.w-mode button{min-width:56px}html.w-battle .w-main .c-stage:has(.w-mode) .b-chip{left:12px;top:52px;bottom:auto}   /* BATTLE.md U2 (Fable 11-24): on a phone the chip sits under the switch; the bottom edge is for the Replay button (the new-land note moves above it) */
+  .w-mode{left:8px;top:8px}.w-mode button{min-width:56px}html.w-battle .w-main .c-stage:has(.w-mode) .b-chip{left:12px;top:52px;bottom:auto;max-width:calc(100% - 24px)}   /* BATTLE.md U2 (Fable 11-24): on a phone the chip sits under the switch; the bottom edge is for the Replay button (the new-land note moves above it) */
   .c-more>.w-time{min-height:44px}.w-time .w-seg button{height:36px;padding:0 9px}
   .w-sent{flex:1 1 120px;justify-content:flex-end;font-size:13px}.w-s-txt{display:none}.w-sent a{display:inline-flex;align-items:center;min-height:44px}
   .w-addb{width:44px;height:40px;padding:0;justify-content:center;border-radius:10px}.w-addb span{display:none}

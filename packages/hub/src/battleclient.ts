@@ -454,7 +454,7 @@ export function battleClient() {
     if (canFlag && !fl) { hudEl.querySelector('.b-pt').insertAdjacentHTML('beforeend', flagHtml(hs)); fl = hudEl.querySelector('[data-p="flag"]'); }
     if (fl) { if (!canFlag) fl.remove(); else { fl.setAttribute('aria-label', 'Report the word ' + hs[8].word); fl.onclick = function () { flagAsk(hs); }; } }
     hudFlag = canFlag ? hs : null; var fm = hudEl.querySelector('[data-p="flagm"]'); fm.hidden = !canFlag; if (canFlag) { var fw = 'Report the word ' + hs[8].word; if (fm.lastChild.textContent !== fw) fm.lastChild.textContent = fw; }
-    var hb = hudEl.querySelector('[data-p="hit"]'); hb.textContent = ht + (ht && !ph.demo ? ' \u00b7 math' : ''); hb.hidden = !ht; hb.classList.toggle('sh', !!(ph.hit && (ph.hit.shield || ph.hit.sh > 0))); hudHit = ph.hit && !ph.demo ? { night: ph.night, ix: ph.hit.ix } : null;
+    var hb = hudEl.querySelector('[data-p="hit"]'); hb.innerHTML = '<span class="b-ht">' + esc(ht) + '</span>' + (ht && !ph.demo ? '<span class="b-hm"> \u00b7 math</span>' : ''); hb.hidden = !ht; hb.classList.toggle('sh', !!(ph.hit && (ph.hit.shield || ph.hit.sh > 0))); hudHit = ph.hit && !ph.demo ? { night: ph.night, ix: ph.hit.ix } : null;
     hudEl.querySelector('[data-p="math"]').hidden = !(ht && !ph.demo);
     var pc = hudEl.querySelector('[data-p="pic"]'), pk = api() && api().canPic ? api().canPic() : 'off'; pc.hidden = pk === 'off' || !pk; pc.setAttribute('aria-disabled', String(pk !== 'ready'));
     progSet(ph);
@@ -1229,6 +1229,7 @@ html.pu-armed #stage canvas{cursor:none}
 .b-play [data-p="label"]{min-width:0;color:#C9D2E6;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .b-play [data-p="label"]:empty{display:none}
 .b-play .b-hit{justify-self:start;min-width:0;max-width:100%;padding:8px 0;margin:-8px 0;border:0;background:none;font:500 11px/1.3 var(--font-mono,'IBM Plex Mono',monospace);color:#FFD9A0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:underline;text-decoration-color:rgba(255,217,160,.45);text-underline-offset:2px}
+.b-play .b-hit{display:flex}.b-play .b-hit .b-ht{min-width:0;overflow:hidden;text-overflow:ellipsis}.b-play .b-hit .b-hm{flex:none;white-space:pre}
 .b-play .b-hit.sh{color:#9FF6FF;text-decoration-color:rgba(61,242,255,.5)}
 .b-play .b-flag{position:relative;display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:999px;background:transparent;border:1px solid rgba(255,154,154,.4);color:#FFB4B4;font:500 10.5px/1 var(--font-mono,'IBM Plex Mono',monospace)}
 .b-play .b-flag::after{content:"";position:absolute;inset:-10px -4px}
@@ -1269,7 +1270,7 @@ html.pu-armed #stage canvas{cursor:none}
 .b-rp svg{width:14px;height:14px;flex:none}.b-rp:hover{background:#fff}.b-rp:active{transform:translateY(1px)}.b-rp:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}.b-rp[hidden]{display:none}
 .b-rp-map{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:7;height:44px;padding:0 20px 0 16px;border-radius:22px;font-size:14.5px;box-shadow:0 0 0 1px rgba(11,13,19,.55),0 10px 26px -8px rgba(0,0,0,.75)}
 .b-rp-map:active{transform:translateX(-50%) translateY(1px)}.b-rp-map svg{width:16px;height:16px}
-.b-rp-map kbd{margin-left:4px;padding:3px 5px;border-radius:5px;border:1px solid rgba(11,13,19,.28);font:600 10.5px/1 var(--font-mono,'IBM Plex Mono',monospace);color:rgba(11,13,19,.62)}
+.b-rp-map kbd{background:transparent;margin-left:4px;padding:3px 5px;border-radius:5px;border:1px solid rgba(11,13,19,.28);font:600 10.5px/1 var(--font-mono,'IBM Plex Mono',monospace);color:rgba(11,13,19,.62)}
 @media (max-width:600px){.b-rp{height:44px;border-radius:22px}.b-rp-map kbd{display:none}}
 html.w-replay .b-rp-map,html.w-board .b-rp-map,html:not(.w-battle) .b-rp-map{display:none}
 .c-stage.c-full .bcall{top:calc(12px + env(safe-area-inset-top,0px))}   /* BATTLE.md section 7: the strike callout under the notch in full screen */

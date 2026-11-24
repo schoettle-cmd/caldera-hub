@@ -34,7 +34,7 @@
   <nav class="feat-toc" aria-label="Features"><span><b>Your page</b> <a href="#f-masthead">Masthead and photo</a> &middot; <a href="#f-links">Elsewhere</a> &middot; <a href="#f-now">Now</a> &middot; <a href="#f-topics">Topics</a> &middot; <a href="#f-sidebar">Side menu groups</a> &middot; <a href="#f-graph">Local graph and backlinks</a> &middot; <a href="#f-modules">Your own sections</a></span><span><b>Your story and your work</b> <a href="#f-timeline">Timeline with eras and links</a> &middot; <a href="#f-projects">Projects with live links</a> &middot; <a href="#f-code">Code + GitHub city</a> &middot; <a href="#f-ai">AI usage</a> &middot; <a href="#f-knows">What it knows</a> &middot; <a href="#f-inbox">Inbox to knowledge</a></span><span><b>Every day</b> <a href="#f-journal">Daily journal</a> &middot; <a href="#f-scoreboard">Scoreboard</a> &middot; <a href="#f-activity">Activity heatmap</a> &middot; <a href="#f-growth">Growth</a></span><span><b>The live city</b> <a href="#f-live">Live visitors on your city</a> &middot; <a href="#f-agents">Your AI agents on the map</a> &middot; <a href="#f-weather">Time of day and weather</a></span><span><b>Your people</b> <a href="#f-friends">Friends, kudos and views</a> &middot; <a href="#f-groups">Groups</a> &middot; <a href="#f-email">Daily summary email</a></span><span><b>Only for you</b> <a href="#f-private">Private view on the web</a></span></nav>
   <h2 class="feat-group">Your page</h2>
   <section class="feat" id="f-masthead"><h3>Masthead and photo</h3>
-    <img class="feat-shot" src="/assets/guide/masthead.jpg" alt="Masthead and photo on a real Caldera page" loading="lazy" width="960">
+    <img width="1440" height="930" class="feat-shot" src="/assets/guide/masthead.jpg" alt="Masthead and photo on a real Caldera page" loading="lazy">
     <p><b>What feeds it:</b> "banner" and "photo" in Caldera/profile.md (images inside the vault)</p><p><b>Turn it on:</b> Choose images in Private view, or copy the masthead prompt for your AI.</p></section>
   <section class="feat" id="f-links"><h3>Elsewhere (links)</h3>
     
@@ -75,7 +75,7 @@ Describe work only by its public theme ("shipped a release", "wrote about design
 - Show me every change before you make it. Never read or edit .obsidian/plugins/caldera/data.json - it holds my private key.</pre></div></div></details></section>
   <h2 class="feat-group">Your story and your work</h2>
   <section class="feat" id="f-timeline"><h3>Timeline with eras and links</h3>
-    <img class="feat-shot" src="/assets/guide/timeline.jpg" alt="Timeline with eras and links on a real Caldera page" loading="lazy" width="960">
+    <img width="1092" height="788" class="feat-shot" src="/assets/guide/timeline.jpg" alt="Timeline with eras and links on a real Caldera page" loading="lazy">
     <p><b>What feeds it:</b> "timeline" in Caldera/profile.md: "Year | milestone | detail" lines, chapters as "era | Name | 2015-2020", links as [[Name|https://...]]</p><p><b>Turn it on:</b> Only things already public; linked names also become links in the side menu.</p>
     <details class="feat-prompt"><summary>Prompt for your AI</summary><div class="prompt-card"><div class="prompt-bar"><div class="prompt-file"><span class="pf-dot"></span>caldera-story.md</div><button class="btn copy" type="button" data-copy="fp-story"><span class="copy-label">Copy prompt</span></button></div><div class="prompt-body"><pre id="fp-story">Help me turn on a timeline and projects with links on my Caldera page (https://caldera.social/@&lt;my handle&gt;/). Caldera builds that page from my Obsidian vault: &lt;ABSOLUTE PATH TO MY OBSIDIAN VAULT&gt;
 
@@ -97,10 +97,10 @@ Everything public is on the open internet, can be copied forever, and can affect
 Describe work only by its public theme ("shipped a release", "wrote about design") and only name things I have already made public on my page (my own public projects, topics and links). If you are unsure, leave it out - an empty field is fine. Caldera also drops any journal line that looks sensitive before publishing.
 - Show me every change before you make it. Never read or edit .obsidian/plugins/caldera/data.json - it holds my private key.</pre></div></div></details></section>
   <section class="feat" id="f-projects"><h3>Projects with live links</h3>
-    <img class="feat-shot" src="/assets/guide/projects.jpg" alt="Projects with live links on a real Caldera page" loading="lazy" width="960">
+    <img width="1092" height="630" class="feat-shot" src="/assets/guide/projects.jpg" alt="Projects with live links on a real Caldera page" loading="lazy">
     <p><b>What feeds it:</b> "projects" in Caldera/profile.md (Name | status | https://link); commit counts per project from a "projects" map in Caldera/activity.json</p><p><b>Turn it on:</b> List public projects with their live URL; the routine can add commit counts per project.</p></section>
   <section class="feat" id="f-code"><h3>Code + GitHub city</h3>
-    <img class="feat-shot" src="/assets/guide/city.jpg" alt="Code + GitHub city on a real Caldera page" loading="lazy" width="960">
+    <img width="1485" height="930" class="feat-shot" src="/assets/guide/city.jpg" alt="Code + GitHub city on a real Caldera page" loading="lazy">
     <p><b>What feeds it:</b> a GitHub (or Forgejo / Codeberg) link in your profile links, or Caldera/city.json written by the routine</p><p><b>Turn it on:</b> Add "GitHub | https://github.com/you" to links, or sign up with GitHub.</p>
     <details class="feat-prompt"><summary>Prompt for your AI</summary><div class="prompt-card"><div class="prompt-bar"><div class="prompt-file"><span class="pf-dot"></span>caldera-code.md</div><button class="btn copy" type="button" data-copy="fp-code"><span class="copy-label">Copy prompt</span></button></div><div class="prompt-body"><pre id="fp-code">Help me turn on my GitHub city on my Caldera page (https://caldera.social/@&lt;my handle&gt;/). Caldera builds that page from my Obsidian vault: &lt;ABSOLUTE PATH TO MY OBSIDIAN VAULT&gt;
 
@@ -121,7 +121,7 @@ Everything public is on the open internet, can be copied forever, and can affect
 Describe work only by its public theme ("shipped a release", "wrote about design") and only name things I have already made public on my page (my own public projects, topics and links). If you are unsure, leave it out - an empty field is fine. Caldera also drops any journal line that looks sensitive before publishing.
 - Show me every change before you make it. Never read or edit .obsidian/plugins/caldera/data.json - it holds my private key.</pre></div></div></details></section>
   <section class="feat" id="f-ai"><h3>AI usage (tokens by model and provider)</h3>
-    <img class="feat-shot" src="/assets/guide/ai.jpg" alt="AI usage (tokens by model and provider) on a real Caldera page" loading="lazy" width="960">
+    <img width="1092" height="788" class="feat-shot" src="/assets/guide/ai.jpg" alt="AI usage (tokens by model and provider) on a real Caldera page" loading="lazy">
     <p><b>What feeds it:</b> Claude Code and Codex logs on this computer (read by the plugin itself), or an "ai" block in Caldera/activity.json for more machines and your products' APIs</p><p><b>Turn it on:</b> Automatic on the computer where you code; the routine adds other machines and sources (counts only).</p>
     <details class="feat-prompt"><summary>Prompt for your AI</summary><div class="prompt-card"><div class="prompt-bar"><div class="prompt-file"><span class="pf-dot"></span>caldera-ai.md</div><button class="btn copy" type="button" data-copy="fp-ai"><span class="copy-label">Copy prompt</span></button></div><div class="prompt-body"><pre id="fp-ai">Help me turn on AI usage on my profile on my Caldera page (https://caldera.social/@&lt;my handle&gt;/). Caldera builds that page from my Obsidian vault: &lt;ABSOLUTE PATH TO MY OBSIDIAN VAULT&gt;
 
@@ -141,27 +141,27 @@ Everything public is on the open internet, can be copied forever, and can affect
 Describe work only by its public theme ("shipped a release", "wrote about design") and only name things I have already made public on my page (my own public projects, topics and links). If you are unsure, leave it out - an empty field is fine. Caldera also drops any journal line that looks sensitive before publishing.
 - Show me every change before you make it. Never read or edit .obsidian/plugins/caldera/data.json - it holds my private key.</pre></div></div></details></section>
   <section class="feat" id="f-knows"><h3>What it knows</h3>
-    <img class="feat-shot" src="/assets/guide/knows.jpg" alt="What it knows on a real Caldera page" loading="lazy" width="960">
+    <img width="552" height="540" class="feat-shot" src="/assets/guide/knows.jpg" alt="What it knows on a real Caldera page" loading="lazy">
     <p><b>What feeds it:</b> "knows" in Caldera/profile.md (Label | vault folder) or a "knows" list in Caldera/activity.json</p><p><b>Turn it on:</b> Pick the folders that describe your knowledge (counts only, never note names).</p></section>
   <section class="feat" id="f-inbox"><h3>Inbox to knowledge</h3>
-    <img class="feat-shot" src="/assets/guide/inbox.jpg" alt="Inbox to knowledge on a real Caldera page" loading="lazy" width="960">
+    <img width="1092" height="392" class="feat-shot" src="/assets/guide/inbox.jpg" alt="Inbox to knowledge on a real Caldera page" loading="lazy">
     <p><b>What feeds it:</b> an "inbox" block in Caldera/activity.json: {"total", "kinds": [["Reports", 61]], "series": {"label", "weeks": [["Aug 3", 5]]}}</p><p><b>Turn it on:</b> If an agent files your email attachments into the vault, have it count them by kind (counts only).</p></section>
   <h2 class="feat-group">Every day</h2>
   <section class="feat" id="f-journal"><h3>Daily journal</h3>
-    <img class="feat-shot" src="/assets/guide/journal.jpg" alt="Daily journal on a real Caldera page" loading="lazy" width="960">
+    <img width="1092" height="776" class="feat-shot" src="/assets/guide/journal.jpg" alt="Daily journal on a real Caldera page" loading="lazy">
     <p><b>What feeds it:</b> caldera_headline / caldera_focus / caldera_wins / caldera_themes in daily notes (YYYY-MM-DD.md)</p><p><b>Turn it on:</b> The setup prompt's routine writes one entry per workday from your notes, calendar, sent email, commits and AI sessions.</p></section>
   <section class="feat" id="f-scoreboard"><h3>Scoreboard (streak, rank, 30-day bars)</h3>
     
     <p><b>What feeds it:</b> notes the plugin counts + the daily counts in Caldera/activity.json</p><p><b>Turn it on:</b> On by default; richer once the routine writes meetings, emails, prompts, commits, docs and tokens per day.</p></section>
   <section class="feat" id="f-activity"><h3>Activity heatmap</h3>
-    <img class="feat-shot" src="/assets/guide/activity.jpg" alt="Activity heatmap on a real Caldera page" loading="lazy" width="960">
+    <img width="1092" height="630" class="feat-shot" src="/assets/guide/activity.jpg" alt="Activity heatmap on a real Caldera page" loading="lazy">
     <p><b>What feeds it:</b> notes created and changed per day, plus outside counts from Caldera/activity.json</p><p><b>Turn it on:</b> Automatic; the routine adds calendar, email, AI and code counts.</p></section>
   <section class="feat" id="f-growth"><h3>Growth</h3>
     
     <p><b>What feeds it:</b> notes in the vault over time</p><p><b>Turn it on:</b> Automatic.</p></section>
   <h2 class="feat-group">The live city</h2>
   <section class="feat" id="f-live"><h3>Live visitors on your city</h3>
-    <img class="feat-shot" src="/assets/guide/city.jpg" alt="Live visitors on your city on a real Caldera page" loading="lazy" width="960">
+    <img width="1485" height="930" class="feat-shot" src="/assets/guide/city.jpg" alt="Live visitors on your city on a real Caldera page" loading="lazy">
     <p><b>What feeds it:</b> the Caldera snippet (t/1.js with your site key) on each of your websites</p><p><b>Turn it on:</b> Copy each district's snippet from Settings -&gt; Caldera -&gt; Live traffic (or caldera.social/me) into that site's shared layout.</p>
     <details class="feat-prompt"><summary>Prompt for your AI</summary><div class="prompt-card"><div class="prompt-bar"><div class="prompt-file"><span class="pf-dot"></span>caldera-live.md</div><button class="btn copy" type="button" data-copy="fp-live"><span class="copy-label">Copy prompt</span></button></div><div class="prompt-body"><pre id="fp-live">Help me turn on live visitors on my city on my Caldera page (https://caldera.social/@&lt;my handle&gt;/). Caldera builds that page from my Obsidian vault: &lt;ABSOLUTE PATH TO MY OBSIDIAN VAULT&gt;
 
@@ -207,7 +207,7 @@ Describe work only by its public theme ("shipped a release", "wrote about design
     <p><b>What feeds it:</b> the viewer's own clock and local weather</p><p><b>Turn it on:</b> Automatic; anyone can override it with the sky buttons.</p></section>
   <h2 class="feat-group">Your people</h2>
   <section class="feat" id="f-friends"><h3>Friends, kudos and views</h3>
-    <img class="feat-shot" src="/assets/guide/world.jpg" alt="Friends, kudos and views on a real Caldera page" loading="lazy" width="960">
+    <img width="1920" height="1050" class="feat-shot" src="/assets/guide/world.jpg" alt="Friends, kudos and views on a real Caldera page" loading="lazy">
     <p><b>What feeds it:</b> other members</p><p><b>Turn it on:</b> Nothing to set up: follow people and send kudos from anyone's page (follow each other and you're friends); shared GitHub repos connect people automatically.</p></section>
   <section class="feat" id="f-groups"><h3>Groups</h3>
     

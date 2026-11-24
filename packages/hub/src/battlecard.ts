@@ -60,7 +60,7 @@ export function battleCardSvg(n: CardNight, me: CardMe | null): string {
     `<text x="739" y="${cy + 19}" font-family="${F_MONO}" font-weight="500" font-size="20" fill="#F4F6FA" fill-opacity=".6">${r.hits} hit${r.hits === 1 ? "" : "s"}, shield held ${esc(fmtUsd(r.held))}</text>` +
     `<text x="1152" y="${cy + 11}" text-anchor="end" font-family="${F_LAB}" font-weight="700" font-size="36" fill="#58B4FF">${esc(fmtUsd(r.usd))}</text>`; };
   const tile = (x: number, v: string, l: string, gold?: boolean) => `<rect x="${x}" y="96" width="144" height="112" rx="10" fill="#fff" fill-opacity=".055"/>` +
-    `<text x="${x + 16}" y="154" font-family="${F_LAB}" font-weight="700" font-size="52" fill="${gold ? "#FFC83D" : "#F4F6FA"}">${esc(v)}</text>` +
+    `<text x="${x + 16}" y="154" font-family="${F_LAB}" font-weight="700" font-size="${v.length <= 5 ? 52 : v.length === 6 ? 46 : 40}" fill="${gold ? "#FFC83D" : "#F4F6FA"}">${esc(v)}</text>` +
     `<text x="${x + 16}" y="188" font-family="${F_LAB}" font-weight="600" font-size="20" letter-spacing="2" fill="#F4F6FA" fill-opacity=".7">${l}</text>`;
   const frame = `<polygon points="63,452 1171,452 1151,592 43,592" fill="#8B6CF6" fill-opacity=".18" stroke="#8B6CF6" stroke-width="1.5"/><polygon points="63,452 75,452 55,592 43,592" fill="#8B6CF6"/>`;
   let band: string;
