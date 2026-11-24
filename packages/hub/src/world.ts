@@ -315,9 +315,20 @@ var L=document.getElementById('w-lgd'),LB=null;if(L){var lclose=function(){if(L.
 var X=document.querySelector('[data-wpu]'),MP=document.getElementById('power-up');if(X&&MP){var sync=function(){X.setAttribute('aria-expanded',String(MP.open));X.textContent=MP.open?'Close':'Open'};
   X.addEventListener('click',function(){MP.open=!MP.open;sync();if(MP.open){var c=MP.querySelector('.mp-copy');if(c)try{c.focus({preventScroll:true})}catch(e){}}});MP.addEventListener('toggle',sync);sync()}
 })();`;
+/** embed (LOOP.md b.6): only the map fills the frame. No header, deck, replay bar, tray, chip, map tools, Replay pill or
+ *  extras; no pointer actions (keys and sound: battleclient.ts, CALDERA_EMBED) */
+const EMBED_CSS = `html.w-embed,html.w-embed body{margin:0;height:100%;overflow:hidden;background:#0B0D13}
+html.w-embed,html.w-embed *{pointer-events:none!important}
+html.w-embed body>:not(main){display:none!important}
+html.w-embed main.w-main{padding:0!important;margin:0!important;max-width:none!important}
+html.w-embed main.w-main>:not(.w-maps){display:none!important}
+html.w-embed .w-maps>:not(.c-stage){display:none!important}
+html.w-embed .w-maps .c-stage{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;margin:0!important;border:0!important;border-radius:0!important}
+html.w-embed .c-stage>:not(canvas){display:none!important}`;
 export function worldPage(w: World, o: { hub: string; nav: string; tools?: unknown[]; growth?: unknown | null; battle?: unknown | null; frontier?: { districts: any[]; meta: Record<string, any>; fs?: Record<string, { slot: number; by: string | null }> } | null;
   /** the Orpheus fleet (fleet.ts), newest link first: listed members only; viewer = the signed-in handle (the ref on Try Orpheus free) */
-  fleet?: FleetChip[]; viewer?: string | null }): string {
+  fleet?: FleetChip[]; viewer?: string | null;
+  /** LOOP.md b.6: the homepage block's muted in-place replay (/world?view=battle&embed=1&replay=1): only the map */ embed?: boolean }): string {
   const G = o.growth || null, BT = G ? o.battle || null : null;
   const hub = o.hub.replace(/\/$/, ""), n = w.members.length, b = w.city.districts.reduce((s, d) => s + d.repos.length, 0);
   // Frontier lands (frontier.ts) ride along as fogged districts on the world's edge (uc: 1), with their card facts in world.uc
@@ -326,8 +337,9 @@ export function worldPage(w: World, o: { hub: string; nav: string; tools?: unkno
   const FL = (o.fleet || []).filter(f => w.members.some(m => m.handle.toLowerCase() === f.handle.toLowerCase()));
   const OL = new Map(FL.map(f => [f.handle.toLowerCase(), f.founding ? 2 : 1]));
   const data = { ...w.city, districts: [...w.city.districts, ...FD], openBase: "", world: { m: Object.fromEntries(w.members.map(m => ["@" + m.handle, OL.has(m.handle.toLowerCase()) ? { ...m, orph: OL.get(m.handle.toLowerCase()) } : m])), links: w.links, start: w.start, topics: w.topics || [], uc: o.frontier?.meta || {}, fr: o.frontier ? 1 : 0, fs: Object.fromEntries(Object.entries(o.frontier?.fs || {}).filter(([k]) => w.members.some(m => "@" + m.handle === k))) } };
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Caldera world: every member's city on one map</title>
+  const EMB = !!o.embed && !!BT;
+  return `<!doctype html><html lang="en"${EMB ? ' class="w-embed"' : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Caldera world: every member's city on one map</title>${EMB ? `<meta name="robots" content="noindex"><script>window.CALDERA_EMBED=1</script><style>${EMBED_CSS}</style>` : ""}
 <meta name="description" content="Every Caldera member's GitHub and Obsidian city on one live map: ${n} neighborhoods, ${b} buildings, friendships as highways.">
 <meta property="og:title" content="The Caldera world"><meta property="og:description" content="Every member's city on one live map."><meta property="og:image" content="${esc(hub)}/og.jpg"><meta property="og:url" content="${esc(hub)}/world">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="canonical" href="${esc(hub)}/world">
