@@ -107,3 +107,22 @@ test("homepage: Get Orpheus carries utm_campaign=tie; the footer link is unchang
   assert.equal((h.match(/utm_campaign=tie/g) || []).length, 1, "only the button");
   assert.match(h, /esTrace\(ev,\{place:'home'\}\)/); assert.match(h, /sendBeacon\('\/v1\/tie'/); assert.match(h, /IntersectionObserver/);
 });
+
+test("Founding Fleet window words (Growth Engine 11-24): only in the window and only while /api/fleet says open", async () => {
+  const { build } = await import("esbuild");
+  const out = await build({ entryPoints: [new URL("../src/tie.ts", import.meta.url).pathname], bundle: true, platform: "node", format: "esm", packages: "external", write: false });
+  const { fleetOffer, tieCard, tieBanner, tieHref, FLEET_FROM, FLEET_TO } = await import("data:text/javascript;base64," + Buffer.from(out.outputFiles[0].text).toString("base64"));
+  let body = { state: "open", left: 37 }, ok = true, t = FLEET_FROM - 1;
+  const f = async () => { if (!ok) throw new Error("down"); return new Response(JSON.stringify(body), { status: 200 }); };
+  const o = fleetOffer(f, () => t);
+  assert.equal(o.words(), null, "before the window");
+  t = FLEET_FROM + 1000; await o.refresh(); const w = o.words();
+  assert.equal(w.h, "Founding Fleet: half off your first Orpheus year"); assert.match(w.body, /37 of 100 spots left\.$/); assert.equal(w.btn, "Claim a Founding Fleet spot");
+  const card = tieCard(tieHref("first_value", "founding_fleet"), true, "settings", w), row = tieBanner(tieHref("first_value", "founding_fleet"), null, undefined, w);
+  for (const x of [card, row]) { assert.ok(x.includes("utm_campaign=founding_fleet") && x.includes("Ends Monday, Nov 30.")); assert.ok(!x.includes("Try Orpheus free")); }
+  body = { state: "open" }; await o.refresh(); assert.ok(!/spots left/.test(o.words().body), "no count unless Orpheus sends one");
+  body = { state: "full", left: 0 }; await o.refresh(); assert.equal(o.words(), null, "full: today's words");
+  ok = false; await o.refresh(); assert.equal(o.words(), null, "call fails: today's words");
+  ok = true; body = { state: "open", left: 5 }; t = FLEET_TO; await o.refresh(); assert.equal(o.words(), null, "after the window");
+  assert.ok(tieCard(tieHref("first_value"), true).includes("Try Orpheus free"), "default words unchanged");
+});

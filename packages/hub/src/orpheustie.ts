@@ -109,7 +109,7 @@ export function orpheusTie(c: {
     if (r.status !== 200) { log("feed failed", "status " + r.status); return { ok: false, error: "status " + r.status }; }
     const f = parseFeed(r.json); if (!f) { log("feed rejected: bad shape"); return { ok: false, error: "bad feed" }; }
     const now = new Date().toISOString(), seen = new Set(f.fleet.map(x => x.id));
-    let added = 0, updated = 0, removed = 0;
+    let added = 0, updated = 0, removed = 0, guard: { prev: number; kept: number } | null = null;
     const tx = (fn: () => void) => { q("BEGIN").run(); try { fn(); q("COMMIT").run(); } catch (e) { q("ROLLBACK").run(); throw e; } };
     tx(() => {
       for (const x of f.fleet) {
@@ -122,9 +122,20 @@ export function orpheusTie(c: {
         const pr = c.byHandle(x.handle.toLowerCase()); if (!pr?.id || c.hidden(pr) || rowOf(pr.id)) continue;
         q("INSERT INTO orpheus_links VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").run(x.id, pr.id, pr.handle, ...vals); added++;
       }
-      for (const row of q("SELECT id FROM orpheus_links").all() as any[]) if (!seen.has(String(row.id).toLowerCase())) { q("DELETE FROM orpheus_links WHERE id=?").run(row.id); removed++; }
+      // mass-drop guard (Orpheus Dev 11-24): with 4+ links before, a pull that keeps under half of them is held: the old pins
+      // stay, the pull is tried again hourly, and the drop applies only when a pull on a LATER day says the same.
+      // Smaller drops (an owner's Remove, a hidden fleet) apply at once.
+      const prev = (q("SELECT id FROM orpheus_links").all() as any[]).map(r => String(r.id)), kept = prev.filter(id => seen.has(id.toLowerCase())).length;
+      const day = now.slice(0, 10), held = String((q("SELECT v FROM hub_meta WHERE k='orpheus_drop'").get() as any)?.v || "");
+      if (prev.length >= 4 && kept * 2 < prev.length && !(held && held < day)) {
+        if (!held) q("INSERT INTO hub_meta VALUES ('orpheus_drop', ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").run(day);
+        guard = { prev: prev.length, kept }; return;
+      }
+      q("DELETE FROM hub_meta WHERE k='orpheus_drop'").run();
+      for (const id of prev) if (!seen.has(id.toLowerCase())) { q("DELETE FROM orpheus_links WHERE id=?").run(id); removed++; }
       q("INSERT INTO hub_meta VALUES ('orpheus_pull', ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").run(now);
     });
+    if (guard) { log("feed held: mass drop", `kept ${guard.kept} of ${guard.prev}`); return { ok: false, error: "held: mass drop", added, updated, removed: 0, retried }; }
     return { ok: true, added, updated, removed, retried };
   }
 

@@ -215,3 +215,22 @@ test("key absent: the feature is off, no calls to Orpheus", async () => {
     assert.deepEqual(JSON.parse(await (await req(b, "/v1/world")).text()).orpheus, []);
   } finally { b.close(); }
 });
+
+test("feed guard (Orpheus Dev 11-24): a pull that keeps under half of 4+ links is held until a later day says the same; small drops apply at once", async () => {
+  const b = await boot();
+  try {
+    const names = [["ann", "Ann Lee"], ["bo", "Bo Diaz"], ["cy", "Cy Twombly"], ["di", "Di Prima"], ["ed", "Ed Ruscha"]];
+    for (const [u, n] of names) await join(b, `${u}@mail.test`, n);
+    const ids = names.map((_, i) => `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`), hs = ["ann-lee", "bo-diaz", "cy-twombly", "di-prima", "ed-ruscha"];
+    b.st.reply["/api/tie/caldera/feed"] = { body: feed(ids.map((id, i) => fr(id, hs[i]))) };
+    assert.equal((await b.h.admin.orpheusPull()).added, 5);
+    const n = () => b.h.db.prepare("SELECT COUNT(*) n FROM orpheus_links").get().n;
+    b.st.reply["/api/tie/caldera/feed"] = { body: feed(ids.slice(0, 4).map((id, i) => fr(id, hs[i]))) };
+    assert.equal((await b.h.admin.orpheusPull()).removed, 1, "one removal applies at once"); assert.equal(n(), 4);
+    b.st.reply["/api/tie/caldera/feed"] = { body: feed([]) };
+    const held = await b.h.admin.orpheusPull(); assert.equal(held.ok, false); assert.equal(held.error, "held: mass drop"); assert.equal(n(), 4, "old pins stay");
+    assert.equal((await b.h.admin.orpheusPull()).ok, false, "same day: still held");
+    b.h.db.prepare("UPDATE hub_meta SET v='2026-01-01' WHERE k='orpheus_drop'").run();
+    const later = await b.h.admin.orpheusPull(); assert.equal(later.ok, true); assert.equal(later.removed, 4); assert.equal(n(), 0, "a later day says the same: applied");
+  } finally { b.h.server?.close?.(); }
+});

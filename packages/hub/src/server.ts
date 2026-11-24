@@ -57,7 +57,7 @@ import { mentionSearch } from "./mentions.js";
 import { privateModes, scrubPrivateLive } from "./privatemode";
 import { profileMeta } from "./seometa";
 import { agencySuper } from "./agencysuper";
-import { tie, tieBanner, tieCard, tieHref } from "./tie";
+import { tie, tieBanner, tieCard, tieHref, fleetOffer } from "./tie";
 import { orpheusTie } from "./orpheustie";
 import { FLEET_TOKENS, FLEET_LINK_CSS, fleetProfile, fleetSettingsRow, FLEET_SETTINGS_CSS, FLEET_SETTINGS_JS, orphLevel } from "./fleet";
 export { profileMeta } from "./seometa";
@@ -74,7 +74,7 @@ export interface HubOptions { dataDir: string; port?: number; publicUrl?: string
   /** Handle of the founder: every new profile starts out as their friend (MySpace's Tom). */ founder?: string; tailnetOwners?: Record<string, string>; githubFetch?: typeof fetch; /** tests: stand-ins for DNS and fetching listed apps and websites */ listingsLookup?: Lookup; listingsGet?: typeof safeGet; /** run the shared-repo friendship job every 6 hours (the server binary turns it on; tests call it directly) */ repoJob?: boolean; /** read members' public GitHub signals into "what they're building" tags every 12 hours */ tagJob?: boolean; /** the World's Expansion view: nightly public-GitHub numbers (merged PRs, stars gained) */ landJob?: boolean; /** the World's Day/Week/Month growth views: false turns them off (CALDERA_GROWTH=0); growthJob runs the 15-minute tick, growthPoll lets it call GitHub */ growth?: boolean; growthJob?: boolean; growthPoll?: boolean; /** the World's battles: false turns them off (CALDERA_BATTLE=0) */ battle?: boolean; /** OpenRouter key for the tag normalising pass (rules only without it) */ llmKey?: string; onEvent?: (e: { type: "signup" | "delete"; handle?: string; name?: string; kind?: string; total: number }) => void; limits?: { perMinute?: number; writesPerMinute?: number; newProfilesPerDay?: number; newProfilesPerMinute?: number };
   /** Caldera x Orpheus handle link (orpheustie.ts): the key (default CALDERA_ORPHEUS_TIE_KEY; empty = off), the Orpheus
    *  origin (default https://useorpheus.com), a fetch stand-in for tests, and the daily feed pull (the server binary turns it on) */
-  orpheusKey?: string; orpheusUrl?: string; orpheusFetch?: typeof fetch; orpheusJob?: boolean;
+  orpheusKey?: string; orpheusUrl?: string; orpheusFetch?: typeof fetch; orpheusJob?: boolean; /** clock for the Founding Fleet window (tests) */ now?: () => number;
   /** daily summary emails: Resend key (production) or a send hook (tests); schedule starts the daily job */
   email?: { resendKey?: string; send?: (m: Mail) => Promise<void>; schedule?: boolean; reconnect?: boolean;
     /** Growth Engine's learning API (arms, clicks, goals). Default: LEARN_URL when mail really goes out (Resend), else none;
@@ -1764,6 +1764,9 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
     founder: () => (opts.founder ? byHandle(String(opts.founder).toLowerCase())?.id : null) || null });
   (admin as any).tieStats = (days?: number) => TIE.stats(days);   // admin.js tie-stats
   // Caldera x Orpheus tie, Part 2 (orpheustie.ts): the handle link, unlink, and the daily fleet feed
+  // Founding Fleet window words on the first-value card (Growth Engine 11-24): only while useorpheus.com/api/fleet says open
+  const OFFER = fleetOffer(opts.orpheusFetch || fetch, opts.now || Date.now);
+  const tieW = () => { const w = OFFER.words(); return { w: w || undefined, camp: w ? "founding_fleet" : "tie" }; };
   const ORPH = orpheusTie({ q, key: () => opts.orpheusKey ?? process.env.CALDERA_ORPHEUS_TIE_KEY ?? "", fetch: opts.orpheusFetch || fetch, base: opts.orpheusUrl,
     secure: /^https:/.test(opts.publicUrl || ""), memberOf: r => memberOf(r), sameOrigin: r => sameOrigin(r), profile, byHandle, hidden: (pr: any) => !!modOf(pr.handle, pr.id),
     page: (t, h) => mail.page(t, h), tooMany: (k, m) => tooMany(k, m), count: (e, pl) => TIE.count(e, pl), own: id => TIE.own(id),
@@ -2375,7 +2378,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   const emailPage = (res: http.ServerResponse, status: number, title: string, body: string) => { res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" });
     res.end(navify(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} - Caldera</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"></head><body>${body}</body></html>`)); };
   JOIN = joinModule({ googleFirst: (u) => !!EMP?.googleFirst(u), googleOn: () => !!EMP?.googleOn(), q, ipOf, page: emailPage, memberOf, byHandle, track: (req, step) => FUNNEL.track(req, step as any), devArm: (req) => { const v = FUNNEL.vid(req); return v ? devArm(v) : null; } });
-  EMP = emailPages({ tie: (o, at) => { const t = TIE.take(o, at); return t ? tieCard(tieHref("first_value"), t.counted, at) : ""; },
+  EMP = emailPages({ tie: (o, at) => { const t = TIE.take(o, at); if (!t) return ""; const x = tieW(); return tieCard(tieHref("first_value", x.camp), t.counted, at, x.w); },
     orpheus: o => { const pr = profile(o); if (!pr?.handle) return null; const f = ORPH.fleetOf(o); return { handle: pr.handle, fleet: f ? { founding: f.founding } : null }; }, asRemember: (r, e) => AS.remember(r, e), flows: { start: (r, m, d) => FLOWS.start(r, m, d), fail: (r, m) => FLOWS.fail(r, m), ok: (r, m, o, cr) => FLOWS.ok(r, m, o, cr), firstValue: (o) => FLOWS.firstValue(o), door: (r, u) => doorOf(r, u) }, googleFetch: (opts.githubFetch || fetch) as typeof fetch, ghRead: (l, r) => GHP.get(l, r ?? null) as any, ghMember: (l) => memberOfLogin(l), ghVerified: (id) => !!q("SELECT 1 FROM gh_links WHERE profile_id=?").get(id), q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
     startOwner, memberOf, sameOrigin, allowNewProfile, tooMany, note: (m) => mail.note(m),
     page: emailPage,
@@ -2792,7 +2795,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const welcome = own && prS && (rel === "city.html" || rel === "index.html") && url.searchParams.get("welcome") ? welcomeBanner(m[1], rel === "city.html") : "";
           if (welcome) FUNNEL.track(req, "landed");
           const tieT = welcome && prS ? TIE.take(prS.id, "page") : null;   // the Orpheus tie row under the strip, once per member
-          const sum = welcome ? welcome + (tieT ? tieBanner(tieHref("first_value"), tieT.counted ? originOf(opts.publicUrl || "https://caldera.social") : null) : "") : (own && prS && (rel === "index.html" || rel === "city.html") && memberOf(req) === prS.id ? summaryBanner(prS.id, m[1]) : "");
+          const sum = welcome ? welcome + (tieT ? tieBanner(tieHref("first_value", tieW().camp), tieT.counted ? originOf(opts.publicUrl || "https://caldera.social") : null, undefined, tieW().w) : "") : (own && prS && (rel === "index.html" || rel === "city.html") && memberOf(req) === prS.id ? summaryBanner(prS.id, m[1]) : "");
           // the Orpheus boost (FLEET.md 3 + 4): badge after the name and the Agent fleet card for every viewer; the owner's empty slot when not linked
           if (rel === "index.html" && prS) html = fleetProfile(html, ORPH.fleetOf(prS.id), { owner: !!own && memberOf(req) === prS.id, handle: m[1] });
           let out = /<body[^>]*>/i.test(html) ? html.replace(/<body[^>]*>/i, b => b + bar + sum) : bar + sum + html;

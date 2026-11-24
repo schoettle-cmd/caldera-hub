@@ -110,7 +110,7 @@
   function ofRow(list, total, viewer) {
     var slot = document.getElementById("of-slot"); if (!slot) return;
     if (!list || !list.length) { slot.innerHTML = ""; return; }
-    var href = "https://useorpheus.com/?utm_source=caldera&utm_medium=map&utm_campaign=tie" + (viewer ? "&ref=" + encodeURIComponent(viewer) : "");
+    var href = "https://useorpheus.com/?utm_source=caldera&utm_medium=people&utm_campaign=tie" + (viewer ? "&ref=" + encodeURIComponent(viewer) : "");
     var chips = list.slice(0, 24).map(function (c) {
       var av = c.avatar ? '<img src="' + ofEsc(c.avatar) + '" alt="">' : ofEsc((c.name || c.handle).charAt(0).toUpperCase());
       var h = "/@" + encodeURIComponent(c.handle) + "/";

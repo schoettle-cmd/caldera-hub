@@ -16,7 +16,31 @@ import type http from "node:http";
 import { funnelDay } from "./funnel";
 import { isOwnAddress } from "./own";
 
-export const tieHref = (medium: string) => `https://useorpheus.com/?utm_source=caldera&utm_medium=${medium}&utm_campaign=tie`;
+export const tieHref = (medium: string, campaign = "tie") => `https://useorpheus.com/?utm_source=caldera&utm_medium=${medium}&utm_campaign=${campaign}`;
+export interface TieWords { h: string; body: string; btn: string; small: string }
+export const TIE_WORDS: TieWords = { h: "Show your agents on your profile", body: "Run Claude agents? Orpheus puts every account on one board and moves idle agents to the one with the most room. Connect it and your profile shows your fleet.", btn: "Try Orpheus free", small: "7 days free. No card to start." };
+/** Founding Fleet window words (Growth Engine 11-24, spec 2026-11-22-orpheus-founding-fleet.md section 5); `left` only from the live /api/fleet answer */
+export const fleetWords = (left: number | null): TieWords => ({ h: "Founding Fleet: half off your first Orpheus year",
+  body: "Run Claude agents? Orpheus puts every account on one board and moves idle agents to the one with the most room. The first 100 yearly members get half off their first year and a gold pin on the Caldera dev map." + (left !== null ? ` ${left} of 100 spots left.` : ""),
+  btn: "Claim a Founding Fleet spot", small: "7 days free with no card. Add a card in the first 48 hours for 30 days. Ends Monday, Nov 30." });
+export const FLEET_FROM = Date.parse("2026-11-27T08:00:00Z"), FLEET_TO = Date.parse("2026-12-01T08:00:00Z");   // Fri 11-27 00:00 PT to Mon 11-30 23:59 PT
+/** the offer state from GET useorpheus.com/api/fleet, read at most every 5 minutes; any doubt = today's words */
+export function fleetOffer(fetchFn: typeof fetch = fetch, now = () => Date.now()) {
+  let cache: { at: number; open: boolean; left: number | null } = { at: 0, open: false, left: null }, busy = false;
+  const refresh = async () => {
+    if (busy) return; busy = true;
+    try {
+      const r = await fetchFn("https://useorpheus.com/api/fleet", { signal: AbortSignal.timeout(8000) } as any); const j: any = r.ok ? await r.json() : null;
+      const open = !!j && j.state === "open", n = [j?.left, j?.spotsLeft, j?.spots_left, j?.remaining].find(v => Number.isInteger(v) && v >= 0 && v <= 100);
+      cache = { at: now(), open, left: open && n !== undefined ? n : null };
+    } catch { cache = { at: now(), open: false, left: null }; } finally { busy = false; }
+  };
+  return {
+    refresh,
+    /** null = today's words */
+    words(): TieWords | null { const t = now(); if (t < FLEET_FROM || t >= FLEET_TO) return null; if (t - cache.at > 300_000) void refresh(); return cache.open ? fleetWords(cache.left) : null; },
+  };
+}
 /** what the endpoint takes: first_value shows are counted at render only */
 const TAKES = new Set(["tie_show:home", "tie_click:home", "tie_click:first_value"]);
 const ATS = new Set(["page", "settings", "email"]);
@@ -25,17 +49,17 @@ const attr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 const beacon = (api: string, at: string) => `try{navigator.sendBeacon('${api}/v1/tie',JSON.stringify({ev:'tie_click',place:'first_value',at:'${at}'}))}catch(e){}`;
 
 /** Place 1: the row under the welcome strip (sandboxed page, inline styles, dark only). api = the hub's origin; null = no beacon. */
-export function tieBanner(href: string, api: string | null, closeJs = "this.parentNode.remove()"): string {
+export function tieBanner(href: string, api: string | null, closeJs = "this.parentNode.remove()", w: TieWords = TIE_WORDS): string {
   const click = api !== null ? ` onclick="${attr(beacon(api, "page"))}"` : "";
   return `<div id="cb-tie" data-tie="page" style="position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 52px 10px 16px;background:#120E22;border-bottom:1px solid #2A2244;font:400 13px/1.45 'IBM Plex Sans',Arial,sans-serif;color:#ABA3C6">`
-    + `<span style="flex:1 1 340px;min-width:0;max-width:820px"><b style="display:block;font-weight:600;color:#DDD6F3">Show your agents on your profile</b>Run Claude agents? Orpheus puts every account on one board and moves idle agents to the one with the most room. Connect it and your profile shows your fleet.</span>`
-    + `<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 12px"><a href="${attr(href)}" target="_blank" rel="noopener"${click} style="display:inline-flex;align-items:center;box-sizing:border-box;min-height:40px;padding:0 16px;border:1px solid #5B4A99;border-radius:999px;color:#C9B8FF;font-weight:600;text-decoration:none;white-space:nowrap">Try Orpheus free</a><span style="font-size:12px;color:#8F88AB">7 days free. No card to start.</span></span>`
+    + `<span style="flex:1 1 340px;min-width:0;max-width:820px"><b style="display:block;font-weight:600;color:#DDD6F3">${w.h}</b>${w.body}</span>`
+    + `<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 12px"><a href="${attr(href)}" target="_blank" rel="noopener"${click} style="display:inline-flex;align-items:center;box-sizing:border-box;min-height:40px;padding:0 16px;border:1px solid #5B4A99;border-radius:999px;color:#C9B8FF;font-weight:600;text-decoration:none;white-space:nowrap">${w.btn}</a><span style="font-size:12px;color:#8F88AB">${w.small}</span></span>`
     + `<button type="button" aria-label="Not now" title="Not now" onclick="${attr(closeJs)}" style="position:absolute;top:4px;right:6px;width:40px;height:40px;padding:0;border:0;background:none;cursor:pointer;color:#8F88AB;font:400 18px/1 Arial,sans-serif">&times;</button></div>`;
 }
 /** Place 2: the card under Congratulations on /settings?new=1 (same origin; styles in emailpages STYLE). */
-export function tieCard(href: string, counted: boolean, at: "settings" | "email" = "settings"): string {
+export function tieCard(href: string, counted: boolean, at: "settings" | "email" = "settings", w: TieWords = TIE_WORDS): string {
   const click = counted ? ` onclick="${attr(beacon("", at))}"` : "";
-  return `<section class="card tie" id="tie" data-tie="${at}" aria-label="Orpheus"><h2>Show your agents on your profile</h2><p class="mut">Run Claude agents? Orpheus puts every account on one board and moves idle agents to the one with the most room. Connect it and your profile shows your fleet.</p><div class="row"><a class="btn small ghost" href="${attr(href)}" target="_blank" rel="noopener"${click}>Try Orpheus free</a><span class="mut fine">7 days free. No card to start.</span></div><button type="button" class="tie-x" aria-label="Not now" title="Not now" onclick="this.parentNode.remove()">&times;</button></section>`;
+  return `<section class="card tie" id="tie" data-tie="${at}" aria-label="Orpheus"><h2>${w.h}</h2><p class="mut">${w.body}</p><div class="row"><a class="btn small ghost" href="${attr(href)}" target="_blank" rel="noopener"${click}>${w.btn}</a><span class="mut fine">${w.small}</span></div><button type="button" class="tie-x" aria-label="Not now" title="Not now" onclick="this.parentNode.remove()">&times;</button></section>`;
 }
 
 export function tie(c: { q: (sql: string) => any; botUa: RegExp; ipOf: (r: http.IncomingMessage) => string; tooMany: (k: string, max: number) => boolean;

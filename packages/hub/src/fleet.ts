@@ -13,7 +13,7 @@
  */
 import type { Fleet } from "./orpheustie";
 
-export const ORPHEUS_SETTINGS = "https://useorpheus.com/settings";
+export const ORPHEUS_SETTINGS = "https://useorpheus.com/app/members.html#caldera";   // Orpheus Dev 11-24 (owner only)
 const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]!));
 /** the mark: 16 x 16, currentColor */
 export const mark = (n: number) => `<svg viewBox="0 0 16 16" width="${n}" height="${n}" aria-hidden="true" focusable="false" style="flex:none"><circle cx="8" cy="8.6" r="4.9" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="8" cy="8.6" r="1.6" fill="currentColor"/><circle cx="12.4" cy="3.6" r="2" fill="currentColor"/></svg>`;

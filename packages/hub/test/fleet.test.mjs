@@ -171,7 +171,7 @@ test("link page: signed-out note, Confirm, Linked (gold line for the Founding Fl
     const cases = [
       [{ status: 409, body: { error: "handle_taken" } }, 409, "handle_taken", /<h1>@cy-twombly is linked to another Orpheus workspace<\/h1>/],
       [{ status: 409, body: { error: "workspace_taken", handle: "di-prima" } }, 409, "taken_other", /<h1>This workspace is linked to @di-prima<\/h1>/],
-      [{ status: 410, body: { error: "expired" } }, 410, "expired", /<a class="btn" href="https:\/\/useorpheus\.com\/settings"[^>]*>Open Orpheus settings<\/a>/],
+      [{ status: 410, body: { error: "expired" } }, 410, "expired", /<a class="btn" href="https:\/\/useorpheus\.com\/app\/members\.html#caldera"[^>]*>Open Orpheus settings<\/a>/],
       [{ status: 500, body: {} }, 502, "error", /<h1>Linking is not available right now<\/h1>/],
     ];
     for (const [reply, status, st, re] of cases) {
@@ -271,7 +271,7 @@ test("/people: the row sits between the head and the tools, filled from v1/direc
   assert.ok(html.indexOf('class="people-head"') < html.indexOf('id="of-slot"') && html.indexOf('id="of-slot"') < html.indexOf('class="people-tools"'));
   assert.match(html, /ofRow\(d\.fleet, d\.fleetTotal, d\.me\)/);
   assert.match(html, /<span class="of-row-l">' \+ OFM\(14\) \+ 'Orpheus fleet<b>/);
-  assert.match(html, /utm_medium=map&utm_campaign=tie/);
+  assert.match(html, /utm_medium=people&utm_campaign=tie/);
   assert.match(html, /if \(p\.orph\) \{ var ow = el\("div", "pcard-of"\); ow\.innerHTML = ofBadge\(p\.orph === 2\); top\.appendChild\(ow\); \}/);
   for (const s of [".of-b{", ".of-row{", ".of-chip{", ".people .of-row{", ".pcard-of{"]) assert.ok(css.includes(s), s);
   // run the page's row builder: hidden with no fleet, chips to /@h/
