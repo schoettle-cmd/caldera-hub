@@ -69,16 +69,18 @@ test("link: signed out goes through sign-in with the token kept; signed in confi
     const c = await join(b, "ada@mail.test", "Ada Lovelace");
     // back from sign-in: no ?t= any more, the cookie holds it
     const page = await text(await req(b, "/link/orpheus", { cookie: c + "; cal_orph=tok-123" }));
-    assert.match(page, /Link this Orpheus workspace to @ada-lovelace/); assert.match(page, /<form method="post" action="\/link\/orpheus"/); assert.match(page, /name="t" value="tok-123"/);
+    assert.match(page, /Link this Orpheus workspace to @ada-lovelace/); assert.match(page, /<form class="lk-act" id="lk-form" method="post" action="\/link\/orpheus"/); assert.match(page, /data-orpheus-link="confirm"/); assert.match(page, />Link workspace<\/button>/); assert.match(page, /name="t" value="tok-123"/);
     assert.equal(b.st.calls.length, 0, "a GET never claims");
     b.st.reply["/api/tie/caldera/claim"] = { body: { id: ID1, founding_fleet: true } };
     r = await claim(b, c);
-    assert.equal(r.status, 303); assert.equal(r.headers.get("location"), "/@ada-lovelace/"); assert.match(r.headers.get("set-cookie"), /cal_orph=; .*Max-Age=0/);
+    // the Linked page (FLEET.md piece 5): then the profile after 2 seconds; founding gets the gold line
+    assert.equal(r.status, 200); assert.match(r.headers.get("set-cookie"), /cal_orph=; .*Max-Age=0/);
+    { const t = await text(r); assert.match(t, /data-orpheus-link="linked"/); assert.match(t, /<meta http-equiv="refresh" content="2;url=\/@ada-lovelace\/\?linked=orpheus">/); assert.match(t, /You are in the Founding Fleet/); }
     const call = b.st.calls[0];
     assert.equal(call.url, "https://useorpheus.com/api/tie/caldera/claim"); assert.equal(call.method, "POST"); assert.equal(call.auth, "Bearer " + KEY);
     assert.deepEqual(call.body, { t: "tok-123", handle: "ada-lovelace" });
     const pid = rows(b)[0].profile;
-    assert.deepEqual(b.h.orpheus.fleetOf(pid), { handle: "ada-lovelace", founding: true, linkedAt: rows(b)[0].linked_at, agentsWeek: 0, accounts: 0, sessionsWeek: 0, busiestDay: null });
+    assert.deepEqual(b.h.orpheus.fleetOf(pid), { handle: "ada-lovelace", founding: true, linkedAt: rows(b)[0].linked_at, agentsWeek: 0, accounts: 0, sessionsWeek: 0, busiestDay: null, syncedAt: null });
     assert.equal(tieToday(b)["tie_link:orpheus"], 1);
     // public world JSON: handle + founding only, and only for listed members (a new Google page starts unlisted)
     const w = JSON.parse(await text(await req(b, "/v1/world")));
@@ -119,7 +121,7 @@ test("handle regex as shown on Caldera; the founder's own claim is not counted",
   try {
     const f = await join(b, "fran@mail.test", "Fran Founder");
     b.st.reply["/api/tie/caldera/claim"] = { body: { id: ID2, founding_fleet: false } };
-    assert.equal((await claim(b, f)).status, 303);
+    assert.equal((await claim(b, f)).status, 200);
     assert.equal(rows(b).length, 1); assert.equal(tieToday(b)["tie_link:orpheus"], undefined, "our own session");
   } finally { b.close(); }
 });
@@ -141,7 +143,7 @@ test("unlink: the owner's POST deletes the row and tells Orpheus; a failed call 
     await claim(b, c); assert.equal(rows(b).length, 1);
     b.st.reply["/api/tie/caldera/unlink"] = { status: 500, body: {} };
     r = await req(b, "/settings/orpheus/unlink", { method: "POST", cookie: c });
-    assert.equal(r.status, 303); assert.equal(r.headers.get("location"), "/settings");
+    assert.equal(r.status, 303); assert.equal(r.headers.get("location"), "/settings#conn-orpheus");
     assert.equal(rows(b).length, 0);
     assert.ok(logged.some(l => /orpheus tie unlink failed status 500/.test(l)));
     // the next pull retries the unlink and does not add the link back from the feed
@@ -166,7 +168,7 @@ test("feed: add / update / remove per id; bad feeds change nothing", async () =>
     assert.deepEqual(p, { ok: true, added: 1, updated: 1, removed: 1, retried: 0 });
     const call = b.st.calls.at(-1); assert.equal(call.url, "https://useorpheus.com/api/tie/caldera/feed"); assert.equal(call.method, "GET"); assert.equal(call.auth, "Bearer " + KEY);
     const di = b.h.orpheus.fleetList().find(f => f.handle === "di-prima");
-    assert.deepEqual({ ...di, profileId: undefined, linkedAt: undefined }, { handle: "di-prima", founding: true, linkedAt: undefined, agentsWeek: 7, accounts: 3, sessionsWeek: 120, busiestDay: "Wed", profileId: undefined });
+    assert.deepEqual({ ...di, profileId: undefined, linkedAt: undefined, syncedAt: undefined }, { handle: "di-prima", founding: true, linkedAt: undefined, agentsWeek: 7, accounts: 3, sessionsWeek: 120, busiestDay: "Wed", syncedAt: undefined, profileId: undefined });
     assert.deepEqual(b.h.orpheus.fleetList().map(f => f.handle), ["flo-kennedy", "di-prima"], "newest first");
     assert.equal(rows(b).find(r => r.id === ID2), undefined);
     assert.ok(!("secret_thing" in rows(b)[0]));
@@ -206,7 +208,7 @@ test("key absent: the feature is off, no calls to Orpheus", async () => {
   try {
     const c = await join(b, "hal@mail.test", "Hal Abelson");
     const r = await req(b, "/link/orpheus?t=tok-1", { cookie: c }), t = await text(r);
-    assert.equal(r.status, 503); assert.match(t, /not available yet/); assert.equal(r.headers.get("set-cookie"), null);
+    assert.equal(r.status, 503); assert.match(t, /Linking is not available right now/); assert.match(t, /data-orpheus-link="off"/); assert.equal(r.headers.get("set-cookie"), null);
     assert.equal((await claim(b, c)).status, 503);
     assert.deepEqual(await b.h.admin.orpheusPull(), { ok: false, error: "off" });
     assert.equal(b.st.calls.length, 0);

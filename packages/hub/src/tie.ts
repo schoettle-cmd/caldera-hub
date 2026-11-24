@@ -3,7 +3,8 @@
  * Fable 11-22, products/caldera/reports/2026-11-22-orpheus-tie/TIE.md). Words are fixed.
  *
  * - First-value card: once per member, across both places: under the welcome strip on the owner's own page or city
- *   (?welcome=1, at "page") and under Congratulations on /settings?new=1 (Google sign-ups, at "settings"). The first render
+ *   (?welcome=1, at "page") and under Congratulations on /settings?new=1 (Google sign-ups, at "settings"); email sign-ups
+ *   that land on /settings?new=1 (designer / business pages) get it under the "Your page is live" line (at "email"). The first render
  *   marks it shown (tie_seen); "Not now" only removes it from the page.
  * - Events, per LA day in tie_counts: tie_show / tie_click by place (first_value, home). first_value shows are counted at
  *   render (owner-only pages, so no robots); clicks and the homepage block come in on POST /v1/tie. Robots (BOT_UA) and our
@@ -18,7 +19,7 @@ import { isOwnAddress } from "./own";
 export const tieHref = (medium: string) => `https://useorpheus.com/?utm_source=caldera&utm_medium=${medium}&utm_campaign=tie`;
 /** what the endpoint takes: first_value shows are counted at render only */
 const TAKES = new Set(["tie_show:home", "tie_click:home", "tie_click:first_value"]);
-const ATS = new Set(["page", "settings"]);
+const ATS = new Set(["page", "settings", "email"]);
 const attr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 /** click beacon for an onclick (single quotes: it sits in a double-quoted attribute); the link still opens on its own */
 const beacon = (api: string, at: string) => `try{navigator.sendBeacon('${api}/v1/tie',JSON.stringify({ev:'tie_click',place:'first_value',at:'${at}'}))}catch(e){}`;
@@ -32,9 +33,9 @@ export function tieBanner(href: string, api: string | null, closeJs = "this.pare
     + `<button type="button" aria-label="Not now" title="Not now" onclick="${attr(closeJs)}" style="position:absolute;top:4px;right:6px;width:40px;height:40px;padding:0;border:0;background:none;cursor:pointer;color:#8F88AB;font:400 18px/1 Arial,sans-serif">&times;</button></div>`;
 }
 /** Place 2: the card under Congratulations on /settings?new=1 (same origin; styles in emailpages STYLE). */
-export function tieCard(href: string, counted: boolean): string {
-  const click = counted ? ` onclick="${attr(beacon("", "settings"))}"` : "";
-  return `<section class="card tie" id="tie" data-tie="settings" aria-label="Orpheus"><h2>Show your agents on your profile</h2><p class="mut">Run Claude agents? Orpheus puts every account on one board and moves idle agents to the one with the most room. Connect it and your profile shows your fleet.</p><div class="row"><a class="btn small ghost" href="${attr(href)}" target="_blank" rel="noopener"${click}>Try Orpheus free</a><span class="mut fine">7 days free. No card to start.</span></div><button type="button" class="tie-x" aria-label="Not now" title="Not now" onclick="this.parentNode.remove()">&times;</button></section>`;
+export function tieCard(href: string, counted: boolean, at: "settings" | "email" = "settings"): string {
+  const click = counted ? ` onclick="${attr(beacon("", at))}"` : "";
+  return `<section class="card tie" id="tie" data-tie="${at}" aria-label="Orpheus"><h2>Show your agents on your profile</h2><p class="mut">Run Claude agents? Orpheus puts every account on one board and moves idle agents to the one with the most room. Connect it and your profile shows your fleet.</p><div class="row"><a class="btn small ghost" href="${attr(href)}" target="_blank" rel="noopener"${click}>Try Orpheus free</a><span class="mut fine">7 days free. No card to start.</span></div><button type="button" class="tie-x" aria-label="Not now" title="Not now" onclick="this.parentNode.remove()">&times;</button></section>`;
 }
 
 export function tie(c: { q: (sql: string) => any; botUa: RegExp; ipOf: (r: http.IncomingMessage) => string; tooMany: (k: string, max: number) => boolean;
@@ -50,7 +51,7 @@ export function tie(c: { q: (sql: string) => any; botUa: RegExp; ipOf: (r: http.
     /** count one event (Part 2: tie_link:orpheus from orpheustie.ts); the caller leaves our own sessions out */
     count: (ev: string, place: string) => bump(ev, place),
     /** the first render for this member marks the card shown (once, both places) and counts the show; null = already shown */
-    take(owner: string, at: "page" | "settings"): { counted: boolean } | null {
+    take(owner: string, at: "page" | "settings" | "email"): { counted: boolean } | null {
       try { if (!q("INSERT OR IGNORE INTO tie_seen VALUES (?,?,?)").run(owner, new Date().toISOString(), at).changes) return null; } catch { return null; }
       const counted = !own(owner); if (counted) bump("tie_show", "first_value", at); return { counted };
     },

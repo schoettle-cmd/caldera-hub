@@ -16,6 +16,7 @@
  *   dailyPost()  yesterday's top 10 to the feed at 09:00 Pacific, once a day (sysposts.ts), skipped under 3 shippers
  * Nothing here names a repo: counts and handles only.
  */
+import { fleetBadge, FLEET_CSS, FLEET_LB_CSS, FLEET_LB_KEY } from "./fleet";
 import crypto from "node:crypto";
 import type http from "node:http";
 import { DAY, dayOf, dayKey, TIER_NAMES, tierOf, type GEvent, type SimOut } from "./growth";
@@ -146,7 +147,8 @@ tr.lb-gap td{height:14px;border:0;background:var(--bg,#1C1C1F)}tr.lb-gap td span
 `;
 const TREND_HEAD: Record<LbWindow, string> = { day: "vs yesterday", week: "vs last week", month: "vs last month", all: "" };
 const TAB: [LbWindow, string][] = [["day", "Today"], ["week", "Week"], ["month", "Month"], ["all", "All-time"]];
-export function leaderboardPage(rows: LbRow[], o: { win: LbWindow; me: string | null; hub: string; nav: string; pToday: number; at: number }): string {
+export function leaderboardPage(rows: LbRow[], o: { win: LbWindow; me: string | null; hub: string; nav: string; pToday: number; at: number; /** the Orpheus badge: 0 none, 1 linked, 2 Founding Fleet (never changes rank) */ orph?: (id: string) => 0 | 1 | 2 }): string {
+  const orph = (r: LbRow) => { const l = o.orph?.(r.id) || 0; return l ? fleetBadge(l === 2) : ""; };
   const hub = o.hub.replace(/\/$/, ""), shipped = rows.filter(r => r.metric > 0), list = rows.slice(0, LB_TOP),   // always the top 10 (Mike 11-08): who shipped first, then the next members by rank at 0
     me = o.me ? rows.find(r => r.id === o.me) || null : null;
   const total = Math.round(shipped.reduce((t, r) => t + r.metric, 0));
@@ -155,7 +157,7 @@ export function leaderboardPage(rows: LbRow[], o: { win: LbWindow; me: string | 
   const av = (r: LbRow) => `<span class="lb-av">${r.avatar ? `<img src="${esc(r.avatar)}" alt="" loading="lazy">` : esc((r.name || r.handle).charAt(0).toUpperCase())}</span>`;
   const trend = (r: LbRow) => r.trend === null ? `<span class="none">&ndash;</span>` : r.prev <= 0 && r.metric > 0 ? `<span class="new">new</span>` : r.trend > 0 ? `<span class="up"><i></i>+${r.trend.toFixed(1)}</span>` : r.trend < 0 ? `<span class="down"><i></i>${r.trend.toFixed(1)}</span>` : `<span class="flat">0.0</span>`;
   const row = (r: LbRow, mine: boolean) => `<tr class="${r.rank <= 3 ? `lb-top${r.rank}` : ""}${mine ? " lb-me" : ""}"${mine ? ' aria-current="true"' : ""}><td class="lb-r"><span>${r.rank}</span></td>`
-    + `<td class="lb-who"><a href="${esc(r.url)}">${av(r)}<span class="lb-nm"><span class="lb-h">@${esc(r.handle)}</span>${r.name && r.name !== "@" + r.handle && r.name !== r.handle ? `<small>${esc(r.name)}</small>` : ""}</span>${mine ? `<span class="lb-you">you</span>` : ""}</a></td>`
+    + `<td class="lb-who"><a href="${esc(r.url)}">${av(r)}<span class="lb-nm"><span class="lb-h">@${esc(r.handle)}</span>${r.name && r.name !== "@" + r.handle && r.name !== r.handle ? `<small>${esc(r.name)}</small>` : ""}</span>${orph(r)}${mine ? `<span class="lb-you">you</span>` : ""}</a></td>`
     + `<td class="lb-num"><span>${r.metric.toFixed(1)}</span></td><td class="lb-tr">${trend(r)}</td>`
     + `<td class="lb-tier" data-t="${r.tier}"><span>${r.tier ? `<i class="lb-sq"></i>${esc(r.tierName)}` : `<span style="color:#8A8A93">no plot yet</span>`}</span></td>`
     + `<td class="lb-war">${r.battle.in ? `<span><i class="lb-dot"></i><b>${fmtUsd(Math.round(r.battle.ammo) * 50000)} budget</b> ${r.battle.hits} hit${r.battle.hits === 1 ? "" : "s"}${r.battle.usd > 0 ? `, ${fmtUsd(r.battle.usd)} damage` : ""}</span>` : `<span class="off">peaceful</span>`}</td></tr>`;
@@ -171,14 +173,14 @@ export function leaderboardPage(rows: LbRow[], o: { win: LbWindow; me: string | 
 <meta property="og:title" content="Caldera leaderboard"><meta property="og:description" content="Who shipped the most, by real code."><meta property="og:image" content="${hub}/og.jpg"><meta property="og:url" content="${hub}/leaderboard">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="canonical" href="${hub}/leaderboard${o.win === "day" ? "" : "?window=" + o.win}">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css"><style>${LB_CSS}</style></head><body>
+<link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css"><style>${LB_CSS}${o.orph ? FLEET_CSS + FLEET_LB_CSS : ""}</style></head><body>
 ${o.nav}
 <main class="lb-main">
 <div class="lb-head"><div><h1>Leaderboard</h1><p>Who shipped the most. Points are real code: commits, merged PRs, releases and green CI, counted the way the World grows and the battles load. Bots, empty and merge commits never count.</p></div>
 <nav class="lb-tabs" aria-label="Window">${tabs}</nav></div>
 <div class="lb-sub"><span>${esc(when)}</span><span><b>${shipped.length}</b> member${shipped.length === 1 ? "" : "s"} shipped</span><span><b>${total.toLocaleString("en-US")}</b> points</span><span>Updates every 15 minutes</span></div>
 <div class="lb-panel">${body}</div>
-<div class="lb-foot"><span>A row opens that member's city.</span><span>Private repos count, never by name.</span><span>Yesterday's top ${POST_TOP} is posted to the <a href="${hub}/feed?type=agents">Feed</a> at 9:00 Pacific.</span><span><a href="${hub}/world">The world</a></span></div>
+<div class="lb-foot"><span>A row opens that member's city.</span><span>Private repos count, never by name.</span><span>Yesterday's top ${POST_TOP} is posted to the <a href="${hub}/feed?type=agents">Feed</a> at 9:00 Pacific.</span><span><a href="${hub}/world">The world</a></span>${o.orph && rows.some(r => o.orph!(r.id)) ? FLEET_LB_KEY : ""}</div>
 </main><footer class="footer"><span>&copy; 2026 mjonesone, LLC</span><span><a href="/guide">Guide</a> &middot; <a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a></span></footer>
 </body></html>`;
 }
@@ -196,6 +198,7 @@ export interface LbCtx {
   /** the page's header slot (the hub swaps THE header in) */ nav: () => string;
   /** CALDERA_LEADERBOARD_POST=0: the page stays, the daily post stops */ postOn?: () => boolean;
   now?: () => number;
+  /** the Orpheus badge level per member (fleet.ts orphLevel) */ orph?: (profileId: string) => 0 | 1 | 2;
 }
 export function leaderboard(c: LbCtx) {
   const now = () => (c.now ? c.now() : Date.now()), hub = c.hub.replace(/\/$/, "");
@@ -247,7 +250,7 @@ export function leaderboard(c: LbCtx) {
       const w = winOf(url) || "day", t = now();
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache", vary: "Cookie",
         "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" });
-      res.end(leaderboardPage(rankFor(w), { win: w, me: c.memberOf(req), hub, nav: c.nav(), pToday: pacificDay(t), at: t })); return true;
+      res.end(leaderboardPage(rankFor(w), { win: w, me: c.memberOf(req), hub, nav: c.nav(), pToday: pacificDay(t), at: t, orph: c.orph })); return true;
     }
     return false;
   }

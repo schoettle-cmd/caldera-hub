@@ -13,6 +13,8 @@
  */
 import type http from "node:http";
 import { trackTag } from "./hookpin.js";
+import { SETTINGS_CSS } from "./settings";
+import { fleetSettingsRow, FLEET_SETTINGS_JS } from "./fleet";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
@@ -107,7 +109,9 @@ headline: <only if it changed>`;
 
 export interface EmailCtx {
   /** the Orpheus tie card under Congratulations: HTML once per member (tie.ts), "" after */
-  tie?: (owner: string) => string;
+  tie?: (owner: string, at: "settings" | "email") => string;
+  /** the Orpheus row on Settings (FLEET.md piece 6): the member's link, fleet null = not linked */
+  orpheus?: (owner: string) => { handle: string; fleet: { founding: boolean } | null } | null;
   q: (sql: string) => any; seal: (s: string) => string; unseal: (s: string) => string;
   accept: (e: C.Envelope) => { status: number; body: any };
   dataDir: string; publicUrl: string; reserved: Set<string>;
@@ -280,11 +284,11 @@ ${pr.kind ? "" : row("Your AI", "ChatGPT or Claude writes your About, projects a
 ${row("Agents", "Let an AI agent post updates to the Feed.", `<a class="btn small ghost" href="/settings/agents">Set up</a>`)}
 ${row("Obsidian", "Your notes and daily journal on your page. This page moves into your vault and stays at the same address.", pr.kind ? `<span class="mut">Coming soon</span>` : richerObsidian ? `<form method="post" action="/settings/obsidian" style="margin:0"><button class="btn small ghost" type="submit">Connect Obsidian</button></form>` : `<span class="mut">Coming soon</span>`)}<p style="margin:10px 0 0;text-align:right"><a class="mut" href="/@${esc(acct.handle)}/">Skip for now</a></p></section>`;
   }
-  function settingsPage(res: http.ServerResponse, acct: any, msg = "") {
+  function settingsPage(res: http.ServerResponse, acct: any, msg = "", firstEmail = false) {
     const pr: Profile = JSON.parse(acct.content || "{}"), log: any[] = JSON.parse(acct.log || "[]"), last = log.length ? log[log.length - 1].ts : acct.updated;
     c.page(res, 200, "Your page", `${STYLE}<main class="ep"><h1>Your page</h1>
 <p class="lede"><a href="/@${esc(acct.handle)}/">caldera.social/@${esc(acct.handle)}</a> &middot; <a href="/@${esc(acct.handle)}/city.html">your city</a> &middot; last updated ${esc(String(last || "").slice(0, 10))}</p>
-${msg === "ok:CONGRATS" ? `<section class="card" role="status" style="text-align:center;padding:22px 16px"><div style="font-size:30px;line-height:1" aria-hidden="true">&#127881;</div><h2 style="justify-content:center;margin:8px 0 4px">Congratulations, your account's created</h2><p class="mut" style="margin:0">Your page is live at <a href="/@${esc(acct.handle)}/">caldera.social/@${esc(acct.handle)}</a>${pr.ghPublic ? ", with your city" : ""}.</p></section>${c.tie?.(acct.profile_id) || ""}` : msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(msg.replace(/^ok:/, ""))}</p>` : ""}${(pr.via === "google" || richerPreview) && !skipRicher ? richerCard(acct, pr) : ""}${(pr.via === "google" || richerPreview) ? "" : pr.ghPublic && !c.ghVerified?.(acct.profile_id) ? `<section class="card" id="verify"><h2>Your city is unverified</h2><p class="mut">It comes from the public GitHub URL for <b>@${esc(pr.ghPublic.login)}</b>. It stays that way unless you sign in once with that GitHub account, which is read-only and optional.</p><a rel="nofollow" class="btn small" href="/auth/github?back=${encodeURIComponent(`/@${acct.handle}/`)}">Verify with GitHub</a></section>` : ""}${pr.kind ? typedEditor(pr, acct.handle) : ""}
+${msg === "ok:CONGRATS" ? `<section class="card" role="status" style="text-align:center;padding:22px 16px"><div style="font-size:30px;line-height:1" aria-hidden="true">&#127881;</div><h2 style="justify-content:center;margin:8px 0 4px">Congratulations, your account's created</h2><p class="mut" style="margin:0">Your page is live at <a href="/@${esc(acct.handle)}/">caldera.social/@${esc(acct.handle)}</a>${pr.ghPublic ? ", with your city" : ""}.</p></section>${c.tie?.(acct.profile_id, "settings") || ""}` : msg ? `<p class="${msg.startsWith("ok:") ? "ok" : "err"}" role="status">${esc(msg.replace(/^ok:/, ""))}</p>${firstEmail ? c.tie?.(acct.profile_id, "email") || "" : ""}` : ""}${(pr.via === "google" || richerPreview) && !skipRicher ? richerCard(acct, pr) : ""}${(pr.via === "google" || richerPreview) ? "" : pr.ghPublic && !c.ghVerified?.(acct.profile_id) ? `<section class="card" id="verify"><h2>Your city is unverified</h2><p class="mut">It comes from the public GitHub URL for <b>@${esc(pr.ghPublic.login)}</b>. It stays that way unless you sign in once with that GitHub account, which is read-only and optional.</p><a rel="nofollow" class="btn small" href="/auth/github?back=${encodeURIComponent(`/@${acct.handle}/`)}">Verify with GitHub</a></section>` : ""}${pr.kind ? typedEditor(pr, acct.handle) : ""}
 ${pr.kind ? "" : `<section class="card" id="update"><h2>What's new? Update your page in a minute</h2><p class="mut">Copy this into ChatGPT or Claude, then paste its answer below. Every project you mention grows its building in your city; this week's get lit windows.</p>
 <pre id="p-up">${esc(UPDATE_PROMPT)}</pre><button type="button" class="btn small" data-copy="p-up">Copy the update prompt</button>
 <form method="post" action="/settings/page" style="margin-top:12px"><input type="hidden" name="do" value="update"><textarea name="text" maxlength="20000" required placeholder="now:&#10;- ...&#10;worked_on:&#10;- Project | what I did"></textarea>
@@ -299,6 +303,7 @@ ${pr.kind ? "" : `<section class="card" id="update"><h2>What's new? Update your 
 <section class="card"><h2>Make your city live</h2><p class="mut">Got a website? Put its line in your site's shared layout (or ask your AI to) and real visitors walk into that project's building as they arrive. Call <code>caldera('signup')</code> when someone signs up and the building lights up.</p>
 ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").all(acct.profile_id) as any[]).map(x => `<p class="mut" style="margin:10px 0 2px"><b>${esc(x.project)}</b></p><pre id="s-${esc(x.key)}">${esc(trackTag(pub, x.key))}</pre><button type="button" class="btn small ghost" data-copy="s-${esc(x.key)}">Copy</button>`).join("") || `<p class="mut">Add a project in an update and its snippet appears here.</p>`}
 <p class="mut" style="margin-top:12px">Use GitHub or Obsidian? Connecting them later fills your city from your real work.</p></section>
+${(o => o ? `${SETTINGS_CSS}<div class="conn" id="connections">${fleetSettingsRow(o.handle, o.fleet)}</div>${FLEET_SETTINGS_JS}` : "")(c.orpheus?.(acct.profile_id))}
 <section class="card"><h2>Delete my page</h2><form method="post" action="/settings/page" onsubmit="return this.querySelector('[name=sure]').checked"><input type="hidden" name="do" value="delete"><label class="mut"><input type="checkbox" name="sure"> I'm sure: delete my page, city, posts and messages, and forget my email</label> <button class="btn small ghost" type="submit">Delete</button></form></section>
 <p class="mut"><b>Showing as:</b> ${esc(pr.name || acct.handle)}${pr.headline ? ` &middot; ${esc(pr.headline)}` : ""}. <a href="/signout">Sign out</a></p></main>${copyJs}`);
   }
@@ -629,7 +634,8 @@ ${(q("SELECT key, project FROM traffic_sites WHERE owner=? ORDER BY project").al
     if (p === "/settings/page" || ((p === "/settings" || p === "/me") && req.method === "GET")) {
       const acct = acctOf(c.memberOf(req));
       if (!acct) { if (p === "/settings/page") { res.writeHead(302, { location: "/signin" }); res.end(); return true; } return false; }   // not an email page: the usual settings
-      if (req.method === "GET") { richerPreview = googleFirst(url); richerObsidian = obsidianOn(url); skipRicher = false; settingsPage(res, acct, url && url.searchParams && url.searchParams.get("photo") ? "ok:Your photo is up and your page is republished." : url?.searchParams?.get("saved") ? "ok:Saved and republished." : url?.searchParams?.get("new") ? (JSON.parse(acct.content || "{}").via === "google" ? "ok:CONGRATS" : `ok:Your page is live at caldera.social/@${acct.handle}. Add your ${JSON.parse(acct.content || "{}").kind === "business" ? "companies" : "work"} below.`) : ""); return true; }
+      if (req.method === "GET") { richerPreview = googleFirst(url); richerObsidian = obsidianOn(url); skipRicher = false; settingsPage(res, acct, url && url.searchParams && url.searchParams.get("photo") ? "ok:Your photo is up and your page is republished." : url?.searchParams?.get("saved") ? "ok:Saved and republished." : url?.searchParams?.get("new") ? (JSON.parse(acct.content || "{}").via === "google" ? "ok:CONGRATS" : `ok:Your page is live at caldera.social/@${acct.handle}. Add your ${JSON.parse(acct.content || "{}").kind === "business" ? "companies" : "work"} below.`) : "",
+        !!url?.searchParams?.get("new") && JSON.parse(acct.content || "{}").via !== "google"); return true; }   // email sign-ups' first page after the email: the first-value card (tie.ts, at "email")
       if (!c.sameOrigin(req)) { settingsPage(res, acct, "Wrong origin."); return true; }
       const f = await form(req), act = f.get("do");
       if (act === "delete") {

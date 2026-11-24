@@ -6,6 +6,7 @@
  * here so a private or locked building can never carry a name, link or history. Unlisted and moderated profiles never
  * appear. Live activity is the same coarse public projection a member's own public city gets, folded per member.
  */
+import { fleetRow, mark, FLEET_CSS, FLEET_WORLD_CSS, FLEET_WORLD_JS, type FleetChip } from "./fleet";
 import { mapPanel } from "./mapprompt";
 import { WADD_CSS, WADD_HTML, WADD_JS } from "./frontierpage";
 import { GROWTH_CSS, GROWTH_CLIENT_JS, GROWTH_HEAD_JS, growthMarkup } from "./growthclient";
@@ -314,12 +315,17 @@ var L=document.getElementById('w-lgd'),LB=null;if(L){var lclose=function(){if(L.
 var X=document.querySelector('[data-wpu]'),MP=document.getElementById('power-up');if(X&&MP){var sync=function(){X.setAttribute('aria-expanded',String(MP.open));X.textContent=MP.open?'Close':'Open'};
   X.addEventListener('click',function(){MP.open=!MP.open;sync();if(MP.open){var c=MP.querySelector('.mp-copy');if(c)try{c.focus({preventScroll:true})}catch(e){}}});MP.addEventListener('toggle',sync);sync()}
 })();`;
-export function worldPage(w: World, o: { hub: string; nav: string; tools?: unknown[]; growth?: unknown | null; battle?: unknown | null; frontier?: { districts: any[]; meta: Record<string, any>; fs?: Record<string, { slot: number; by: string | null }> } | null }): string {
+export function worldPage(w: World, o: { hub: string; nav: string; tools?: unknown[]; growth?: unknown | null; battle?: unknown | null; frontier?: { districts: any[]; meta: Record<string, any>; fs?: Record<string, { slot: number; by: string | null }> } | null;
+  /** the Orpheus fleet (fleet.ts), newest link first: listed members only; viewer = the signed-in handle (the ref on Try Orpheus free) */
+  fleet?: FleetChip[]; viewer?: string | null }): string {
   const G = o.growth || null, BT = G ? o.battle || null : null;
   const hub = o.hub.replace(/\/$/, ""), n = w.members.length, b = w.city.districts.reduce((s, d) => s + d.repos.length, 0);
   // Frontier lands (frontier.ts) ride along as fogged districts on the world's edge (uc: 1), with their card facts in world.uc
   const FD = (o.frontier?.districts || []).filter(d => !w.members.some(m => "@" + m.handle.toLowerCase() === String(d.nb).toLowerCase()));
-  const data = { ...w.city, districts: [...w.city.districts, ...FD], openBase: "", world: { m: Object.fromEntries(w.members.map(m => ["@" + m.handle, m])), links: w.links, start: w.start, topics: w.topics || [], uc: o.frontier?.meta || {}, fr: o.frontier ? 1 : 0, fs: Object.fromEntries(Object.entries(o.frontier?.fs || {}).filter(([k]) => w.members.some(m => "@" + m.handle === k))) } };
+  // the fleet: members on this map only; orph on the member data draws the pin (1, 2 = Founding Fleet)
+  const FL = (o.fleet || []).filter(f => w.members.some(m => m.handle.toLowerCase() === f.handle.toLowerCase()));
+  const OL = new Map(FL.map(f => [f.handle.toLowerCase(), f.founding ? 2 : 1]));
+  const data = { ...w.city, districts: [...w.city.districts, ...FD], openBase: "", world: { m: Object.fromEntries(w.members.map(m => ["@" + m.handle, OL.has(m.handle.toLowerCase()) ? { ...m, orph: OL.get(m.handle.toLowerCase()) } : m])), links: w.links, start: w.start, topics: w.topics || [], uc: o.frontier?.meta || {}, fr: o.frontier ? 1 : 0, fs: Object.fromEntries(Object.entries(o.frontier?.fs || {}).filter(([k]) => w.members.some(m => "@" + m.handle === k))) } };
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Caldera world: every member's city on one map</title>
 <meta name="description" content="Every Caldera member's GitHub and Obsidian city on one live map: ${n} neighborhoods, ${b} buildings, friendships as highways.">
@@ -328,7 +334,7 @@ export function worldPage(w: World, o: { hub: string; nav: string; tools?: unkno
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
 ${BT ? `<script>window.CALDERA_BATTLE_ON=1</script>` : ""}${G ? `<script>${GROWTH_HEAD_JS}</script>` : ""}
 <link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css"><style>${CITY_CSS}${G ? GROWTH_CSS : ""}${BT ? BATTLE_CSS : ""}
-${WORLD_CSS}@media (max-width:600px){.w-main .c-tools{flex-wrap:wrap;justify-content:flex-end;left:8px;right:8px;gap:4px}.w-main .c-tools button{padding:5px 8px}}
+${WORLD_CSS}${FL.length ? FLEET_CSS + "\n" + FLEET_WORLD_CSS + "\n" : ""}@media (max-width:600px){.w-main .c-tools{flex-wrap:wrap;justify-content:flex-end;left:8px;right:8px;gap:4px}.w-main .c-tools button{padding:5px 8px}}
 .w-main .c-stage.c-full{height:100%;min-height:0}
 @media (max-width:600px){html.w-battle .w-main .c-live{display:none}.w-main .b-chip{font-size:11px;gap:6px;padding:6px 10px 6px 8px}}
 .w-main .b-chip b{flex:none}.w-main .b-chip span{min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -337,8 +343,8 @@ ${WORLD_CSS}@media (max-width:600px){.w-main .c-tools{flex-wrap:wrap;justify-con
 ${o.nav}
 <main class="w-main">
 <div class="w-head"><h1>The world</h1><p class="w-sent"><span class="w-s-txt"><span class="w-now-only">${n} cit${n === 1 ? "y" : "ies"} on one map.<span class="w-xl"> Tap a name to fly there.</span></span>${G ? `<span class="w-grow-only">Purple outlines are new in this window.</span>` : ""}${BT ? `<span class="w-battle-only">Every city fires at 20:00.<span class="w-xl"> Cranes rebuild the hits by noon.</span></span>` : ""}</span>${BT ? ` <a class="w-how-a" href="/world?view=battle&amp;how" data-whow>How battles work</a>` : ""}</p>${o.frontier ? `<div class="w-addw"><button type="button" class="w-addb" aria-label="Add a friend" title="Add a friend" aria-haspopup="dialog" aria-expanded="false" aria-controls="w-addp">${PLUS_SVG}<span>Add a friend</span></button><div class="w-addp" id="w-addp" role="dialog" aria-labelledby="w-addp-t" hidden><h2 id="w-addp-t">Add a friend's GitHub</h2>${WADD_HTML}</div></div>` : ""}</div>
-<div class="w-maps"><div class="c-stage" id="stage"><canvas id="city" aria-label="Isometric world map of ${n} member cities"></canvas>${BT ? MODE_HTML : ""}
-<div class="c-tools">${G ? TIME_HTML : ""}<button id="t-labels" aria-pressed="true">Labels</button><button id="t-fr" aria-pressed="false" aria-label="Friendships" title="Friendships between neighborhoods, drawn as rays of light">&#x2727;<span class="t-txt"> Friendships</span></button><button id="t-topics" aria-pressed="false" aria-label="Color by topic" title="Tint each neighborhood by what they're building"><span class="t-sw" aria-hidden="true"></span><span class="t-txt"> Topics</span></button><button id="t-sky">Auto</button><button id="t-wx" title="Weather">Weather</button><button id="t-snd" aria-pressed="false" title="Sound for arrivals (off)">&#x1F507;</button><button id="t-reset">Reset</button><button id="t-what" type="button" aria-haspopup="dialog" aria-controls="w-lgd" title="What am I looking at?">What am I looking at?</button><button id="t-full" aria-label="Full screen">&#x26F6;<span class="t-txt"> Full screen</span></button></div>
+${fleetRow(FL, { world: true, viewer: o.viewer })}<div class="w-maps"><div class="c-stage" id="stage"><canvas id="city" aria-label="Isometric world map of ${n} member cities"></canvas>${BT ? MODE_HTML : ""}
+<div class="c-tools">${G ? TIME_HTML : ""}<button id="t-labels" aria-pressed="true">Labels</button><button id="t-fr" aria-pressed="false" aria-label="Friendships" title="Friendships between neighborhoods, drawn as rays of light">&#x2727;<span class="t-txt"> Friendships</span></button><button id="t-topics" aria-pressed="false" aria-label="Color by topic" title="Tint each neighborhood by what they're building"><span class="t-sw" aria-hidden="true"></span><span class="t-txt"> Topics</span></button>${FL.length ? `<button id="t-orph" aria-pressed="false" aria-label="Orpheus fleet" title="Show only members who run Orpheus">${mark(14)}<span class="t-txt"> Orpheus fleet</span></button>` : ""}<button id="t-sky">Auto</button><button id="t-wx" title="Weather">Weather</button><button id="t-snd" aria-pressed="false" title="Sound for arrivals (off)">&#x1F507;</button><button id="t-reset">Reset</button><button id="t-what" type="button" aria-haspopup="dialog" aria-controls="w-lgd" title="What am I looking at?">What am I looking at?</button><button id="t-full" aria-label="Full screen">&#x26F6;<span class="t-txt"> Full screen</span></button></div>
 <div class="c-toasts" aria-live="polite"></div><div class="c-mininame" aria-hidden="true"><i></i>Caldera world</div>
 <div class="c-card" id="card" hidden></div><div class="c-hint">Drag to move &middot; scroll or pinch to zoom &middot; click a name to fly there</div></div>
 </div>${G ? growthMarkup() : ""}${BT ? battleMarkup() : ""}
@@ -348,5 +354,5 @@ ${mapPanel(hub, { extras: true })}${legendSheet(n, b, !!G)}
 <script>window.CALDERA_TOOLS=${safeJson(o.tools || [])};window.CALDERA_TOOLS_HUB=${safeJson(hub)};window.CALDERA_LIVE=${safeJson({ url: "/v1/world/live", mode: "public" })};window.CALDERA_EXTRAS=${safeJson({ weather: `${hub}/v1/weather` })};window.CALDERA_GIFTS=${safeJson({ url: "/v1/gifts" })}</script>
 <script type="application/json" id="city-data">${safeJson(data)}</script>
 ${G ? `<script>window.CALDERA_GROWTH=${safeJson(G)}</script>` : ""}${BT ? `<script>window.CALDERA_BATTLE=${safeJson(BT)}</script>` : ""}
-<script>${CITY_JS}</script>${BT ? `<script>${BATTLE_CLIENT_JS}</script>` : ""}${G ? `<script>${GROWTH_CLIENT_JS}</script>` : ""}<script>${CARD_CLEAR_JS}</script><script>${WORLD_FIT_JS}</script>${o.frontier ? `<style>${WADD_CSS}</style><script>${WADD_JS}</script>` : ""}<script>${WORLD_UI_JS}</script></body></html>`;
+<script>${CITY_JS}</script>${BT ? `<script>${BATTLE_CLIENT_JS}</script>` : ""}${G ? `<script>${GROWTH_CLIENT_JS}</script>` : ""}<script>${CARD_CLEAR_JS}</script><script>${WORLD_FIT_JS}</script>${o.frontier ? `<style>${WADD_CSS}</style><script>${WADD_JS}</script>` : ""}<script>${WORLD_UI_JS}</script>${FL.length ? `<script>${FLEET_WORLD_JS}</script>` : ""}</body></html>`;
 }

@@ -28,6 +28,8 @@
     <p class="lead-in">Developers and writers on Caldera, from GitHub and Obsidian. Every page updates itself from real work, so find people by what they're actually building.</p>
   </div>
 
+  <div id="of-slot"></div>
+
   <div class="people-tools">
     <label class="people-search"><span class="sr">Search</span>
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
@@ -101,6 +103,22 @@
     return b;
   }
   function alertNear(b, msg) { var t = el("span", "pcard-msg", msg); t.setAttribute("role", "status"); b.parentNode.appendChild(t); setTimeout(function () { t.remove(); }, 4000); }
+  // the Orpheus boost (FLEET.md 2 + 3): the badge on a card and the fleet row; a badge never changes the order
+  var OFM = function (n) { return '<svg viewBox="0 0 16 16" width="' + n + '" height="' + n + '" aria-hidden="true" focusable="false" style="flex:none"><circle cx="8" cy="8.6" r="4.9" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="8" cy="8.6" r="1.6" fill="currentColor"/><circle cx="12.4" cy="3.6" r="2" fill="currentColor"/></svg>'; };
+  function ofEsc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function ofBadge(gold) { return gold ? '<span class="of-b gold" title="Founding Fleet. Runs on Orpheus">' + OFM(12) + '<span>Founding Fleet</span></span>' : '<span class="of-b" title="Runs on Orpheus">' + OFM(12) + '<span>Runs on Orpheus</span></span>'; }
+  function ofRow(list, total, viewer) {
+    var slot = document.getElementById("of-slot"); if (!slot) return;
+    if (!list || !list.length) { slot.innerHTML = ""; return; }
+    var href = "https://useorpheus.com/?utm_source=caldera&utm_medium=map&utm_campaign=tie" + (viewer ? "&ref=" + encodeURIComponent(viewer) : "");
+    var chips = list.slice(0, 24).map(function (c) {
+      var av = c.avatar ? '<img src="' + ofEsc(c.avatar) + '" alt="">' : ofEsc((c.name || c.handle).charAt(0).toUpperCase());
+      var h = "/@" + encodeURIComponent(c.handle) + "/";
+      return c.founding ? '<a class="of-chip gold" role="listitem" href="' + ofEsc(h) + '" data-h="' + ofEsc(c.handle) + '" title="Founding Fleet"><i>' + av + '</i>@' + ofEsc(c.handle) + OFM(12) + '</a>'
+        : '<a class="of-chip" role="listitem" href="' + ofEsc(h) + '" data-h="' + ofEsc(c.handle) + '"><i>' + av + '</i>@' + ofEsc(c.handle) + '</a>';
+    }).join("");
+    slot.innerHTML = '<div class="of-row" id="of-row" data-tie="fleet-row"><span class="of-row-l">' + OFM(14) + 'Orpheus fleet<b>' + (total || list.length) + '</b></span><div class="of-row-s" role="list" aria-label="Members who run Orpheus, newest first">' + chips + '<a class="of-row-a" href="' + ofEsc(href) + '" target="_blank" rel="noopener">Try Orpheus free</a></div></div>';
+  }
   function card(p) {
     // the whole card opens the profile (a stretched link on the name); tags filter the directory; the footer holds the links
     var href = "@" + encodeURIComponent(p.handle) + "/";
@@ -113,6 +131,7 @@
     top.appendChild(av); top.appendChild(who);
     if (p.invited > 0) a.title = "Brought " + p.invited + (p.invited === 1 ? " person" : " people") + " to Caldera";
     if (p.week > 0) { var s = el("div", "pcard-score"); s.appendChild(el("b", null, String(p.week))); s.appendChild(el("span", null, "this week")); top.appendChild(s); }
+    if (p.orph) { var ow = el("div", "pcard-of"); ow.innerHTML = ofBadge(p.orph === 2); top.appendChild(ow); }
     a.appendChild(top);
     if (p.headline) { var hl = el("p", "pcard-line", p.headline); hl.setAttribute("data-user-content", ""); hl.title = p.headline; a.appendChild(hl); }   // members write their own headlines: not our copy
     var tags = (p.tags || []).slice(0, 3);
@@ -134,7 +153,7 @@
   function load() {
     var url = "v1/directory?sort=" + sort + "&q=" + encodeURIComponent(input.value.trim()) + (tag ? "&tag=" + encodeURIComponent(tag) : "");
     fetch(url).then(function (r) { return r.json(); }).then(function (d) {
-      last = d.profiles || []; render(last);
+      last = d.profiles || []; render(last); ofRow(d.fleet, d.fleetTotal, d.me);
       var n = d.total || 0, searching = input.value.trim() || tag;
       count.textContent = searching ? n + (n === 1 ? " person" : " people") + (tag ? " building " + tag : " found") : n + (n === 1 ? " person" : " people") + " listed";
       empty.hidden = !!(n || searching);

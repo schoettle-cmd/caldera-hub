@@ -4,12 +4,15 @@
  * daily email) and a step-by-step connect flow right in the page for anything that's off. Pure rendering: the hub
  * computes the state (connectionsFor in server.ts) and the GitHub module wires the routes.
  */
+import { fleetSettingsRow, FLEET_SETTINGS_CSS, FLEET_SETTINGS_JS } from "./fleet";
 import { trackTag } from "./hookpin.js";
 export interface Conn {
   hosted: boolean;                                       // a GitHub sign-up the hub builds (no vault yet)
   github: { on: boolean; login?: string; listed?: string };   // listed: the GitHub login the page's links name
   obsidian: { on: boolean; updated?: string };
   live: boolean; agents: boolean; private?: boolean; email: boolean;
+  /** the Orpheus link (orpheustie.ts); fleet null = not linked */
+  orpheus?: { handle: string; fleet: { founding: boolean } | null };
 }
 export interface PanelOpts {
   pub: string; handle: string; conn: Conn;
@@ -42,6 +45,7 @@ export const SETTINGS_CSS = `<style>
 @keyframes connp{50%{opacity:.25}}@media (prefers-reduced-motion:reduce){.conn-wait i{animation:none}}
 @media (max-width:520px){.conn-body{padding-left:16px}.conn-act{font-size:12.5px}}
 .danger-zone{border-color:rgba(240,113,106,.45)!important}
+${FLEET_SETTINGS_CSS}
 </style>`;
 
 /** Section links; an item whose id starts with "/" is a page of its own (e.g. /me/building, the tags editor). */
@@ -96,6 +100,7 @@ export function connectionsPanel(o: PanelOpts): string {
   const rows = [
     row("github", conn.github.on, "GitHub", ghStatus, gh, conn.github.listed ? "Link" : "Connect", conn.hosted ? "Options" : "Details"),
     row("obsidian", conn.obsidian.on, "Obsidian", obStatus, ob, "Connect"),
+    ...(conn.orpheus ? [fleetSettingsRow(conn.orpheus.handle, conn.orpheus.fleet)] : []),
     row("live", conn.live, "Live visitors on your city", conn.live ? "Visits arrived in the last 7 days" : "No visits in the last 7 days", live, "Set up", "Snippets"),
     row("agents", conn.agents, "AI agents on the map", conn.agents ? "Agents reported in the last 7 days" : "No agents in the last 7 days", agents, "Set up", "Setup"),
     ...(conn.hosted ? [] : [row("private", !!conn.private, "Private view", conn.private ? "Your private sections are up to date" : "Not turned on", priv, "Set up", "Setup")]),
@@ -107,7 +112,7 @@ b.addEventListener('click',function(){b.disabled=true;b.textContent='Getting you
 if(!x.ok){b.disabled=false;b.textContent='Get my code';n.textContent=x.j.error||'Could not get a code. Try again.';return}
 box.innerHTML='';var c=document.createElement('code');c.id='claim-code';c.textContent=x.j.code;box.appendChild(c);var cp=document.createElement('button');cp.type='button';cp.className='btn small';cp.textContent='Copy';cp.addEventListener('click',function(){navigator.clipboard.writeText(x.j.code).then(function(){cp.textContent='Copied'},function(){})});box.appendChild(cp);
 n.textContent='Works once, until '+new Date(x.j.expires).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})+'.';w.hidden=false;if(!t)t=setInterval(poll,4000)})})})()</script>`;
-  return `<div class="conn">${rows.join("")}</div>${script}`;
+  return `<div class="conn">${rows.join("")}</div>${script}${conn.orpheus ? FLEET_SETTINGS_JS : ""}`;
 }
 
 /** Tiny GitHub / Obsidian status dots for the owner bar (labels hide on phones). */

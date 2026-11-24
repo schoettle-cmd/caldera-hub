@@ -14,6 +14,7 @@
  * Key: CALDERA_ORPHEUS_TIE_KEY. Empty = the feature is off (no calls). The key is never logged and never in a response.
  */
 import type http from "node:http";
+import { linkPage, LINK_JS, type LinkState, type LinkView } from "./fleet";
 
 export const ORPHEUS_HANDLE = /^[A-Za-z0-9_.-]{1,40}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -23,7 +24,7 @@ export const FLEET_MAX = 5000;
 const FEED_MAX_BYTES = 4 * 1024 * 1024;
 const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]!));
 
-export interface Fleet { handle: string; founding: boolean; linkedAt: string; agentsWeek: number; accounts: number; sessionsWeek: number; busiestDay: string | null }
+export interface Fleet { handle: string; founding: boolean; linkedAt: string; agentsWeek: number; accounts: number; sessionsWeek: number; busiestDay: string | null; syncedAt: string | null }
 export interface FeedRow { id: string; handle: string; founding_fleet: boolean; linked_at: string; agents_week: number; accounts: number; sessions_week: number; busiest_day: string | null }
 
 const count = (v: unknown) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 1e9;
@@ -53,6 +54,10 @@ export function orpheusTie(c: {
   page: (title: string, body: string) => string; tooMany: (k: string, max: number) => boolean;
   /** tie.ts: count an event (our own sessions already left out by the caller) and tell our own sessions apart */
   count: (ev: string, place: string) => void; own: (id: string) => boolean;
+  /** the sign-in page frame (FLEET.md piece 5); without it the plain mail page is used */
+  view?: (res: http.ServerResponse, status: number, title: string, inner: string, script: string, extra: Record<string, string | string[]>) => void;
+  /** the member's avatar URL for the link picture */
+  avatar?: (id: string) => string | null;
 }) {
   const { q } = c, BASE = (c.base || "https://useorpheus.com").replace(/\/$/, "");
   q(`CREATE TABLE IF NOT EXISTS orpheus_links (id TEXT PRIMARY KEY, profile TEXT UNIQUE, handle TEXT, founding INTEGER, linked_at TEXT,
@@ -89,7 +94,7 @@ export function orpheusTie(c: {
   const rowOf = (profileId: string) => q("SELECT * FROM orpheus_links WHERE profile=?").get(profileId) as any;
   const fleetFromRow = (r: any): Fleet => {
     const pr = c.profile(r.profile);
-    return { handle: pr?.handle || r.handle, founding: !!r.founding, linkedAt: r.linked_at, agentsWeek: r.agents_week ?? 0, accounts: r.accounts ?? 0, sessionsWeek: r.sessions_week ?? 0, busiestDay: r.busiest_day ?? null };
+    return { handle: pr?.handle || r.handle, founding: !!r.founding, linkedAt: r.linked_at, agentsWeek: r.agents_week ?? 0, accounts: r.accounts ?? 0, sessionsWeek: r.sessions_week ?? 0, busiestDay: r.busiest_day ?? null, syncedAt: r.synced_at ?? null };
   };
 
   /** the feed: add / update per link id, remove ids Orpheus no longer has; a bad feed changes nothing */
@@ -127,59 +132,60 @@ export function orpheusTie(c: {
     res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "x-robots-tag": "noindex", ...extra });
   const cookie = (v: string, age: number) => `${COOKIE}=${v}; Path=/link/orpheus; Max-Age=${age}; HttpOnly; SameSite=Lax${c.secure ? "; Secure" : ""}`;
   const tokenFromCookie = (req: http.IncomingMessage) => { const m = String(req.headers.cookie || "").match(/(?:^|;\s*)cal_orph=([^;]*)/); if (!m) return ""; try { const t = decodeURIComponent(m[1]!); return TOKEN.test(t) ? t : ""; } catch { return ""; } };
-  /** a plain text page; data-orpheus-link names the state for the later design and the tests */
-  const say = (res: http.ServerResponse, status: number, st: string, title: string, text: string, extra: Record<string, string | string[]> = {}) => { head(res, status, extra); res.end(c.page(title, `<p data-orpheus-link="${esc(st)}">${esc(text)}</p>`)); };
-  const STATES = {
-    off: [503, "Not available yet", "Linking Orpheus to Caldera is not available yet. Try again soon."],
-    missing: [400, "Link not found", "This link has no code. Open it again from Orpheus settings."],
-    handle_taken: [409, "Already linked", "Your Caldera handle is already linked to another Orpheus workspace. Unlink it there first."],
-    expired: [410, "Link expired", "This link expired or was already used. Open a new one from Orpheus settings."],
-    error: [502, "Could not link", "Something went wrong while linking. Open a new link from Orpheus settings and try again."],
-  } as const;
-  const state = (res: http.ServerResponse, s: keyof typeof STATES, extra: Record<string, string | string[]> = {}) => { const [st, t, x] = STATES[s]; say(res, st, s, t, x, extra); };
+  /** a link page (FLEET.md piece 5); data-orpheus-link names the state */
+  const show = (res: http.ServerResponse, status: number, st: LinkState, v: LinkView, extra: Record<string, string | string[]> = {}) => {
+    const pg = linkPage(st, v);
+    if (c.view) return c.view(res, status, pg.title, pg.html, st === "confirm" ? LINK_JS : "", { "referrer-policy": "no-referrer", ...extra });
+    head(res, status, extra); res.end(c.page(pg.title, pg.html));
+  };
+  const viewOf = (me: string | null): LinkView => { const pr = me ? c.profile(me) : null; return pr?.handle ? { handle: pr.handle, avatar: c.avatar?.(me!) ?? null } : {}; };
+  const STATES = { off: [503, "off"], missing: [400, "missing"], handle_taken: [409, "handle_taken"], taken_other: [409, "taken_other"], expired: [410, "expired"], error: [502, "error"] } as const;
+  const state = (res: http.ServerResponse, req: http.IncomingMessage, s: keyof typeof STATES, extra: Record<string, string | string[]> = {}, more: Partial<LinkView> = {}) => {
+    const [st, k] = STATES[s]; show(res, st, k, { ...viewOf(c.memberOf(req)), ...more }, extra);
+  };
   const form = async (req: http.IncomingMessage) => { let s = ""; for await (const ch of req) { s += ch; if (s.length > 4096) break; } return new URLSearchParams(s); };
 
   /** GET|POST /link/orpheus, POST /settings/orpheus/unlink; false = not ours */
   async function route(req: http.IncomingMessage, res: http.ServerResponse, url: URL, p: string): Promise<boolean> {
     if (p === "/link/orpheus" && req.method === "GET") {
-      if (!on()) { state(res, "off"); return true; }
+      if (!on()) { state(res, req, "off"); return true; }
       const qt = url.searchParams.get("t"), t = qt !== null ? (TOKEN.test(qt) ? qt : "") : tokenFromCookie(req);
-      if (!t) { state(res, "missing"); return true; }
+      if (!t) { state(res, req, "missing"); return true; }
       const keep: Record<string, string> = qt !== null ? { "set-cookie": cookie(encodeURIComponent(t), 1800) } : {};
       const me = c.memberOf(req), pr = me ? c.profile(me) : null;
       if (!pr?.handle) { res.writeHead(303, { location: "/signin?back=%2Flink%2Forpheus", "cache-control": "no-store", "referrer-policy": "no-referrer", ...keep }); res.end(); return true; }
-      if (!ORPHEUS_HANDLE.test(pr.handle) || c.hidden(pr)) { state(res, "error"); return true; }
-      head(res, 200, keep);
-      res.end(c.page("Link Orpheus", `<form method="post" action="/link/orpheus" data-orpheus-link="confirm"><input type="hidden" name="t" value="${esc(t)}"><p>Link this Orpheus workspace to @${esc(pr.handle)}</p><button class="btn" type="submit">Link to @${esc(pr.handle)}</button></form><p><a href="/@${esc(pr.handle)}/">Not now</a></p>`));
+      if (!ORPHEUS_HANDLE.test(pr.handle) || c.hidden(pr)) { state(res, req, "error"); return true; }
+      show(res, 200, "confirm", { ...viewOf(me), token: t }, keep);
       return true;
     }
     if (p === "/link/orpheus" && req.method === "POST") {
-      if (!c.sameOrigin(req)) { say(res, 403, "error", "Could not link", "Open the link again from Orpheus settings."); return true; }
-      if (!on()) { state(res, "off"); return true; }
+      if (!c.sameOrigin(req)) { show(res, 403, "error", viewOf(c.memberOf(req))); return true; }
+      if (!on()) { state(res, req, "off"); return true; }
       const me = c.memberOf(req), pr = me ? c.profile(me) : null;
       if (!me || !pr?.handle) { res.writeHead(303, { location: "/signin?back=%2Flink%2Forpheus", "cache-control": "no-store" }); res.end(); return true; }
       const f = await form(req), t = String(f.get("t") || "");
-      if (!TOKEN.test(t)) { state(res, "missing"); return true; }
-      if (!ORPHEUS_HANDLE.test(pr.handle) || c.hidden(pr)) { state(res, "error"); return true; }
-      if (c.tooMany("orpheus-claim:" + me, 20)) { state(res, "error"); return true; }
+      if (!TOKEN.test(t)) { state(res, req, "missing"); return true; }
+      if (!ORPHEUS_HANDLE.test(pr.handle) || c.hidden(pr)) { state(res, req, "error"); return true; }
+      if (c.tooMany("orpheus-claim:" + me, 20)) { state(res, req, "error"); return true; }
       const clear = { "set-cookie": cookie("", 0) };
       let r: { status: number; json: any };
-      try { r = await call("POST", "/api/tie/caldera/claim", { t, handle: pr.handle }); } catch (e: any) { log("claim failed", e?.name || "error", e?.message || ""); state(res, "error"); return true; }
-      if (r.status === 409) { state(res, "handle_taken", clear); return true; }
-      if (r.status === 410) { state(res, "expired", clear); return true; }
+      try { r = await call("POST", "/api/tie/caldera/claim", { t, handle: pr.handle }); } catch (e: any) { log("claim failed", e?.name || "error", e?.message || ""); state(res, req, "error"); return true; }
+      // 409: this handle has another workspace, or (other_handle) this workspace is tied to another handle
+      if (r.status === 409) { const o = String(r.json?.handle || r.json?.other_handle || "").toLowerCase(); if (o && o !== String(pr.handle).toLowerCase() && ORPHEUS_HANDLE.test(o)) state(res, req, "taken_other", clear, { other: o }); else state(res, req, "handle_taken", clear); return true; }
+      if (r.status === 410) { state(res, req, "expired", clear); return true; }
       const id = r.json?.id, founding = r.json?.founding_fleet;
-      if (r.status !== 200 || typeof id !== "string" || !UUID.test(id) || typeof founding !== "boolean") { log("claim failed", "status " + r.status); state(res, "error", clear); return true; }
+      if (r.status !== 200 || typeof id !== "string" || !UUID.test(id) || typeof founding !== "boolean") { log("claim failed", "status " + r.status); state(res, req, "error", clear); return true; }
       // one handle per account: a new link for this member replaces the old one here
       const old = rowOf(me); if (old && old.id !== id.toLowerCase()) q("DELETE FROM orpheus_links WHERE id=?").run(old.id);
       q("DELETE FROM orpheus_unlinked WHERE id=?").run(id.toLowerCase());
       q(`INSERT INTO orpheus_links (id, profile, handle, founding, linked_at, agents_week, accounts, sessions_week, busiest_day) VALUES (?,?,?,?,?,0,0,0,NULL)
         ON CONFLICT(id) DO UPDATE SET profile=excluded.profile, handle=excluded.handle, founding=excluded.founding`).run(id.toLowerCase(), me, pr.handle, founding ? 1 : 0, new Date().toISOString());
       if (!c.own(me)) c.count("tie_link", "orpheus");
-      res.writeHead(303, { location: `/@${pr.handle}/`, "cache-control": "no-store", ...clear }); res.end(); return true;
+      show(res, 200, "linked", { ...viewOf(me), founding }, clear); return true;
     }
     if (p === "/settings/orpheus/unlink" && req.method === "POST") {
       const wantsJson = /json/.test(String(req.headers["content-type"] || "")) || /json/.test(String(req.headers.accept || ""));
-      const out = (status: number, body: any) => { if (wantsJson) { res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(body)); } else if (status === 200) { res.writeHead(303, { location: "/settings", "cache-control": "no-store" }); res.end(); } else say(res, status, "error", "Could not unlink", body.error); };
+      const out = (status: number, body: any) => { if (wantsJson) { res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(body)); } else if (status === 200) { res.writeHead(303, { location: "/settings#conn-orpheus", "cache-control": "no-store" }); res.end(); } else show(res, status, "error", viewOf(c.memberOf(req))); };
       if (!c.sameOrigin(req)) { out(403, { error: "wrong origin" }); return true; }
       const me = c.memberOf(req); if (!me) { out(401, { error: "Sign in first." }); return true; }
       for await (const _ of req) { /* drain */ }

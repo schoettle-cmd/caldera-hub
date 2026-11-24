@@ -311,3 +311,25 @@ section h2 { line-height: 1.12; }
 .em-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .em-row input { flex: 1 1 200px; min-width: 0; box-sizing: border-box; min-height: 40px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; font-size: 15px; }
 .em-row .btn { min-height: 40px; cursor: pointer; }
+
+/* Orpheus boost (FLEET.md, Fable 11-24): badge, fleet row; mirrors packages/hub/src/fleet.ts FLEET_CSS */
+:root{--of-ink:#C9B8FF;--of-line:#5B4A99;--of-fill:rgba(139,108,246,.12);--of-gold:#F0BF5A;--of-gold-line:#8A6A1F;--of-gold-fill:rgba(240,191,90,.12)}
+:root[data-theme="light"]{--of-ink:#5A38D6;--of-line:#B9A6F5;--of-fill:rgba(109,74,232,.07);--of-gold:#7A5200;--of-gold-line:#D4A84A;--of-gold-fill:#FFF4D6}
+.w-main,.lb-panel,.lb-foot{--of-ink:#C9B8FF;--of-line:#5B4A99;--of-fill:rgba(139,108,246,.12);--of-gold:#F0BF5A;--of-gold-line:#8A6A1F;--of-gold-fill:rgba(240,191,90,.12)}
+.of-b{position:relative;display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;flex:none;height:22px;padding:0 8px 0 6px;border:1px solid var(--of-line);border-radius:999px;background:var(--of-fill);color:var(--of-ink);font:600 11.5px/1 var(--font-body,'IBM Plex Sans',Arial,sans-serif);letter-spacing:0;text-transform:none;white-space:nowrap;vertical-align:middle}
+.of-b svg{width:12px;height:12px}.of-b.gold{border-color:var(--of-gold-line);background:var(--of-gold-fill);color:var(--of-gold)}
+.of-row{display:flex;align-items:center;gap:10px;min-width:0;height:44px}
+.of-row-l{flex:none;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0;border:0;background:none;color:var(--of-ink);font:600 10.5px/1 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.of-row-l b{font-weight:600;letter-spacing:0;color:var(--text-muted,#8A8A93)}
+button.of-row-l{position:relative;padding:0 10px 0 8px;border:1px solid var(--of-line);border-radius:8px;cursor:pointer}button.of-row-l::before{content:"";position:absolute;left:0;right:0;top:-8px;bottom:-8px}
+button.of-row-l[aria-pressed="true"]{background:#F4F2FF;border-color:#F4F2FF;color:#1A1330}button.of-row-l[aria-pressed="true"] b{color:#4A3F73}
+.of-row-s{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;padding:6px 28px 6px 0;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}
+.of-row-s::-webkit-scrollbar{display:none}
+.of-chip{position:relative;flex:none;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;height:32px;padding:0 11px 0 4px;border:1px solid var(--of-line);border-radius:999px;background:var(--of-fill);color:var(--text-strong,#F2F2F5);font:500 13px/1 var(--font-body,'IBM Plex Sans',Arial,sans-serif);text-decoration:none;white-space:nowrap}
+.of-chip::before{content:"";position:absolute;left:0;right:0;top:-6px;bottom:-6px}.of-chip:hover{text-decoration:none;border-color:var(--of-ink)}
+.of-chip i{flex:none;width:24px;height:24px;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:#3A2F5C;color:#D6CBFF;font:600 11px/1 var(--font-body,'IBM Plex Sans',Arial,sans-serif);font-style:normal}.of-chip i img{width:100%;height:100%;object-fit:cover}
+.of-chip.gold{border-color:var(--of-gold-line);background:var(--of-gold-fill)}.of-chip.gold i{box-shadow:0 0 0 1.5px var(--of-gold)}.of-chip.gold svg{width:12px;height:12px;color:var(--of-gold)}
+.of-row-a{flex:none;display:inline-flex;align-items:center;min-height:40px;margin-left:8px;padding:0 4px;color:var(--text-muted,#8A8A93);font:500 12.5px/1 var(--font-body,'IBM Plex Sans',Arial,sans-serif);text-decoration:underline;text-underline-offset:3px;white-space:nowrap}.of-row-a:hover{color:var(--text-strong,#F2F2F5)}
+.of-row :is(a,button):focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+.people .of-row{margin:-8px 0 18px;padding:0 0 0 14px;border:1px solid var(--line);border-radius:var(--radius-lg,14px);height:52px}
+.pcard-top{flex-wrap:wrap;row-gap:8px}.pcard-who{flex-basis:0}.pcard-of{order:9;flex:0 0 100%;display:flex;padding-left:64px}

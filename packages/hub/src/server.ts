@@ -59,6 +59,7 @@ import { profileMeta } from "./seometa";
 import { agencySuper } from "./agencysuper";
 import { tie, tieBanner, tieCard, tieHref } from "./tie";
 import { orpheusTie } from "./orpheustie";
+import { FLEET_TOKENS, FLEET_LINK_CSS, fleetProfile, fleetSettingsRow, FLEET_SETTINGS_CSS, FLEET_SETTINGS_JS, orphLevel } from "./fleet";
 export { profileMeta } from "./seometa";
 
 const hashToken = (t: string) => crypto.createHash("sha256").update(t).digest("hex");
@@ -1583,6 +1584,12 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
     const pv = q("SELECT ts FROM owner_private WHERE owner=?").get(owner) as any;
     return hosted ? { live, agents } : { live, agents, private: !!pv && pv.ts > wk };
   }
+  /** the Orpheus fleet for /world and /people (FLEET.md piece 2): listed members only, newest link first; never counts */
+  function fleetPublic(): { handle: string; founding: boolean; avatar: string | null; name: string }[] {
+    return ORPH.fleetList().flatMap(f => { const pr = profile(f.profileId); return pr?.handle && listed(pr) && !modOf(pr.handle, pr.id) ? [{ handle: pr.handle as string, founding: f.founding, avatar: avatarOf(pr.id), name: String(body(pr).name || "") }] : []; });
+  }
+  /** a member's avatar URL (the page's photo), or null */
+  function avatarOf(id: string): string | null { const pr = profile(id); if (!pr?.handle) return null; const a = body(pr).photos?.avatar; return a ? `/@${pr.handle}/${String(a).replace(/^\.?\//, "")}` : null; }
   /** The owner's connection lights for /settings and the owner bar: GitHub, Obsidian, live visitors, agents, private view, email. */
   function connectionsFor(owner: string): Conn | null {
     const pr = profile(owner); if (!pr?.handle) return null;
@@ -1592,7 +1599,8 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
     const login: string | undefined = hosted ? acct.login : link?.login || (acct?.claimed && listed && String(acct.login).toLowerCase() === listed ? acct.login : undefined);
     const u = unlockStateFor(owner) || {} as C.UnlockState;
     return { hosted, github: { on: !!login, login, listed: login ? undefined : listed }, obsidian: { on: !hosted, updated: hosted ? undefined : pr.updated },
-      live: !!u.live, agents: !!u.agents, private: hosted ? undefined : !!u.private, email: mail.hasConfirmed(owner) };
+      live: !!u.live, agents: !!u.agents, private: hosted ? undefined : !!u.private, email: mail.hasConfirmed(owner),
+      orpheus: { handle: pr.handle, fleet: (f => f ? { founding: f.founding } : null)(ORPH.fleetOf(owner)) } };
   }
   function nudgeFor(owner: string, hosted: boolean) {
     const hub = (opts.publicUrl || "https://caldera.social").replace(/\/$/, "");
@@ -1758,7 +1766,8 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   // Caldera x Orpheus tie, Part 2 (orpheustie.ts): the handle link, unlink, and the daily fleet feed
   const ORPH = orpheusTie({ q, key: () => opts.orpheusKey ?? process.env.CALDERA_ORPHEUS_TIE_KEY ?? "", fetch: opts.orpheusFetch || fetch, base: opts.orpheusUrl,
     secure: /^https:/.test(opts.publicUrl || ""), memberOf: r => memberOf(r), sameOrigin: r => sameOrigin(r), profile, byHandle, hidden: (pr: any) => !!modOf(pr.handle, pr.id),
-    page: (t, h) => mail.page(t, h), tooMany: (k, m) => tooMany(k, m), count: (e, pl) => TIE.count(e, pl), own: id => TIE.own(id) });
+    page: (t, h) => mail.page(t, h), tooMany: (k, m) => tooMany(k, m), count: (e, pl) => TIE.count(e, pl), own: id => TIE.own(id),
+    view: (res, st, t, inner, js, extra) => signinPage(res, st, t, inner, js, extra), avatar: id => avatarOf(id) });
   (admin as any).orpheusPull = () => ORPH.pull();   // admin.js orpheus-pull
   (admin as any).orpheusList = () => ORPH.fleetList();   // admin.js orpheus-list
   if (opts.orpheusJob) ORPH.schedule();
@@ -2000,15 +2009,17 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   const PAIR_ABC = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   const pairCode = () => Array.from(crypto.randomBytes(6), x => PAIR_ABC[x % PAIR_ABC.length]).join("");
   const normCode = (c: unknown) => String(c || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const signinPage = (res: http.ServerResponse, status: number, title: string, inner: string, script = "") => {
-    res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex", "referrer-policy": "no-referrer" });
+  const signinPage = (res: http.ServerResponse, status: number, title: string, inner: string, script = "", extra: Record<string, string | string[]> = {}) => {
+    res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex", "referrer-policy": "no-referrer", ...extra });
     res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} - Caldera</title><meta name="robots" content="noindex">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css"><style>
 .si{max-width:560px;margin:0 auto;padding:32px 16px 64px}.si h1{font-family:'Source Serif 4',Georgia,serif;font-size:1.9rem;margin:.2em 0 .3em}.si .lede{color:var(--text-muted,#9A9AA6);margin:0 0 18px}
 .si .card{background:var(--bg-raised,#232327);border:1px solid var(--line,#2A2A2E);border-radius:12px;padding:16px 18px;margin:14px 0}.si .card h2{font-size:1.05rem;margin:0 0 4px}.si .mut{color:var(--text-muted,#9A9AA6);font-size:.93em}
 .si input[type=email]{width:100%;box-sizing:border-box;background:var(--bg,#1C1C1F);color:inherit;border:1px solid var(--line,#2A2A2E);border-radius:8px;padding:10px 12px;font:inherit;margin:8px 0 10px}
-.si .code{font:500 2rem/1.2 'IBM Plex Mono',monospace;letter-spacing:.18em;padding:10px 0}.si .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.si button.btn{cursor:pointer}</style></head>
+.si .code{font:500 2rem/1.2 'IBM Plex Mono',monospace;letter-spacing:.18em;padding:10px 0}.si .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.si button.btn{cursor:pointer}
+${FLEET_TOKENS}
+${FLEET_LINK_CSS}</style></head>
 <body>${siteHeader("/signin")}<main class="si">${inner}</main><footer class="footer"><span>&copy; 2026 mjonesone, LLC</span><span><a href="/guide">Guide</a> &middot; <a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a></span></footer>${script ? `<script>${script}</script>` : ""}<script src="/assets/site.js" defer></script></body></html>`);
   };
   const hostedOf = (owner: string) => !!q("SELECT 1 FROM gh_accounts WHERE profile_id=? AND claimed IS NULL").get(owner);
@@ -2276,6 +2287,7 @@ ${signupCards(q2, `tap Message on @${e(h)}'s page again`, bq)}
 <p class="mut"><a href="/@${e(h)}/">Back to ${e(who)}'s page</a></p>`);
       return;
     }
+    if (!note && back === "/link/orpheus") note = "Sign in to link your Orpheus workspace.";
     signinPage(res, 200, "Sign in", `${note ? `<div class="card" role="status">${note}</div>` : ""}<h1>Sign in to Caldera</h1><p class="lede">Sign this browser in as the owner of your page. It stays signed in for a year.</p>
 <div class="card"><div class="row" style="flex-wrap:wrap;gap:10px"><a rel="nofollow" class="btn" href="/auth/github${bq ? bq + "&" : "?"}from=signin" style="display:inline-flex;align-items:center;gap:8px">${GH_ICON}Continue with GitHub</a>${googleBtn((bq ? bq + "&" : "?") + "from=signin")}</div>
 ${CODE_OR}${codeForm("", signinBack(back))}<p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
@@ -2363,7 +2375,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   const emailPage = (res: http.ServerResponse, status: number, title: string, body: string) => { res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" });
     res.end(navify(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} - Caldera</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap"></head><body>${body}</body></html>`)); };
   JOIN = joinModule({ googleFirst: (u) => !!EMP?.googleFirst(u), googleOn: () => !!EMP?.googleOn(), q, ipOf, page: emailPage, memberOf, byHandle, track: (req, step) => FUNNEL.track(req, step as any), devArm: (req) => { const v = FUNNEL.vid(req); return v ? devArm(v) : null; } });
-  EMP = emailPages({ tie: (o) => { const t = TIE.take(o, "settings"); return t ? tieCard(tieHref("first_value"), t.counted) : ""; }, asRemember: (r, e) => AS.remember(r, e), flows: { start: (r, m, d) => FLOWS.start(r, m, d), fail: (r, m) => FLOWS.fail(r, m), ok: (r, m, o, cr) => FLOWS.ok(r, m, o, cr), firstValue: (o) => FLOWS.firstValue(o), door: (r, u) => doorOf(r, u) }, googleFetch: (opts.githubFetch || fetch) as typeof fetch, ghRead: (l, r) => GHP.get(l, r ?? null) as any, ghMember: (l) => memberOfLogin(l), ghVerified: (id) => !!q("SELECT 1 FROM gh_links WHERE profile_id=?").get(id), q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
+  EMP = emailPages({ tie: (o, at) => { const t = TIE.take(o, at); return t ? tieCard(tieHref("first_value"), t.counted, at) : ""; },
+    orpheus: o => { const pr = profile(o); if (!pr?.handle) return null; const f = ORPH.fleetOf(o); return { handle: pr.handle, fleet: f ? { founding: f.founding } : null }; }, asRemember: (r, e) => AS.remember(r, e), flows: { start: (r, m, d) => FLOWS.start(r, m, d), fail: (r, m) => FLOWS.fail(r, m), ok: (r, m, o, cr) => FLOWS.ok(r, m, o, cr), firstValue: (o) => FLOWS.firstValue(o), door: (r, u) => doorOf(r, u) }, googleFetch: (opts.githubFetch || fetch) as typeof fetch, ghRead: (l, r) => GHP.get(l, r ?? null) as any, ghMember: (l) => memberOfLogin(l), ghVerified: (id) => !!q("SELECT 1 FROM gh_links WHERE profile_id=?").get(id), q, seal, unseal, accept, dataDir: opts.dataDir, publicUrl: opts.publicUrl || "https://caldera.social", reserved: TAKEN, byHandle, profile,
     startOwner, memberOf, sameOrigin, allowNewProfile, tooMany, note: (m) => mail.note(m),
     page: emailPage,
     hasFollower: (id) => !!q("SELECT 1 FROM friends WHERE a=? OR b=? LIMIT 1").get(id, id) || !!q("SELECT 1 FROM friend_intents WHERE target=? AND kind='add' LIMIT 1").get(id),
@@ -2398,7 +2411,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
     return { owner: f.id, agent: SYSTEM_AGENT(), token: t?.id || null }; } });
   const LB = GROWTH ? leaderboardHub({ q, hub: PUB(), sim: () => GROWTH.sim(), members: growthMembers, systemPost: SYS.systemPost, memberOf: r => memberOf(r), json: (r, s, b) => json(r, s, b),
     nav: () => siteHeader("/leaderboard") + `<script src="/assets/site.js" defer></script>`, postOn: () => process.env.CALDERA_LEADERBOARD_POST !== "0" && (opts as any).leaderboardPost !== false,
-    avatar: id => { const pr = profile(id); if (!pr?.handle) return null; const b = body(pr); return b.photos?.avatar ? `/@${pr.handle}/${String(b.photos.avatar).replace(/^\.?\//, "")}` : null; } }) : null;
+    avatar: id => { const pr = profile(id); if (!pr?.handle) return null; const b = body(pr); return b.photos?.avatar ? `/@${pr.handle}/${String(b.photos.avatar).replace(/^\.?\//, "")}` : null; }, orph: id => orphLevel(ORPH.fleetOf(id)) }) : null;
   if (LB && GROWTH) GROWTH.onTick(() => LB.tick());
   (admin as any).leaderboard = LB; (admin as any).sysposts = SYS;
   MSG = messages({ q, now, hub: opts.publicUrl || "https://caldera.social", profile, byHandle, body, modOf, areFriends, memberOf, sameOrigin, readBody, json, navify, tooMany, coldCap: (id: string) => EMP?.kindOf(id) === "business" ? 5 : 10, seal, unseal,
@@ -2584,7 +2597,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache",
           "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" });
         return res.end(worldPage(worldNow(), { frontier: FR ? (() => { try { return { districts: FR.districts(), meta: FR.meta(), fs: FR.claimedSlots() }; } catch (e: any) { console.error("frontier", e?.message); return null; } })() : null, hub: opts.publicUrl || "https://caldera.social", nav: worldNav(), tools: TOOLS ? TOOLS.mapData() : [], growth: GROWTH ? (() => { try { return GROWTH.state("day"); } catch (e: any) { console.error("growth state", e?.message); return null; } })() : null,
-          battle: BATTLE ? (() => { try { return BATTLE.state(); } catch (e: any) { console.error("battle state", e?.message); return null; } })() : null }));
+          battle: BATTLE ? (() => { try { return BATTLE.state(); } catch (e: any) { console.error("battle state", e?.message); return null; } })() : null,
+          fleet: fleetPublic(), viewer: (me => me ? profile(me)?.handle || null : null)(memberOf(req)) }));
       }
       if (req.method === "GET" && /^\/gh\/[A-Za-z0-9-]+\/?$/.test(p)) FUNNEL.track(req, "preview");
       if (req.method === "GET" && /^\/gh\/[A-Za-z0-9-]+\/career$/.test(p)) FUNNEL.track(req, "career");
@@ -2779,6 +2793,8 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           if (welcome) FUNNEL.track(req, "landed");
           const tieT = welcome && prS ? TIE.take(prS.id, "page") : null;   // the Orpheus tie row under the strip, once per member
           const sum = welcome ? welcome + (tieT ? tieBanner(tieHref("first_value"), tieT.counted ? originOf(opts.publicUrl || "https://caldera.social") : null) : "") : (own && prS && (rel === "index.html" || rel === "city.html") && memberOf(req) === prS.id ? summaryBanner(prS.id, m[1]) : "");
+          // the Orpheus boost (FLEET.md 3 + 4): badge after the name and the Agent fleet card for every viewer; the owner's empty slot when not linked
+          if (rel === "index.html" && prS) html = fleetProfile(html, ORPH.fleetOf(prS.id), { owner: !!own && memberOf(req) === prS.id, handle: m[1] });
           let out = /<body[^>]*>/i.test(html) ? html.replace(/<body[^>]*>/i, b => b + bar + sum) : bar + sum + html;
           // signed-out people (never crawlers, link previews, members or the owner): the deeper page blurs under a
           // "Create your profile" card (profile) or a nudge (city). The text stays in the HTML; the blur is paint only.
@@ -2943,19 +2959,20 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       // sign out: GET asks, POST clears the owner cookie (and its session row) and the GitHub session, then back to the page
       if (p === "/signout") {
         const h = (url.searchParams.get("h") || "").toLowerCase().replace(/[^a-z0-9-]/g, "");
+        const sback = url.searchParams.get("back") === "/link/orpheus" ? "/link/orpheus" : "";   // "Use another account" on the Orpheus link page
         if (req.method === "POST") {
           const o = String(req.headers.origin || ""); if (o && !sameOrigin(req)) return json(res, 403, { error: "wrong origin" });
           const t = reqCookies(req)[OWN_COOKIE]; if (t) q("DELETE FROM owner_sessions WHERE token_hash=?").run(hashToken(t));
           GH.signOut(req, res);
           const prev = res.getHeader("set-cookie"), list = Array.isArray(prev) ? prev : prev ? [String(prev)] : [];
           res.setHeader("set-cookie", [...list, ownCookie("", 0)]);
-          res.writeHead(303, { location: h && byHandle(h) ? `/@${h}/` : "/", "cache-control": "no-store" }); return res.end();
+          res.writeHead(303, { location: sback ? `/signin?back=${encodeURIComponent(sback)}` : h && byHandle(h) ? `/@${h}/` : "/", "cache-control": "no-store" }); return res.end();
         }
         if (req.method === "GET") {
           const me = memberOf(req), pr = me ? profile(me) : null;
           return signinPage(res, 200, "Sign out", pr ? `<h1>Sign out?</h1><p class="lede">This browser is signed in as <b>@${String(pr.handle).replace(/[<>&"]/g, "")}</b>. Signing out removes the Private view button and the account menu here. Your page stays exactly as it is.</p>
-<form method="post" action="/signout${h ? `?h=${h}` : ""}"><button class="btn" type="submit">Sign out</button> <a class="btn ghost" href="${h ? `/@${h}/` : "/"}">Cancel</a></form>`
-            : `<h1>You're signed out</h1><p class="lede">This browser isn't signed in to Caldera.</p><p><a class="btn" href="/signin">Sign in</a> <a class="btn ghost" href="${h ? `/@${h}/` : "/"}">Back</a></p>`);
+<form method="post" action="/signout${sback ? `?back=${encodeURIComponent(sback)}` : h ? `?h=${h}` : ""}"><button class="btn" type="submit">Sign out</button> <a class="btn ghost" href="${h ? `/@${h}/` : "/"}">Cancel</a></form>`
+            : `<h1>You're signed out</h1><p class="lede">This browser isn't signed in to Caldera.</p><p><a class="btn" href="/signin${sback ? `?back=${encodeURIComponent(sback)}` : ""}">Sign in</a> <a class="btn ghost" href="${h ? `/@${h}/` : "/"}">Back</a></p>`);
         }
       }
 
@@ -3350,15 +3367,19 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       }
       if (req.method === "GET" && p === "/v1/directory") {
         const term = (url.searchParams.get("q") || "").toLowerCase().trim(), tag = (url.searchParams.get("tag") || "").toLowerCase().trim(), sort = url.searchParams.get("sort") || ((term || tag) ? "relevance" : "active");
+        const FLT = fleetPublic(), OLV = new Map(FLT.map(f => [f.handle, f.founding ? 2 : 1]));   // the Orpheus badge and row (FLEET.md 2 + 3); never a sort key
         const rows = (q("SELECT * FROM profiles WHERE handle IS NOT NULL").all() as any[]).filter(listed).map(pr => {
           const b = body(pr), avatar = b.photos?.avatar ? `/@${pr.handle}/${String(b.photos.avatar).replace(/^\.?\//, "")}` : null;
           const tags = B.tagsOf(pr), rel = term || tag ? B.relevance(pr, tag, term) : 0;
           return { handle: pr.handle, name: pr.name, headline: pr.headline, avatar, topics: (b.topics || []).slice(0, 3).map((t: any) => t[0]),
             tags: tags.slice(0, 8).map(t => ({ t: t.t, kind: t.kind })), rel,
-            week: weekScore(pr.manifest), gravity: gravityOf(pr.id), invited: invitedCount(pr.id), created: pr.created, updated: pr.updated, city: fs.existsSync(path.join(opts.dataDir, "profiles", pr.handle, "city.html")) };
+            week: weekScore(pr.manifest), gravity: gravityOf(pr.id), invited: invitedCount(pr.id), created: pr.created, updated: pr.updated, city: fs.existsSync(path.join(opts.dataDir, "profiles", pr.handle, "city.html")),
+            ...(OLV.has(pr.handle) ? { orph: OLV.get(pr.handle) } : {}) };
         }).filter(r => (!term && !tag) || r.rel >= 0);
         rows.sort(sort === "new" ? (a, b) => String(b.created).localeCompare(String(a.created)) : sort === "relevance" ? (a, b) => b.rel - a.rel || b.week - a.week : (a, b) => b.week - a.week || b.gravity - a.gravity);
-        return json(res, 200, { total: rows.length, profiles: rows.slice(0, 120).map(({ rel, ...r }) => r) });
+        const me = memberOf(req);
+        return json(res, 200, { total: rows.length, profiles: rows.slice(0, 120).map(({ rel, ...r }) => r),
+          fleet: FLT.slice(0, 24).map(f => ({ handle: f.handle, founding: f.founding, avatar: f.avatar, name: f.name })), fleetTotal: FLT.length, me: me ? profile(me)?.handle || null : null });
       }
       m = p.match(/^\/v1\/profiles\/(cal:[1-9A-HJ-NP-Za-km-z]+|[a-z0-9-]+)$/);
       if (req.method === "GET" && m) {
