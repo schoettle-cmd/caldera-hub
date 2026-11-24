@@ -57,7 +57,7 @@ import { mentionSearch } from "./mentions.js";
 import { privateModes, scrubPrivateLive } from "./privatemode";
 import { profileMeta } from "./seometa";
 import { agencySuper } from "./agencysuper";
-import { tie, tieBanner, tieCard, tieHref, fleetOffer } from "./tie";
+import { tie, tieBanner, tieCard, tieHref, fleetOffer, homeOffer, worldOffer } from "./tie";
 import { orpheusTie } from "./orpheustie";
 import { FLEET_TOKENS, FLEET_LINK_CSS, fleetProfile, fleetSettingsRow, FLEET_SETTINGS_CSS, FLEET_SETTINGS_JS, orphLevel } from "./fleet";
 export { profileMeta } from "./seometa";
@@ -2365,6 +2365,10 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const csp = String((h0 && ck ? h0[ck] : res.getHeader("content-security-policy")) || ""), pn = (() => { try { return new URL(req.url || "/", "http://hub").pathname; } catch { return "/"; } })();
           const o2 = traceInject(out, pn, csp);
           if (o2 !== out && !res.headersSent) { out = o2; const c2 = cspWithTrace(csp); if (h0 && ck) h0[ck] = c2; else if (csp) res.setHeader("content-security-policy", c2); }
+        } catch { /* never break a page */ }
+        try {   // Founding Fleet window words on the homepage block and the /world Extras line (only while Orpheus says open)
+          const pn = (() => { try { return new URL(req.url || "/", "http://hub").pathname; } catch { return ""; } })();
+          if (pn === "/" || pn === "/index.html") out = homeOffer(out, OFFER.words()); else if (pn === "/world") out = worldOffer(out, OFFER.words());
         } catch { /* never break a page */ }
         try { const gk = gateKindFor(req); if (gk && res.statusCode < 300 && !(held && held[0] >= 300)) out = out.replace(/<\/body>(?![\s\S]*<\/body>)/i, () => gateScript({ hub: PUB(), kind: gk }) + "</body>"); } catch { /* never break a page */ }
         chunk = out;

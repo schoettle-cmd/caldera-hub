@@ -126,3 +126,23 @@ test("Founding Fleet window words (Growth Engine 11-24): only in the window and 
   ok = true; body = { state: "open", left: 5 }; t = FLEET_TO; await o.refresh(); assert.equal(o.words(), null, "after the window");
   assert.ok(tieCard(tieHref("first_value"), true).includes("Try Orpheus free"), "default words unchanged");
 });
+
+test("Founding Fleet window on the homepage block and the /world Extras line; the battle explainer says 7 days free, no card", async () => {
+  const { build } = await import("esbuild");
+  const out = await build({ entryPoints: [new URL("../src/tie.ts", import.meta.url).pathname], bundle: true, platform: "node", format: "esm", packages: "external", write: false });
+  const { homeOffer, worldOffer, fleetWords } = await import("data:text/javascript;base64," + Buffer.from(out.outputFiles[0].text).toString("base64"));
+  const home = fs.readFileSync(new URL("../../site/index.html", import.meta.url), "utf8"), w = fleetWords(42);
+  assert.equal(homeOffer(home, null), home, "outside the window: unchanged");
+  const h = homeOffer(home, w);
+  assert.ok(h.includes('<h2 id="orph-h">Founding Fleet: half off your first Orpheus year</h2>') && h.includes("42 of 100 spots left.") && h.includes('<p class="orph-small">7 days free with no card. Add a card in the first 48 hours for 30 days. Ends Monday, Nov 30.</p>'));
+  assert.ok(h.includes('href="https://useorpheus.com/?utm_source=caldera&amp;utm_medium=home&amp;utm_campaign=founding_fleet"') && h.includes(">Claim a Founding Fleet spot</a>") && !h.includes(">Get Orpheus</a>"));
+  assert.equal(h.split('class="orph"').length, 2, "one block, same layout");
+  assert.ok(h.includes("utm_medium=footer"), "the footer link is untouched");
+  const ws = fs.readFileSync(new URL("../src/world.ts", import.meta.url), "utf8"), ex = ws.slice(ws.indexOf('<div class="w-ex"><span><b>Orpheus.</b>'), ws.indexOf("</section>", ws.indexOf('<b>Orpheus.</b>')));
+  assert.ok(ex.length > 50);
+  const wx = worldOffer(ex, w);
+  assert.ok(wx.includes("<b>Founding Fleet: half off your first Orpheus year.</b>") && wx.includes("utm_medium=world&amp;utm_campaign=founding_fleet") && wx.includes(">Claim a Founding Fleet spot</a>"));
+  assert.equal(worldOffer(ex, null), ex);
+  const bc = fs.readFileSync(new URL("../src/battleclient.ts", import.meta.url), "utf8");
+  assert.ok(!/14-day/.test(bc) && bc.includes(">Try Orpheus free</a> 7 days free. No card to start.</p>"));
+});

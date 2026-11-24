@@ -102,3 +102,17 @@ export function tie(c: { q: (sql: string) => any; botUa: RegExp; ipOf: (r: http.
   };
 }
 export type Tie = ReturnType<typeof tie>;
+
+/** Founding Fleet window on the homepage block and the /world Extras line (Growth Engine 11-24, spec section 5): the page keeps its
+ *  layout, the words and campaign switch. Applied as the page is sent; w = null leaves the page as it is. */
+const escH = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+export function homeOffer(html: string, w: TieWords | null): string {
+  if (!w) return html;
+  return html.replace(/(<aside class="orph"[\s\S]*?<h2 id="orph-h">)[\s\S]*?(<\/h2>\s*)<p>[\s\S]*?<\/p>([\s\S]*?<a class="btn orph-btn" href=")[^"]*("[^>]*>)[^<]*(<\/a>)/,
+    (_m, a, b, c, d, e) => `${a}${escH(w.h)}${b}<p>${escH(w.body)}</p><p class="orph-small">${escH(w.small)}</p>${c}${tieHref("home", "founding_fleet").replace(/&/g, "&amp;")}${d}${escH(w.btn)}${e}`);
+}
+export function worldOffer(html: string, w: TieWords | null): string {
+  if (!w) return html;
+  return html.replace(/<span><b>Orpheus\.<\/b>[^<]*<\/span><a class="w-ex-a" href="https:\/\/useorpheus\.com\/\?utm_source=caldera&amp;utm_medium=world"([^>]*)>[^<]*<\/a>/,
+    (_m, rest) => `<span><b>${escH(w.h)}.</b> ${escH(w.small)}</span><a class="w-ex-a" href="${tieHref("world", "founding_fleet").replace(/&/g, "&amp;")}"${rest}>${escH(w.btn)}</a>`);
+}
