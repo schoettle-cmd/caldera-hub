@@ -58,6 +58,7 @@ import { privateModes, scrubPrivateLive } from "./privatemode";
 import { profileMeta } from "./seometa";
 import { agencySuper } from "./agencysuper";
 import { tie, tieBanner, tieCard, tieHref } from "./tie";
+import { orpheusTie } from "./orpheustie";
 export { profileMeta } from "./seometa";
 
 const hashToken = (t: string) => crypto.createHash("sha256").update(t).digest("hex");
@@ -70,6 +71,9 @@ export interface HubOptions { dataDir: string; port?: number; publicUrl?: string
    *  owner's private view only when the proxy-set Tailscale-User-Login header maps to that profile's handle. */
   privatePort?: number; privateUrl?: string;
   /** Handle of the founder: every new profile starts out as their friend (MySpace's Tom). */ founder?: string; tailnetOwners?: Record<string, string>; githubFetch?: typeof fetch; /** tests: stand-ins for DNS and fetching listed apps and websites */ listingsLookup?: Lookup; listingsGet?: typeof safeGet; /** run the shared-repo friendship job every 6 hours (the server binary turns it on; tests call it directly) */ repoJob?: boolean; /** read members' public GitHub signals into "what they're building" tags every 12 hours */ tagJob?: boolean; /** the World's Expansion view: nightly public-GitHub numbers (merged PRs, stars gained) */ landJob?: boolean; /** the World's Day/Week/Month growth views: false turns them off (CALDERA_GROWTH=0); growthJob runs the 15-minute tick, growthPoll lets it call GitHub */ growth?: boolean; growthJob?: boolean; growthPoll?: boolean; /** the World's battles: false turns them off (CALDERA_BATTLE=0) */ battle?: boolean; /** OpenRouter key for the tag normalising pass (rules only without it) */ llmKey?: string; onEvent?: (e: { type: "signup" | "delete"; handle?: string; name?: string; kind?: string; total: number }) => void; limits?: { perMinute?: number; writesPerMinute?: number; newProfilesPerDay?: number; newProfilesPerMinute?: number };
+  /** Caldera x Orpheus handle link (orpheustie.ts): the key (default CALDERA_ORPHEUS_TIE_KEY; empty = off), the Orpheus
+   *  origin (default https://useorpheus.com), a fetch stand-in for tests, and the daily feed pull (the server binary turns it on) */
+  orpheusKey?: string; orpheusUrl?: string; orpheusFetch?: typeof fetch; orpheusJob?: boolean;
   /** daily summary emails: Resend key (production) or a send hook (tests); schedule starts the daily job */
   email?: { resendKey?: string; send?: (m: Mail) => Promise<void>; schedule?: boolean; reconnect?: boolean;
     /** Growth Engine's learning API (arms, clicks, goals). Default: LEARN_URL when mail really goes out (Resend), else none;
@@ -1063,6 +1067,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     GROWTH?.erase(id);   // the World's growth views
     BATTLE?.erase(id);   // the World's battles
     FR?.erase(id);   // Frontier lands they added stay, credited to Caldera
+    ORPH.erase(id);   // the Orpheus handle link: the row goes, Orpheus is told best effort
   }
 
   // ---------------------------------------------------------------- one person, one profile: merging duplicates
@@ -1750,6 +1755,13 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   const TIE = tie({ q, botUa: BOT_UA, ipOf, tooMany: (k, m) => tooMany(k, m), memberOf: r => memberOf(r), emailOf: memberEmail,
     founder: () => (opts.founder ? byHandle(String(opts.founder).toLowerCase())?.id : null) || null });
   (admin as any).tieStats = (days?: number) => TIE.stats(days);   // admin.js tie-stats
+  // Caldera x Orpheus tie, Part 2 (orpheustie.ts): the handle link, unlink, and the daily fleet feed
+  const ORPH = orpheusTie({ q, key: () => opts.orpheusKey ?? process.env.CALDERA_ORPHEUS_TIE_KEY ?? "", fetch: opts.orpheusFetch || fetch, base: opts.orpheusUrl,
+    secure: /^https:/.test(opts.publicUrl || ""), memberOf: r => memberOf(r), sameOrigin: r => sameOrigin(r), profile, byHandle, hidden: (pr: any) => !!modOf(pr.handle, pr.id),
+    page: (t, h) => mail.page(t, h), tooMany: (k, m) => tooMany(k, m), count: (e, pl) => TIE.count(e, pl), own: id => TIE.own(id) });
+  (admin as any).orpheusPull = () => ORPH.pull();   // admin.js orpheus-pull
+  (admin as any).orpheusList = () => ORPH.fleetList();   // admin.js orpheus-list
+  if (opts.orpheusJob) ORPH.schedule();
   // Agency Super (caldera-signups, src/agencysuper.ts): every account made through a request (email, Google, GitHub)
   // passes FLOWS.ok with created=true, so the click is fixed and the signup postback queued there
   const AS = agencySuper({ q, emailOf: (id) => { try { const a = q("SELECT email_sealed FROM email_accounts WHERE profile_id=?").get(id) as any; return a?.email_sealed ? unseal(a.email_sealed) : null; } catch { return null; } } });
@@ -2232,7 +2244,7 @@ body{overflow-x:hidden}.kd{max-width:440px;margin:0 auto;padding:22px 16px 40px}
 <p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
 <div class="card"><h2>Already on Caldera?</h2><div class="row"><a rel="nofollow" class="btn small ghost" href="/auth/github${bq}" style="display:inline-flex;align-items:center;gap:7px">${GH_ICON}Sign in with GitHub</a></div><p class="mut" style="font-size:12.5px;margin-top:10px">Made your page in Obsidian? Open your page and tap <b>Sign in</b> in the bar at the top, then come back here. Made it with ChatGPT or Claude? <a href="/start${bq}">Email me a sign-in link</a>.</p></div>`;
   // ---- "Email me a code" screens (sign-in standard, 2026-10-29): the same form, check-your-email page and code box everywhere
-  const SIGNIN_BACK = /^\/(messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|settings\/agents|alerts)$/;
+  const SIGNIN_BACK = /^\/(link\/orpheus|messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|settings\/agents|alerts)$/;
   const signinBack = (b: string) => SIGNIN_BACK.test(b) ? b : "";
   const CODE_OR = `<div class="mut" style="display:flex;align-items:center;gap:10px;margin:16px 0 12px"><span style="flex:1;height:1px;background:currentColor;opacity:.25"></span>or<span style="flex:1;height:1px;background:currentColor;opacity:.25"></span></div>`;
   const codeForm = (h: string, back: string) => `<form method="post" action="/signin/email">${h ? `<input type="hidden" name="h" value="${escAttr(h)}">` : ""}${back ? `<input type="hidden" name="back" value="${escAttr(back)}">` : ""}<input type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com" aria-label="Email"><button class="btn small" type="submit">Email me a code</button></form>`;
@@ -2243,7 +2255,7 @@ ${email ? `<form method="post" action="/signin/code"><input type="hidden" name="
   }
   const googleBtn = (qs = "") => EMP?.googleOn() ? `<a rel="nofollow" class="btn ghost" href="/auth/google${qs}" style="display:inline-flex;align-items:center;gap:8px">${GOOGLE_ICON}Continue with Google</a>` : "";
   function signinGeneral(res: http.ServerResponse, back = "", req?: http.IncomingMessage, note = "") {
-    const bq = /^\/(messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|settings\/agents|alerts)$/.test(back) ? `?back=${encodeURIComponent(back)}` : "";   // come back to the page that asked (e.g. a conversation)
+    const bq = /^\/(link\/orpheus|messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|settings\/agents|alerts)$/.test(back) ? `?back=${encodeURIComponent(back)}` : "";   // come back to the page that asked (e.g. a conversation)
     // "Message" on someone's page, signed out: say why, offer sign-up first (credited to them), and land in the conversation after
     const mh = back.match(/^\/messages\/@([a-z0-9-]+)$/)?.[1] || "", them = mh ? byHandle(mh) : null;
     // a group link, signed out: same idea, "Sign up to join <group>", back into the group after
@@ -2561,7 +2573,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache", "x-robots-tag": "noindex" });
           return res.end(navify(groupPage({ slug: g[1], hub: opts.publicUrl || "https://caldera.social", members: groupMembers(g[1]) })));
         } }
-      if (req.method === "GET" && p === "/v1/world") { res.setHeader("cache-control", "public, max-age=60"); const w = worldNow(); return json(res, 200, { at: w.at, members: w.members, links: w.links, city: w.city }); }
+      if (req.method === "GET" && p === "/v1/world") { res.setHeader("cache-control", "public, max-age=60"); const w = worldNow(); return json(res, 200, { at: w.at, members: w.members, links: w.links, city: w.city, orpheus: ORPH.publicList(h => { const pr = byHandle(h); return !!pr && listed(pr); }) }); }
       if (BATTLE && (p.startsWith("/v1/world/battle") || p === "/u/battle" || p === "/u/armory" || p.startsWith("/email/")) && await BATTLE.route(req, res, p, url)) return;
       if (FR && (p.startsWith("/v1/frontier/") || p.startsWith("/claim/") || p === "/add") && await FR.route(req, res, url)) return;
       if (GROWTH && (p.startsWith("/v1/world/") || p === "/hooks/github") && await GROWTH.route(req, res, p, url)) return;
@@ -2814,6 +2826,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         res.writeHead(204, { "access-control-allow-origin": "*", "cache-control": "no-store" }); res.end(); return;
       }
       if (req.method === "POST" && p === "/v1/tie") return TIE.route(req, res);
+      if ((p === "/link/orpheus" || p === "/settings/orpheus/unlink") && await ORPH.route(req, res, url, p)) return;   // Orpheus handle link (orpheustie.ts)
       if (req.method === "GET" && p === "/v1/admin/tie") {   // founder: the tie's daily counts (caldera-agg reads them as .tie)
         const me = memberOf(req), f = opts.founder ? byHandle(String(opts.founder).toLowerCase()) : null;
         if (!me || !f || me !== f.id) return json(res, 403, { error: "founder only" });
@@ -3530,7 +3543,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   const reconnectStats = () => { const rows = q("SELECT profile_id FROM gh_accounts WHERE reconnect IS NOT NULL AND reconnect_mailed IS NULL AND claimed IS NULL").all() as any[];
     return { flagged: rows.length, reachable: rows.filter(r => mail.reconnectTo(r.profile_id)).length }; };
 
-  return { stuckClaim: (o: any) => EMP.stuckClaim(o), emailPagesDaily: () => EMP.daily(), reconnect: { sweep: (max?: number) => reconnectOn ? reconnectSweep(max) : Promise.resolve(0), stats: reconnectStats, compose: mail.reconnectCompose }, ext, server, privateServer, db, admin, mail, featureMail: FEATURE, feed: FEED!, messages: MSG!, guide: GUIDE, offerNamed: () => offerNamed(), digestFor, networkFor, feedReady, headerItems, privateModes: PM, promptPrivateChoice, act: { token: (v: string, h: string, ttl?: number) => actToken(v, h, ttl), read: readAct },
+  return { orpheus: ORPH, stuckClaim: (o: any) => EMP.stuckClaim(o), emailPagesDaily: () => EMP.daily(), reconnect: { sweep: (max?: number) => reconnectOn ? reconnectSweep(max) : Promise.resolve(0), stats: reconnectStats, compose: mail.reconnectCompose }, ext, server, privateServer, db, admin, mail, featureMail: FEATURE, feed: FEED!, messages: MSG!, guide: GUIDE, offerNamed: () => offerNamed(), digestFor, networkFor, feedReady, headerItems, privateModes: PM, promptPrivateChoice, act: { token: (v: string, h: string, ttl?: number) => actToken(v, h, ttl), read: readAct },
     listen: (port = opts.port || 8787, host = process.env.CALDERA_HOST || "127.0.0.1") => new Promise<number>(r => server.listen(port, host, () => r((server.address() as any).port))),
     listenPrivate: (port = opts.privatePort || 0) => new Promise<number>(r => privateServer.listen(port, "127.0.0.1", () => r((privateServer.address() as any).port))) };
 }
@@ -3590,7 +3603,7 @@ if (import.meta.url === `file://${process.argv[1]}` && /server\.js$/.test(proces
   const onEvent: HubOptions["onEvent"] = alertLog || (tg && chat) || (resend && mailTo) ? (ev) => alerts.event(ev) : undefined;
   if (onEvent) setInterval(() => alerts.flush(), 3600_000).unref?.();
   const hub = createHub({ garden: process.env.CALDERA_GARDEN === "1", dataDir: process.env.CALDERA_DATA || "./data", port: Number(process.env.PORT || 8787), publicUrl: process.env.CALDERA_PUBLIC_URL || "",
-    siteDir: process.env.CALDERA_SITE || undefined, trustProxy: process.env.CALDERA_TRUST_PROXY === "1", onEvent, founder: process.env.CALDERA_FOUNDER || undefined, repoJob: process.env.CALDERA_REPO_JOB !== "0", tagJob: process.env.CALDERA_TAG_JOB !== "0", landJob: process.env.CALDERA_LAND_JOB !== "0", growthJob: process.env.CALDERA_GROWTH_JOB !== "0", llmKey: process.env.CALDERA_OPENROUTER_KEY || undefined,
+    siteDir: process.env.CALDERA_SITE || undefined, trustProxy: process.env.CALDERA_TRUST_PROXY === "1", onEvent, founder: process.env.CALDERA_FOUNDER || undefined, repoJob: process.env.CALDERA_REPO_JOB !== "0", tagJob: process.env.CALDERA_TAG_JOB !== "0", landJob: process.env.CALDERA_LAND_JOB !== "0", orpheusJob: process.env.CALDERA_ORPHEUS_JOB !== "0", growthJob: process.env.CALDERA_GROWTH_JOB !== "0", llmKey: process.env.CALDERA_OPENROUTER_KEY || undefined,
     email: resend ? { resendKey: resend, schedule: true } : undefined,
     // CALDERA_TAILNET_OWNERS="you@example.com:handle,..."  (Tailscale login -> Caldera handle)
     privatePort: Number(process.env.CALDERA_PRIVATE_PORT) || undefined, privateUrl: process.env.CALDERA_PRIVATE_URL || undefined,
@@ -3601,4 +3614,5 @@ if (import.meta.url === `file://${process.argv[1]}` && /server\.js$/.test(proces
 }
 export { guideSteps, welcomeText } from "./setupguide";
 export { newsToday } from "./news";
+export { ORPHEUS_HANDLE, parseFeed } from "./orpheustie";
 export { closenessOrder, foldLive } from "./world";

@@ -47,6 +47,8 @@ export function tie(c: { q: (sql: string) => any; botUa: RegExp; ipOf: (r: http.
   const own = (id: string | null) => { if (!id) return false; if (id === c.founder()) return true; try { const e = c.emailOf(id); return !!e && isOwnAddress(e); } catch { return false; } };
   return {
     own,
+    /** count one event (Part 2: tie_link:orpheus from orpheustie.ts); the caller leaves our own sessions out */
+    count: (ev: string, place: string) => bump(ev, place),
     /** the first render for this member marks the card shown (once, both places) and counts the show; null = already shown */
     take(owner: string, at: "page" | "settings"): { counted: boolean } | null {
       try { if (!q("INSERT OR IGNORE INTO tie_seen VALUES (?,?,?)").run(owner, new Date().toISOString(), at).changes) return null; } catch { return null; }
