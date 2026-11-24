@@ -90,12 +90,13 @@ export function titleTemplate(msg: string): string {
 }
 /** the stored key of a title template (short, no title text kept) */
 export const ttKey = (msg: string) => { const t = titleTemplate(msg); let a = 2166136261, b = 5381; for (let i = 0; i < t.length; i++) { const ch = t.charCodeAt(i); a = Math.imul(a ^ ch, 16777619); b = (Math.imul(b, 33) ^ ch) | 0; } return (a >>> 0).toString(36) + (b >>> 0).toString(36); };
-/** 1 when a commit changed 4 lines or fewer in exactly 1 file; undefined when GitHub did not say */
+/** 1 when a commit changed exactly 1 file by FARM.lines or fewer; undefined when GitHub did not say. (The spec said 4 lines; the
+ *  live farm writes 1 generated data file of 1 to 95 lines a commit, so 4 let it through: dry run 11-24.) */
 export function smallOf(d: { stats?: { total?: number }; files?: unknown[] } | null | undefined): 0 | 1 | undefined {
   if (!d || !Array.isArray(d.files) || !d.stats) return undefined;
-  return d.files.length === 1 && (Number(d.stats.total) || 0) <= 4 ? 1 : 0;
+  return d.files.length === 1 && (Number(d.stats.total) || 0) <= FARM.lines ? 1 : 0;
 }
-export const FARM = { min: 5, burst: 6, sample: 3 };
+export const FARM = { min: 5, burst: 6, sample: 3, lines: 200 };
 export interface FarmItem { id: string; ts: number; tt?: string; sm?: 0 | 1 }
 /** One repo, one day: the commits that are farm. (1) 5 or more with the same title template, each small (4 lines or fewer in
  *  1 file; checked on a sample of up to 3, all known ones small): all but the first. (2) A burst: the same committer second and
@@ -165,7 +166,7 @@ export function eligibleTier(t: TierIn): number {
 }
 
 // ---------------------------------------------------------------- the simulation
-export interface GEvent { id: string; p: string; k: Kind | string; repo: string; ts: number; seen: number; n: number; v: string; x?: { rv?: string; self?: 0 | 1; /** farm judge: the title template key */ tt?: string; /** 1 = 4 lines or fewer in 1 file, 0 = bigger, absent = unknown */ sm?: 0 | 1 } }
+export interface GEvent { id: string; p: string; k: Kind | string; repo: string; ts: number; seen: number; n: number; v: string; x?: { rv?: string; self?: 0 | 1; /** farm judge: the title template key */ tt?: string; /** the FARM.lines the size check used */ sl?: number; /** 1 = 4 lines or fewer in 1 file, 0 = bigger, absent = unknown */ sm?: 0 | 1 } }
 export interface Seed { p: string; day: number; side: number; lots: string; since?: number }
 export interface DayStat { d: number; pts: number; c: number; pr: number; rel: number; st: number; z: number; top: number; up: number; ring: number; ai: number; nc: number }
 export interface Snap { side: number; lots: string; bank: number; streak: number; tier: number; idle: number | null }
@@ -475,7 +476,7 @@ export function githubPoller(c: PollCtx) {
           budget.stats--; const d = await gh(token, `/repos/${repo}/commits/${x.sha}`); await wait();
           if (d.status === 200 && d.body) { const j2 = judgeCommit({ ...x, stats: d.body.stats, files: d.body.files }, login, { fork: meta?.fork, created: meta?.created }, trees); if (j2.v) j = j2; sm = smallOf(d.body); }
         }
-        const xx = { ...(j.reverts ? { rv: j.reverts } : {}), tt: ttKey(x.commit?.message || ""), ...(sm !== undefined ? { sm } : {}) };
+        const xx = { ...(j.reverts ? { rv: j.reverts } : {}), tt: ttKey(x.commit?.message || ""), ...(sm !== undefined ? { sm, sl: FARM.lines } : {}) };
         if (c.S.add({ id, p, k: "commit", repo: repo.toLowerCase(), ts: Math.min(ts, now()), seen: backfill ? Math.min(ts, now()) : now(), n: 1, v: j.v, x: xx })) added++;
       }
       if (r.body.length < 100) break;
@@ -492,7 +493,7 @@ export function githubPoller(c: PollCtx) {
         if ((budget.farm ?? 20) <= 0) break; budget.farm = (budget.farm ?? 20) - 1;
         const g = await gh(token, `/repos/${repo}/commits/${id.slice(2)}`); await wait();
         const sm = g.status === 200 ? smallOf(g.body) : undefined, row = rows.find(r => r.id === id);
-        if (sm !== undefined && row) c.S.setX(id, { ...row.x, sm });
+        if (sm !== undefined && row) c.S.setX(id, { ...row.x, sm, sl: FARM.lines });
       }
       c.S.refarm(p, rk, d);
     }
@@ -514,13 +515,23 @@ export function githubPoller(c: PollCtx) {
         }
         if (r.body.length < 100) break;
       }
+      // size checks made under an older rule are read again (FARM.lines changed 11-24)
+      for (const ev of c.S.events(since - 30 * DAY).filter(e => e.p === m.id && e.k === "commit" && e.repo === repo && e.ts >= since && e.x && e.x.sm !== undefined && e.x.sl !== FARM.lines)) { const { sm: _sm, ...rest } = ev.x as any; c.S.setX(ev.id, rest); }
+      // commits GitHub's list no longer shows (a rewritten branch): read each one by its sha
+      let solo = 2500;
+      for (const ev of c.S.events(since - 30 * DAY).filter(e => e.p === m.id && e.k === "commit" && e.repo === repo && e.ts >= since && !e.x?.tt)) {
+        if (solo-- <= 0) break;
+        const g = await gh(token, `/repos/${repo}/commits/${ev.id.slice(2)}`); await wait();
+        if (g.status !== 200 || !g.body?.commit) continue;
+        const sm = smallOf(g.body); c.S.setX(ev.id, { ...(ev.x || {}), tt: ttKey(g.body.commit.message || ""), ...(sm !== undefined ? { sm, sl: FARM.lines } : {}) }); days.add(dayOf(ev.ts));
+      }
       const b = { farm: 2000 };
       for (const d of days) {
         const rows = c.S.commitsIn(m.id, repo, d * DAY, (d + 1) * DAY);
         for (const id of farmNeeds(rows.map(r => ({ id: r.id, ts: r.ts, tt: r.x?.tt, sm: r.x?.sm })))) {
           if (b.farm-- <= 0) break;
           const g = await gh(token, `/repos/${repo}/commits/${id.slice(2)}`); await wait();
-          const sm = g.status === 200 ? smallOf(g.body) : undefined, row = rows.find(r => r.id === id); if (sm !== undefined && row) c.S.setX(id, { ...row.x, sm });
+          const sm = g.status === 200 ? smallOf(g.body) : undefined, row = rows.find(r => r.id === id); if (sm !== undefined && row) c.S.setX(id, { ...row.x, sm, sl: FARM.lines });
         }
         out.push({ repo, day: d });
       }

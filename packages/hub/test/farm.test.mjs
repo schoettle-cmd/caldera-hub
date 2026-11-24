@@ -13,7 +13,7 @@ test("title templates: digits and dates out; the 5 war-room templates are 5 keys
   assert.equal(G.ttKey("README standings 11-14"), G.ttKey("README standings 11-20\n\nbody"));
   assert.equal(G.ttKey("History row 2026-11-14T03:00:00Z"), G.ttKey("History row 2026-11-15"));
   assert.notEqual(G.ttKey("Rival report 1-2"), G.ttKey("Latest standings 1-2"));
-  assert.equal(G.smallOf({ stats: { total: 2 }, files: [{}] }), 1); assert.equal(G.smallOf({ stats: { total: 5 }, files: [{}] }), 0);
+  assert.equal(G.smallOf({ stats: { total: 2 }, files: [{}] }), 1); assert.equal(G.smallOf({ stats: { total: 95 }, files: [{}] }), 1, "a generated data file (the live farm)"); assert.equal(G.smallOf({ stats: { total: 201 }, files: [{}] }), 0);
   assert.equal(G.smallOf({ stats: { total: 2 }, files: [{}, {}] }), 0); assert.equal(G.smallOf({}), undefined);
 });
 
