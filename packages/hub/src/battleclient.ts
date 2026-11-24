@@ -904,6 +904,30 @@ export function battleClient() {
   }
   render(); setTab(tab);
   mine();
+  // ---------------------------------------------------------------- embed (LOOP.md b.6, homebattle.ts): /world?view=battle&embed=1&replay=1
+  // inside the homepage block. Only the map shows (world.ts EMBED_CSS); no keys, no pointer, no sound (the replay starts as a link
+  // replay: muted, never full screen). Posts each strike and the end to the parent page; takes caldera-pause and caldera-play.
+  if (window.CALDERA_EMBED) (function () {
+    var par = window.parent && window.parent !== window ? window.parent : null, lastK = '', started = false, ended = false, t0 = Date.now();
+    var send = function (m) { try { if (par) par.postMessage(m, location.origin); } catch (e) {} };
+    window.addEventListener('keydown', function (e) { e.stopImmediatePropagation(); e.preventDefault(); }, true);
+    setInterval(function () {
+      var A = api(), p = A && A.phase ? A.phase() : null;
+      if (!p || !p.replay) { if ((started || Date.now() - t0 > 15000) && !ended) { ended = true; send({ type: 'caldera-end' }); } return; }
+      started = true; ended = false;
+      if (p.board) { ended = true; stopPlay(); send({ type: 'caldera-end' }); return; }   // the end, before the results board (LEADERBOARD.md)
+      if ((p.stage === 'beat' || p.stage === 'pre') && p.label) {
+        var k = p.beat + '|' + p.label, m = /^(.*) \u2192 (.*?)(?: \+\d+)? \u00b7 (\d+) missile/.exec(p.label);
+        if (k !== lastK && m) { lastK = k; send({ type: 'caldera-strike', i: p.beat, n: p.beats, a: m[1], d: m[2], k: +m[3] }); }
+      }
+    }, 250);
+    window.addEventListener('message', function (e) {
+      if (e.origin !== location.origin || e.source !== par || !e.data) return;
+      var A = api(), p = A && A.phase ? A.phase() : null;
+      if (e.data.type === 'caldera-pause') { if (p && p.replay && A.pause) A.pause(true); }
+      else if (e.data.type === 'caldera-play') { if (p && p.replay) { if (A.pause) A.pause(false); } else { lastK = ''; started = false; ended = false; t0 = Date.now(); if (!on) show(); play(undefined, true); } }
+    });
+  })();
 }
 export const BATTLE_CLIENT_JS = "(function(BSPD,BPU){return (" + battleClient.toString() + ")();})((" + battleSpeedLib.toString() + ")(),(" + powerupLib.toString() + ")());";
 

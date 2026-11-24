@@ -60,6 +60,7 @@ import { privateModes, scrubPrivateLive } from "./privatemode";
 import { profileMeta } from "./seometa";
 import { agencySuper } from "./agencysuper";
 import { tie, tieBanner, tieCard, tieHref, fleetOffer, homeOffer, worldOffer } from "./tie";
+import { homeBattle } from "./homebattle";
 import { orpheusTie } from "./orpheustie";
 import { FLEET_TOKENS, FLEET_LINK_CSS, fleetProfile, fleetSettingsRow, FLEET_SETTINGS_CSS, FLEET_SETTINGS_JS, orphLevel } from "./fleet";
 export { profileMeta } from "./seometa";
@@ -2363,7 +2364,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
   function gateKindFor(req: http.IncomingMessage): "people" | "feed" | "world" | "city" | "gardens" | "group" | null {
     if (req.method !== "GET") return null;
     const ua = String(req.headers["user-agent"] || ""); if (!ua || BOT_UA.test(ua)) return null;
-    let p = "/"; try { p = new URL(req.url || "/", "http://hub").pathname; } catch { return null; }
+    let p = "/"; try { const u = new URL(req.url || "/", "http://hub"); p = u.pathname; if (u.searchParams.get("embed") === "1") return null; } catch { return null; }   // the homepage replay frame: no sign-up gate
     const k = p === "/people" || p === "/people/" ? "people" : /^\/feed(\/|$)/.test(p) ? "feed" : p === "/world" || p === "/world/" ? "world"
       : /^\/gardens\/?$/.test(p) ? "gardens" : /^\/gh\/[A-Za-z0-9-]+(\/|\/city\.html)?$/.test(p) ? "city" : null;
     return k && !memberOf(req) ? k : null;
@@ -2408,6 +2409,10 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const pn = (() => { try { return new URL(req.url || "/", "http://hub").pathname; } catch { return ""; } })();
           if (pn === "/" || pn === "/index.html") out = homeOffer(out, OFFER.words()); else if (pn === "/world") out = worldOffer(out, OFFER.words());
         } catch { /* never break a page */ }
+        try {   // "Last night's battle" under the hero (LOOP.md b, homebattle.ts): the same block in every arm of hometest.ts
+          const pn = (() => { try { return new URL(req.url || "/", "http://hub").pathname; } catch { return ""; } })();
+          if ((pn === "/" || pn === "/index.html") && out.includes("<!--home-battle-->")) out = homeBattle(out, BATTLE ? BATTLE.home() : null, memberOf(req));
+        } catch (e: any) { console.error("home battle", e?.message); out = out.replace("<!--home-battle-->", ""); }
         try { const gk = gateKindFor(req); if (gk && res.statusCode < 300 && !(held && held[0] >= 300)) out = out.replace(/<\/body>(?![\s\S]*<\/body>)/i, () => gateScript({ hub: PUB(), kind: gk }) + "</body>"); } catch { /* never break a page */ }
         chunk = out;
       }
@@ -2639,9 +2644,12 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (req.method === "GET" && p === "/v1/world/land") { res.setHeader("cache-control", "public, max-age=120"); return json(res, 200, landNow()); }
       if (req.method === "GET" && p === "/v1/world/live") { res.setHeader("cache-control", "no-store"); return json(res, 200, worldLive(url.searchParams.get("since"))); }
       if (req.method === "GET" && (p === "/world" || p === "/world/")) {
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache",
-          "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" });
-        const wp = worldPage(worldNow(), { frontier: FR ? (() => { try { return { districts: FR.districts(), meta: FR.meta(), fs: FR.claimedSlots() }; } catch (e: any) { console.error("frontier", e?.message); return null; } })() : null, hub: opts.publicUrl || "https://caldera.social", nav: worldNav(), tools: TOOLS ? TOOLS.mapData() : [], growth: GROWTH ? (() => { try { return GROWTH.state("day"); } catch (e: any) { console.error("growth state", e?.message); return null; } })() : null,
+        // embed=1 (LOOP.md b.6): only the map, for the homepage block's muted in-place replay; framed by our own pages only, sandboxed, not indexed
+        const embed = url.searchParams.get("embed") === "1" && url.searchParams.get("view") === "battle";
+        if (embed) res.setHeader("x-frame-options", "SAMEORIGIN");
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache", ...(embed ? { "x-robots-tag": "noindex" } : {}),
+          "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; " + (embed ? "frame-ancestors 'self'; sandbox allow-scripts allow-same-origin" : "frame-ancestors 'none'") });
+        const wp = worldPage(worldNow(), { embed, frontier: FR ? (() => { try { return { districts: FR.districts(), meta: FR.meta(), fs: FR.claimedSlots() }; } catch (e: any) { console.error("frontier", e?.message); return null; } })() : null, hub: opts.publicUrl || "https://caldera.social", nav: embed ? "" : worldNav(), tools: TOOLS ? TOOLS.mapData() : [], growth: GROWTH ? (() => { try { return GROWTH.state("day"); } catch (e: any) { console.error("growth state", e?.message); return null; } })() : null,
           battle: BATTLE ? (() => { try { return BATTLE.state(); } catch (e: any) { console.error("battle state", e?.message); return null; } })() : null,
           fleet: fleetPublic(), viewer: (me => me ? profile(me)?.handle || null : null)(memberOf(req)) });
         // the replay link's share picture (LOOP.md a.6): /world?view=battle&replay=1 (&city=handle) shows last night's battle picture

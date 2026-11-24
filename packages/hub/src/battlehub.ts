@@ -18,6 +18,7 @@ import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, towersOf, dmgAt, dm
 import { battleCardSvg, battleCardAlt, fetchAvatar, avatarUri, type CardNight, type CardMe } from "./battlecard";
 import type { GrowthMember } from "./growthhub";
 import { giftMail } from "./giftmail";
+import { homeNight, type HomeBattle } from "./homebattle";
 import { ARMORY, bombOf, armoryNow, armoryStore, armoryPrefs, alertDue, alertText, armoryEmail, checkWord, cleanTz, clockIn, openAlertAt, remindAt, type BombKind } from "./armory";
 
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
@@ -252,6 +253,28 @@ export function battleHub(c: BattleHubCtx) {
     const sum = summaryOf(n, x);   // the "Last night" card's numbers: the same function as the mail, the picture and the homepage
     const v = { at: new Date(at).toISOString(), night: dayKey(n), t0: battleAt(n), next: battleAt(n + 1), fallen: fall(night), prev: { night: dayKey(n - 1), t0: battleAt(n - 1), shots: prevShots, fallen: fall(S.shots(n - 1)) }, season: { n: se.n, week: se.week }, members, shots, board, rules, usd: sum ? sum.usd : 0, held: sum ? sum.held : 0, fires: night.filter(s => s.x?.sp).length, raiders: (S.night(n)?.raiders || []).map((id: string) => x.handle(id)), cities: sum ? sum.cities : Object.keys(members).length, people: peopleOf(x) };
     cache = { at, v }; return v;
+  }
+
+  /** The homepage block "Last night's battle" (LOOP.md b.5, homebattle.ts): the newest resolved night with shots. Its night
+   *  numbers are the Battle view's "Last night" card's (state(): cities, shots, damage); the season top 5 is the season score
+   *  after that night, each with its rank before it (the same score over the nights before). null: no battle ever. */
+  let homeC: { at: number; key: string; v: HomeBattle | null } | null = null;
+  function home(): HomeBattle | null {
+    const at = now(), n = lastNight(at), key = n + "|" + S.hasNight(n);   // a night that just resolved shows at once
+    if (homeC && homeC.key === key && at - homeC.at < 60_000) return homeC.v;
+    const running = !S.hasNight(n) && at - battleAt(n) < 2 * 3600_000;
+    let N = -1; for (let k = n; k > n - 60 && N < 0; k--) if (S.hasNight(k) && S.shots(k).length) N = k;
+    if (N < 0) { homeC = { at, key, v: null }; return null; }
+    const x = ctxFor(), on = warSet(Infinity, x), shots = S.shots(N), st = N === n ? state() : null;
+    const member = (id: string) => x.byId.has(id) ? "@" + x.byId.get(id)!.handle : null, facts = homeNight(shots, member);
+    const se = season(N, launch()), fr = S.fair(), fair = (nn: number, id: string) => fr.get(nn + "|" + id) ?? 1;
+    const rank = (to: number) => to < se.from ? [] : [...scoreOf(S.shots(se.from, to), heads, fair).entries()].filter(([id]) => on.has(id) && x.byId.has(id)).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+    const now1 = rank(N), before = new Map(rank(N - 1).map(([id], i) => [id, i + 1] as [string, number]));
+    const board = now1.slice(0, 5).map(([id, v], i) => ({ h: member(id)!, usd: v, rank: i + 1, prev: before.get(id) ?? null }));
+    const final = season(N + 1, launch()).n > se.n, prevNight = running ? n - 1 : n;
+    const v: HomeBattle = { night: dayKey(N), last: N === prevNight, ...facts, cities: st ? st.cities : (S.night(N)?.fighters || []).length, hits: st ? st.shots.filter((r: any) => r[3] > 0).length : facts.hits, usd: st ? st.usd : facts.usd,
+      board, season: se.n, week: se.week, podium: final ? board.slice(0, 3).map(r => ({ h: r.h, usd: r.usd })) : null, next: running ? battleAt(n) : battleAt(n + 1), running };
+    homeC = { at, key, v }; return v;
   }
 
   /** every listed member by "@handle": their public avatar path, or "" (the deck draws an initial). Only listed members, only the
@@ -545,7 +568,7 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
   /** the time from which work counts for the season in progress (the next night's season): the battle before its first night.
    *  Settings > Activity reads it (LOOP e). */
   const seasonStart = () => battleAt(season(lastNight(now()) + 1, launch()).from - 1);
-  return { seasonStart, route, tick, resolve, restrikeNight, fairRecount, state, me, postSummary, sendReports, mailTest, summaryOf, newest, cardFor, og, store: S, armory: A, prefs: PR, armoryAlerts, gift: G, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
+  return { seasonStart, route, tick, resolve, restrikeNight, fairRecount, state, home, me, postSummary, sendReports, mailTest, summaryOf, newest, cardFor, og, store: S, armory: A, prefs: PR, armoryAlerts, gift: G, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
     /** operator: opt a member in; since (ms) backdates it so a seed night can include them */
     optIn: (id: string, o: { waive?: boolean; since?: number } = {}) => { S.setWar(id, true, o.since ?? now()); if (o.waive !== undefined) S.setWaive(id, o.waive); cache = null; } };
 }
