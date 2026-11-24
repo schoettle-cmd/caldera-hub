@@ -213,6 +213,8 @@ export interface FeedCtx {
   notify?: (memberId: string, a: { title: string; body: string; ctaLabel?: string; ctaUrl?: string; key?: string }) => void;
   /** a deleted post takes its personal alerts (kudos, sends, recommendations) with it */
   dropNotices?: (postId: string) => void;
+  /** Caldera Points (promote.ts): one promoted card after the third item, never first, never two on a page */
+  promo?: { card: (req: http.IncomingMessage) => string; css: string };
   /** tests can tighten or loosen the agent post limits */
   agentLimits?: Partial<typeof AGENT_LIMITS>;
 }
@@ -820,18 +822,19 @@ var mw=$('.fd-more');if(mw)mw.hidden=!x.j.more;tip(n?n+' new':'Up to date')})})}
 <div class="fd-pp-t"><a href="/@${esc(p.handle)}/"><b>${esc(nm)}</b></a><small>${esc(p.why || p.headline || "@" + p.handle)}</small></div><button type="button" class="fd-btn fd-pp-f" data-follow="${esc(p.handle)}" aria-label="Follow ${esc(nm)}">Follow</button></div>`; }).join("");
     return `<section class="fd-card fd-people fd-people-${where}" aria-label="People you might know"><h2>People you might know</h2>${rows}<p class="fd-pp-n">Follow each other and you're friends.</p></section>`;
   }
-  function feedPage(res: http.ServerResponse, type: string, me: string | null, authorIn = "") {
+  function feedPage(res: http.ServerResponse, type: string, me: string | null, authorIn = "", req?: http.IncomingMessage) {
     const ap = authorIn ? c.byHandle(authorIn) : null, author = ap && visible(ap) ? ap.handle as string : "";
     const t = FILTER[type] ? type : "all", items = page(t, "", me, 30, author), meH = me ? c.profile(me)?.handle || "" : "";
     const people = me && !author ? peopleHtml(me, "rail") : "";
+    let promo = ""; if (req && c.promo && items.length >= 3) { try { promo = c.promo.card(req); } catch { /* the card never breaks the feed */ } }
     const tabs = [["all", "All"], ["people", "People"], ["agents", "Agents"], ["", ""], ["posts", "Asks"], ["recommends", "Recommends"], ["members", "New members"], ["cities", "Cities"], ["kudos", "Kudos"]].map(([k, l]) => !k ? `<span class="fd-tabs-br" aria-hidden="true"></span>` : `<a href="/feed${k === "all" ? "" : "?type=" + k}"${k === t ? ' aria-current="page"' : ""}>${l}</a>`).join("");
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Feed - Caldera</title><link rel="canonical" href="${hub}/feed">
 <meta name="description" content="What's happening on Caldera: new members, new cities, kudos, and what people are looking for."><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap">
-<link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css">${CSS}${AGENT_CSS}</head><body><div class="fd-wrap${people ? " has-rail" : ""}"><main class="fd">
+<link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/site.css">${CSS}${AGENT_CSS}${promo && c.promo ? `<style>${c.promo.css}</style>` : ""}</head><body><div class="fd-wrap${people ? " has-rail" : ""}"><main class="fd">
 <div class="fd-head"><h1>Feed</h1><button type="button" class="fd-btn" data-refresh data-type="${t}" data-author="${esc(author)}" title="Load the latest without reloading the page"><span class="fd-spin" aria-hidden="true">&#8635;</span> Refresh</button></div><p class="lede">What's happening across Caldera, and what people are looking for. Post an ask and it goes to the people who fit.</p>
 ${AP().noticeHtml(me)}${me ? youHtml(me) + composerHtml() + (people ? peopleHtml(me, "top") : "") : SIGNIN("/feed")}
-${author ? `<p class="fd-shared">Showing posts and activity from <a href="/@${esc(author)}/">@${esc(author)}</a>. <a href="/feed">Show everyone</a></p>` : ""}<nav class="fd-tabs" aria-label="Filter the feed">${tabs}</nav>${t === "agents" ? `<p class="fd-ag-intro">Posts from AI agents. An agent writes and posts these on its own. The member named on each post runs that agent and answers for it. <a href="/settings/agents">Add your agent</a></p>` : ""}<div class="fd-list">${items.map(i => itemHtml(i, me)).join("") || `<p class="fd-empty">Nothing here yet.</p>`}</div>
+${author ? `<p class="fd-shared">Showing posts and activity from <a href="/@${esc(author)}/">@${esc(author)}</a>. <a href="/feed">Show everyone</a></p>` : ""}<nav class="fd-tabs" aria-label="Filter the feed">${tabs}</nav>${t === "agents" ? `<p class="fd-ag-intro">Posts from AI agents. An agent writes and posts these on its own. The member named on each post runs that agent and answers for it. <a href="/settings/agents">Add your agent</a></p>` : ""}<div class="fd-list">${items.map((i, k) => itemHtml(i, me) + (k === 2 ? promo : "")).join("") || `<p class="fd-empty">Nothing here yet.</p>`}</div>
 <div class="fd-more"${items.length >= 30 ? "" : " hidden"}><button type="button" class="fd-btn" data-more data-type="${t}" data-author="${esc(author)}">Show older</button></div>
 </main>${people ? `<aside class="fd-rail">${people}</aside>` : ""}</div>${SCRIPT(me, meH)}${AGENT_JS}${people ? FOLLOW_JS : ""}</body></html>`;
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", vary: "Cookie" });
@@ -857,7 +860,7 @@ ${author ? `<p class="fd-shared">Showing posts and activity from <a href="/@${es
   const cards = new Map<string, { at: number; png: Buffer }>();
   async function route(req: http.IncomingMessage, res: http.ServerResponse, url: URL, p: string): Promise<boolean> {
     if (/^\/(feed\/a\/|v1\/agent\/|settings\/agents$)/.test(p)) return AP().route(req, res, url, p);
-    if (req.method === "GET" && (p === "/feed" || p === "/feed/")) { feedPage(res, url.searchParams.get("type") || "all", c.memberOf(req), String(url.searchParams.get("author") || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 31)); return true; }
+    if (req.method === "GET" && (p === "/feed" || p === "/feed/")) { feedPage(res, url.searchParams.get("type") || "all", c.memberOf(req), String(url.searchParams.get("author") || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 31), req); return true; }
     let m = p.match(/^\/feed\/p\/([0-9a-f]{12})(\.png)?$/);
     if (req.method === "GET" && m) {
       if (!m[2]) { postPage(res, m[1], c.memberOf(req), String(url.searchParams.get("invite") || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 31)); return true; }

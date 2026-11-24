@@ -149,7 +149,14 @@
     return a;
   }
   var last = [];
-  function render(list) { grid.textContent = ""; list.forEach(function (p) { grid.appendChild(card(p)); }); }
+  // Caldera Points: one promoted card in the sixth place of the grid (one draw per page view; none when no promotion is live)
+  var promo = null;
+  fetch("/v1/points/card?pl=people", { credentials: "same-origin" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+    if (!d || !d.html) return; var st = document.createElement("style"); st.textContent = d.css || ""; document.head.appendChild(st);
+    var w = document.createElement("div"); w.innerHTML = d.html; promo = w.firstElementChild; placePromo();
+  }).catch(function () {});
+  function placePromo() { if (!promo) return; if (promo.parentNode) promo.parentNode.removeChild(promo); var kids = grid.children; if (kids.length >= 5) grid.insertBefore(promo, kids[5] || null); }
+  function render(list) { grid.textContent = ""; list.forEach(function (p) { grid.appendChild(card(p)); }); placePromo(); }
   function load() {
     var url = "v1/directory?sort=" + sort + "&q=" + encodeURIComponent(input.value.trim()) + (tag ? "&tag=" + encodeURIComponent(tag) : "");
     fetch(url).then(function (r) { return r.json(); }).then(function (d) {

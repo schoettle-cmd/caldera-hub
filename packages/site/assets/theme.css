@@ -62,6 +62,7 @@
   --accent-text: #B39DFA;  /* link text on dark */
   --accent-soft: rgba(139, 108, 246, .10);
   --accent-2: #4FB89A;     /* secondary accent (help exchange, gravity) */
+  --pt: #4FB89A;           /* Caldera Points: the chip and every point number (LOOP.md 0.5) */
   --on-accent: #FFFFFF;
   --accent-btn: #6D4AE8;   /* button fills: white text passes 4.5:1 */
   --header-bg: #141416;    /* the one header ground (= bg-tab) */
@@ -96,6 +97,7 @@
   --accent-text: #5A38D6;
   --accent-soft: rgba(109, 74, 232, .08);
   --accent-2: #138A6A;
+  --pt: #0E6E54;
   --accent-btn: #6D4AE8;
   --graph-node: #A8A8B3;
   --heat-0: #EDEDF0;
