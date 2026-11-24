@@ -23,6 +23,9 @@
  *   ... leaderboard-post [--dry] [--force] [YYYY-MM-DD]   yesterday's (or that Pacific day's) top 10 to the feed, once per day; --dry composes only; --force posts under 3 shippers
  *   ... land-run [--dry] [handle]   the World's Expansion view: fetch merged PRs and stars gained now, store tonight's land
  *   ... agent-token-add <owner-handle> <agent-name> <sha256-of-token>   register a token made elsewhere; the secret never comes here
+ *   ... promos | promos approve <id> | promos reject <id> <mine|claim|adult|link>   Caldera Points: the promotion review queue
+ *   ... promo-reports              reports on promotions, by promotion and reason (counts only)
+ *   ... points-tick                charge the shown days of promotions (20:00 PT) and expire old seasons now
  * Alerts, the GitHub circle job and other operator commands live in caldera.social's private tools.
  */
 import fs from "node:fs";
@@ -59,6 +62,15 @@ try {
   if (cmd === "farm-report") { out(a.farmReport(Number(argv[1]) || 42)); process.exit(0); }   // commits voided as farm per member and repo
   if (cmd === "orpheus-pull") { out(await a.orpheusPull()); process.exit(0); }   // the daily Orpheus fleet feed, now
   if (cmd === "orpheus-list") { out(a.orpheusList()); process.exit(0); }   // linked members, newest first
+  if (cmd === "promos" || cmd === "promo-reports" || cmd === "points-tick") {   // Caldera Points (promote.ts): every ad is reviewed before it shows
+    const pt = a.points; if (!pt) { out({ error: "points are off" }); process.exit(1); }
+    if (cmd === "promo-reports") { out(pt.admin.reports()); process.exit(0); }
+    if (cmd === "points-tick") { out(pt.tick()); process.exit(0); }
+    const sub = argv[1] || "", id = Number(argv[2]);
+    if (sub === "approve") { out(pt.admin.approve(id)); process.exit(0); }
+    if (sub === "reject") { out(pt.admin.reject(id, argv[3] || "")); process.exit(0); }
+    out(pt.admin.queue()); process.exit(0);
+  }
   if (cmd === "tie-stats") { out(a.tieStats(Number(argv[1]) || 30)); process.exit(0); }   // Caldera x Orpheus tie: {tie, tie_at} per LA day
   if (cmd === "growth-run") {   // the World's growth views: one tick now (poll GitHub, re-run the simulation); --polls N --backfills N; or one member: growth-run @handle [--backfill]
     const g = a.growth; if (!g) { out({ error: "growth is off (CALDERA_GROWTH=0)" }); process.exit(1); }

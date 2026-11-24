@@ -48,7 +48,9 @@ import { closenessOrder, buildWorld, foldLive, agentRank, worldPage, type World,
 import { buildLand, landJob, landStore, type LandIn, type LandWorld } from "./land";
 import { growthHub, type GrowthMember } from "./growthhub";
 import { battleHub } from "./battlehub";
-import { WAR } from "./battle";
+import { WAR, season, lastNight } from "./battle";
+import { pointsStore } from "./points";
+import { pointsHub, PR_CSS } from "./promote";
 import { frontier } from "./frontier";
 import { FRONTIER_SEED } from "./frontierseed";
 import { leaderboard as leaderboardHub } from "./leaderboard";
@@ -1068,6 +1070,7 @@ p{color:var(--muted)}ul{padding-left:18px}li{margin:6px 0}.card{border:1px solid
     for (const t of ["land_gh", "land_side", "land_hist"]) del(`DELETE FROM ${t} WHERE profile=?`, id);   // the World's Expansion view
     GROWTH?.erase(id);   // the World's growth views
     BATTLE?.erase(id);   // the World's battles
+    POINTS?.erase(id);   // Caldera Points and their promotion
     FR?.erase(id);   // Frontier lands they added stay, credited to Caldera
     ORPH.erase(id);   // the Orpheus handle link: the row goes, Orpheus is told best effort
   }
@@ -1746,7 +1749,27 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
     alertPost: o => { try { alerts.post(o); } catch (e: any) { console.error("[armory] alert", e?.message); } }, unsubAll: id => mail.unsubUrlOf(id), armoryEmailOn: () => process.env.CALDERA_ARMORY_EMAIL === "1",
     lands: () => FR ? FR.store.live().map(l => ({ login: l.login, repos: l.city })) : [],
     systemPost: (k, t, l) => SYS.systemPost(k, t, l), sysPosted: k => SYS.posted(k)?.post_id || null, png: (svg, w) => toPng(svg, w),
-    avatar: id => { const pr = profile(id); const a = pr?.handle ? body(pr).photos?.avatar : null; return a ? `/@${pr.handle}/${String(a).replace(/^\.?\//, "")}` : null; } });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
+    avatar: id => { const pr = profile(id); const a = pr?.handle ? body(pr).photos?.avatar : null; return a ? `/@${pr.handle}/${String(a).replace(/^\.?\//, "")}` : null; },
+    onNight: (n, sh, prior) => { const paid = POINTS?.points.awardNight(n, sh, prior) || []; if (paid.length) console.log(`[points] night ${n}: ${paid.length} awards`); } });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
+
+  // ---------------------------------------------------------------- Caldera Points (points.ts, promote.ts; LOOP.md part d, phase 1)
+  // Seasons are the battle's (battle.ts season(), from the stored launch night); with battles off, from the first battle night.
+  const pointsViewer = (req: http.IncomingMessage) => { const ua = String(req.headers["user-agent"] || "");
+    return { id: memberOf(req), key: crypto.createHash("sha256").update(ipOf(req) + "|" + ua).digest("base64url").slice(0, 22), bot: !ua || BOT_UA.test(ua) }; };
+  const POINTS = process.env.CALDERA_POINTS === "0" ? null : pointsHub({ q, hub: opts.publicUrl || "https://caldera.social", now: opts.now,
+    P: pointsStore(q, { now: opts.now, seasonOf: n => { const l = Number(BATTLE?.store.meta("launch")) || lastNight(Date.parse("2026-11-08T12:00:00Z")); return season(n, l); } }),
+    memberOf: r => memberOf(r), sameOrigin: r => sameOrigin(r), readBody: r => readBody(r), json: (r, s, b) => json(r, s, b), header: () => siteHeader(),
+    profile: id => profile(id), avatar: id => avatarOf(id), viewerOf: pointsViewer, tooMany: (k, m) => tooMany(k, m),
+    reposOf: id => { try { const r = q("SELECT login, repos FROM growth_poll WHERE profile=?").get(id) as any; if (!r?.login) return [];
+      const own = String(r.login).toLowerCase() + "/";
+      return (JSON.parse(r.repos || "[]") as any[]).filter(x => x && !x.fork && !x.archived && String(x.full || "").toLowerCase().startsWith(own))
+        .sort((a, b) => (b.stars || 0) - (a.stars || 0) || (b.pushed || 0) - (a.pushed || 0)).map(x => ({ full: String(x.full), stars: Number(x.stars) || 0 })); } catch { return []; } },
+    productLink: id => { const pr = profile(id); if (!pr) return null; const b = body(pr);
+      const links = (Array.isArray(b.links) ? b.links : []).map((l: any) => Array.isArray(l) ? l[1] : l?.url).filter((u: any) => typeof u === "string" && /^https:\/\//.test(u));
+      return links.find((u: string) => { try { return !/(^|\.)(github\.com|caldera\.social)$/i.test(new URL(u).hostname); } catch { return false; } }) || null; },
+    alert: o => { try { alerts.post(o); } catch (e: any) { console.error("[points] alert", e?.message); } } });
+  (admin as any).points = POINTS;   // admin.js promos | promo-reports
+  if (POINTS) { const t = setInterval(() => { try { POINTS.tick(); } catch (e: any) { console.error("[points] tick", e?.message); } }, 10 * 60_000); t.unref?.(); }
 
   const autoOff = (pr: any) => { const b = body(pr); return b.autoConnectGithub === false || b.autoConnectRepos === false; };
   const circleHooks: { joined?: (id: string) => void; signedIn?: (id: string) => void } = {};
@@ -2427,7 +2450,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
     publicRepos: (h) => ((publicCityOf(h)?.districts || []) as any[]).flatMap((d: any) => (d.repos || []).filter((r: any) => !r.locked && r.name).map((r: any) => String(r.name))),
     notify: (to, a) => { alerts.post({ title: a.title, body: a.body, ctaLabel: a.ctaLabel, ctaUrl: a.ctaUrl, target: to, key: a.key, by: "gifts" }); },
     onChange: () => FEED?.invalidate() });
-  FEED = feed({ agentLimits: (opts as any).agentLimits, q, now, hub: opts.publicUrl || "https://caldera.social", profile, byHandle, body, listed, modOf, areFriends, befriend: (a, b, kind, ts, why) => { befriend(a, b, kind, ts, why); worldCache = null; },
+  FEED = feed({ agentLimits: (opts as any).agentLimits, promo: POINTS ? { card: req => POINTS.promoCard("feed", pointsViewer(req)), css: PR_CSS } : undefined, q, now, hub: opts.publicUrl || "https://caldera.social", profile, byHandle, body, listed, modOf, areFriends, befriend: (a, b, kind, ts, why) => { befriend(a, b, kind, ts, why); worldCache = null; },
     memberOf, sameOrigin, readBody, json, navify, weekScore, tooMany, founder: opts.founder || null, ogTags, hasCity: (h: string) => fs.existsSync(path.join(opts.dataDir, "profiles", h, "city.html")), toolItems: () => TOOLS ? TOOLS.feedItems() : [],
     tagsOf: (pr: any) => B.tagsOf(pr), vocab: ext.tagVocab().problems, stackVocab: ext.tagVocab().stack, requestIntro: (from, to) => B.requestIntro(from, to), decide: (me, from, yes) => B.decide(me, from, yes),
     notify: (to, a) => { alerts.post({ title: a.title, body: a.body, ctaLabel: a.ctaLabel, ctaUrl: a.ctaUrl, target: to, key: a.key, by: "feed" }); },
@@ -2624,6 +2647,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           return res.end(navify(groupPage({ slug: g[1], hub: opts.publicUrl || "https://caldera.social", members: groupMembers(g[1]) })));
         } }
       if (req.method === "GET" && p === "/v1/world") { res.setHeader("cache-control", "public, max-age=60"); const w = worldNow(); return json(res, 200, { at: w.at, members: w.members, links: w.links, city: w.city, orpheus: ORPH.publicList(h => { const pr = byHandle(h); return !!pr && listed(pr); }) }); }
+      if (POINTS && /^\/(points(\/|$)|v1\/points\/|p\/\d)/.test(p) && await POINTS.route(req, res, url, p)) return;   // Caldera Points (promote.ts)
       if (BATTLE && (p.startsWith("/v1/world/battle") || p === "/u/battle" || p === "/u/armory" || p.startsWith("/email/")) && await BATTLE.route(req, res, p, url)) return;
       if (FR && (p.startsWith("/v1/frontier/") || p.startsWith("/claim/") || p === "/add") && await FR.route(req, res, url)) return;
       if (GROWTH && (p.startsWith("/v1/world/") || p === "/hooks/github") && await GROWTH.route(req, res, p, url)) return;
