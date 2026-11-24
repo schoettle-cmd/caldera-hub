@@ -27,7 +27,15 @@ export function battleSpeedLib() {
   function label(v) { return ok(v) + 'x'; }
   function load(store) { try { var raw = (store || localStorage).getItem(KEY); return raw == null ? 1 : ok(raw); } catch (e) { return 1; } }
   function save(v, store) { try { (store || localStorage).setItem(KEY, String(ok(v))); return true; } catch (e) { return false; } }
-  return { SPEEDS: SPEEDS, KEY: KEY, ok: ok, next: next, label: label, load: load, save: save };
+  /** BATTLE.md U2 (Fable 11-24): the Replay button on the idle map. null when it must not show (World view, a replay, the results
+   *  board, "Battle running"); else its words: last night's replay, or the demo when there was no battle last night */
+  function mapRp(o) { if (!o || !o.on || o.replay || o.board || o.running) return null; var demo = !(o.shots > 0);
+    return { demo: demo, label: demo ? 'Watch a demo battle' : 'Replay last night', aria: demo ? 'Watch a demo battle' : 'Replay last night\u2019s battle', title: demo ? 'Watch a demo battle (R)' : 'Replay last night (R)' }; }
+  /** U7: the progress line, one part per strike (0..1): done strikes full, the current one fills with the clock (in one step with
+   *  reduced motion), the rest empty; all full in the fall, the wide shot and the rebuild */
+  function prog(ph, steps) { var L = ph && ph.strikes || [], st = ph && ph.stage, t = ph ? +ph.t || 0 : 0;
+    return L.map(function (s) { if (st === 'fall' || st === 'wide' || st === 'rebuild' || st === 'done') return 1; if (t >= s[1]) return 1; if (t < s[0] || steps) return 0; return Math.max(0, Math.min(1, (t - s[0]) / Math.max(1, s[1] - s[0]))); }); }
+  return { SPEEDS: SPEEDS, KEY: KEY, ok: ok, next: next, label: label, load: load, save: save, mapRp: mapRp, prog: prog };
 }
 
 /** Viewer power-ups v1 (map-audit DESIGN.md item 10, mockup 05; Mike D1 11-20): the tray's charges and limits, pure. Three slots
@@ -70,7 +78,8 @@ export function battleClient() {
   var BI = { prev: ['24', 'M19 19 9 12l10-7v14ZM5 5v14', 'f'], pause: ['24', 'M7.5 5.5h2v13h-2zM14.5 5.5h2v13h-2z', 'f'], play: ['24', 'M7 5l12 7-12 7V5Z', 'f'], next: ['24', 'M5 5l10 7-10 7V5ZM19 5v14', 'f'],
     follow: ['24', 'M12 2v4M12 18v4M2 12h4M18 12h4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z'], more: ['24', 'M5 12h.01M12 12h.01M19 12h.01', 'dots'], stop: ['24', 'M6 6l12 12M18 6 6 18'],
     speed: ['24', 'M12 14l4-4M3.34 19a10 10 0 1 1 17.32 0'], fit: ['24', 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM20 20l-4.05-4.05M8 11h6'], snd: ['24', 'M11 5 6 9H3v6h3l5 4V5ZM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9.5 9.5 0 0 1 0 13'],
-    muted: ['24', 'M11 5 6 9H3v6h3l5 4V5ZM16 9.5l5 5M21 9.5l-5 5'], full: ['16', 'M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4'], unfull: ['16', 'M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4'] };
+    muted: ['24', 'M11 5 6 9H3v6h3l5 4V5ZM16 9.5l5 5M21 9.5l-5 5'], full: ['16', 'M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4'], unfull: ['16', 'M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4'],
+    pic: ['24', 'M12 4v11M7 11l5 5 5-5M5 20h14'], math: ['24', 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM12 11v6M12 7.5h.01'], flag: ['24', 'M5 21V4m0 0h11l-2 4 2 4H5'] };
   function bIco(n) { var i = BI[n]; return '<svg' + (i[2] ? ' class="' + i[2] + '"' : '') + ' viewBox="0 0 ' + i[0] + ' ' + i[0] + '" aria-hidden="true"><path d="' + i[1] + '"/></svg>'; }
   function fsSync() { var b = hudEl && hudEl.querySelector('[data-p="full"]'); if (!b) return; var on = !!(api() && api().full && api().full()), u = hudEl.querySelector('[data-p="unfull"]'); if (u) u.hidden = !on;
     if (b.getAttribute('data-on') === String(on)) return; b.setAttribute('data-on', String(on));
@@ -265,10 +274,10 @@ export function battleClient() {
     var el = q('[data-b="last"]'); if (!el) return;
     var S = data.shots || [], landed = S.filter(function (x) { return x[3] > 0; }).length, eb = '<p class="b-eb">Last night · ' + esc(dLabel(data.night)) + '</p>';
     var lay = '<button type="button" class="b-gb" data-pop="layers" aria-haspopup="dialog" aria-expanded="' + (popKind === 'layers') + '">' + ic('layers') + 'Layers</button>';
-    if (!S.length) { el.innerHTML = eb + '<h2 class="b-big b-none">No battle last night</h2><p class="b-sub">No city had missiles. Watch a demo to see how a battle looks.</p><div class="b-lbtn"><button type="button" class="b-gb" data-bdemo aria-pressed="false">' + ic('play') + 'Watch a demo battle</button>' + lay + '</div>'; popRefresh(); return; }
+    if (!S.length) { el.innerHTML = eb + '<h2 class="b-big b-none">No battle last night</h2><p class="b-sub">No city had missiles. Watch a demo to see how a battle looks.</p><div class="b-lbtn"><button type="button" class="b-rp" data-bdemo aria-pressed="false">' + ic('play') + 'Watch a demo battle</button>' + lay + '</div>'; popRefresh(); return; }
     var dmg = data.usd != null ? data.usd : S.reduce(function (t, x) { return t + shotUsd(x); }, 0);
     el.innerHTML = eb + '<div class="b-nums"><div><b>' + (data.cities || 0) + '</b><span>' + (data.cities === 1 ? 'city fought' : 'cities fought') + '</span></div><div><b>' + landed + '</b><span>missile' + (landed === 1 ? '' : 's') + ' hit</span></div><div class="g"><b>' + esc(usd(dmg)) + '</b><span>damage</span></div></div>' + yourCity()
-      + '<div class="b-lbtn"><button type="button" class="b-gb" data-bl="replay" aria-pressed="' + !!(layers.replay && playing) + '">' + ic('play') + 'Replay</button><button type="button" class="b-gb b-share">' + ic('copy') + '<span>Copy link</span></button>' + lay
+      + '<div class="b-lbtn"><button type="button" class="b-rp" data-bl="replay" aria-pressed="' + !!(layers.replay && playing) + '">' + ic('play') + 'Replay</button><button type="button" class="b-gb b-share">' + ic('copy') + '<span>Copy link</span></button>' + lay
       + '<a class="b-allshots" href="#shots" data-ball>All ' + S.length + ' shot' + (S.length === 1 ? '' : 's') + '</a></div>';
     popRefresh();
   }
@@ -284,6 +293,7 @@ export function battleClient() {
   function lockAt() { return me && me.armory ? me.armory.locksAt : data.next; }
   function leftMs() { return (lockAt() || 0) - (Date.now() + armSkew); }
   function chipTick() {
+    mapReplay();
     if (!on || !api() || !api().phase) return; var ph = api().phase();
     if (!chip) { chip = document.createElement('div'); chip.className = 'b-chip'; chip.setAttribute('role', 'timer'); chip.setAttribute('aria-live', 'off'); chip.innerHTML = '<i></i><span class="b-ct"></span>'; if (stage) stage.appendChild(chip); }
     var ct = chip.querySelector('.b-ct'), t;
@@ -294,22 +304,45 @@ export function battleClient() {
     else { var sp = esc(armSpan(left)); t = '<span class="b-cw">Battle starts in <b>' + sp + '</b> · <b>' + n + '</b> missile' + (n === 1 ? '' : 's') + ' loaded</span><span class="b-cn">Starts in <b>' + sp + '</b></span>'; }
     chip.classList.toggle('rebuild', reb); if (ct.innerHTML !== t) ct.innerHTML = t;
   }
+  /** BATTLE.md U2 (Fable 11-24): one white Replay pill at the bottom centre of the idle map, where the replay bar comes up. It shows
+   *  only when the Last night card's Replay would (BSPD.mapRp); no battle last night: the demo. Key R does the same */
+  var rpEl = null;
+  function rpState() {
+    var ph = null; try { ph = api() && api().phase ? api().phase() : null; } catch (e) {}
+    var left = leftMs(), reb = !!(ph && ph.seg === 'rebuild' && left > 0), cl = document.documentElement.classList;
+    return BSPD.mapRp({ on: on && !!api(), replay: !!(ph && ph.replay) || cl.contains('w-replay'), board: cl.contains('w-board'), running: !!lockAt() && left <= 0 && !reb, shots: (data.shots || []).length });
+  }
+  function mapReplay() {
+    var s = rpState(); if (!s) { if (rpEl) rpEl.hidden = true; return null; } if (!stage) return null;
+    if (!rpEl) { rpEl = document.createElement('button'); rpEl.type = 'button'; rpEl.className = 'b-rp b-rp-map'; rpEl.onclick = function () { if (rpEl.hasAttribute('data-bdemo')) play('demo'); else setLayer('replay', true); }; stage.appendChild(rpEl); }
+    if (rpEl.getAttribute('data-k') !== s.label) { rpEl.setAttribute('data-k', s.label); if (s.demo) { rpEl.setAttribute('data-bdemo', ''); rpEl.removeAttribute('data-bl'); } else { rpEl.setAttribute('data-bl', 'replay'); rpEl.removeAttribute('data-bdemo'); }
+      rpEl.setAttribute('aria-label', s.aria); rpEl.title = s.title; rpEl.innerHTML = ic('play') + '<span>' + esc(s.label) + '</span><kbd aria-hidden="true">R</kbd>'; }
+    rpEl.hidden = false; return rpEl;
+  }
+  // BATTLE.md section 8: R starts the replay from the idle Battle view (not in a replay, not behind the board, not in a field)
+  document.addEventListener('keydown', function (e) {
+    if ((e.key !== 'r' && e.key !== 'R') || e.altKey || e.ctrlKey || e.metaKey || e.defaultPrevented || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '') || (e.target && e.target.isContentEditable)) return;
+    var cl = document.documentElement.classList; if (!on || cl.contains('w-replay') || cl.contains('w-board') || popEl) return;
+    var b = mapReplay(); if (!b) return; e.preventDefault(); b.click(); });
   // the replay controls on the map, one compact bar: Strike n of m + the last hit's damage tier, then Prev, Pause / Play, Next, speed, Fit, Follow (only after the viewer moved the camera), End. 44 px targets.
-  var hudEl = null, hudHit = null;
+  var hudEl = null, hudHit = null, hudFlag = null;
   function hud(ph) {
     if (!stage) return;
     if (!hudEl) { hudEl = document.createElement('div'); hudEl.className = 'b-play'; hudEl.setAttribute('role', 'group'); hudEl.setAttribute('aria-label', 'Replay controls');
-      hudEl.innerHTML = '<div class="b-pt"><div class="b-l1"><b data-p="beat"></b><span data-p="label" title=""></span></div><button type="button" data-p="hit" class="b-hit" aria-live="polite" hidden></button></div><div class="b-pb">'
+      hudEl.innerHTML = '<div class="b-prog" aria-hidden="true"></div><div class="b-pt"><div class="b-l1"><b data-p="beat"></b><span data-p="label" title=""></span></div><button type="button" data-p="hit" class="b-hit" aria-live="polite" hidden></button></div><div class="b-pb">'
         + '<button type="button" data-p="follow" aria-label="Follow the action again" title="Follow the action again" hidden>' + bIco('follow') + '<span>Follow</span></button>'
         + '<button type="button" data-p="prev" aria-label="Previous strike" title="Previous strike (\u2190)">' + bIco('prev') + '</button><button type="button" data-p="pause" aria-pressed="false" aria-label="Pause" title="Pause (Space)">' + bIco('pause') + '</button><button type="button" data-p="skip" aria-label="Next strike" title="Next strike (\u2192)">' + bIco('next') + '</button>'
         + '<i class="b-sep" aria-hidden="true"></i><button type="button" data-p="unfull" aria-label="Exit full screen" title="Exit full screen (F)" hidden>' + bIco('unfull') + '</button>'
         + '<button type="button" data-p="more" aria-haspopup="menu" aria-controls="b-menu" aria-expanded="false" aria-label="More controls" title="More controls">' + bIco('more') + '</button>'
         + '<button type="button" data-p="stop" aria-label="End the replay" title="End the replay">' + bIco('stop') + '</button></div>'
         + '<div class="b-menu" id="b-menu" role="menu" aria-label="More replay controls" hidden>'
+        + '<button type="button" role="menuitem" data-p="pic" aria-disabled="true" title="Save a picture of the strike that landed last (S)" hidden>' + bIco('pic') + '<span>Save strike picture</span><kbd>S</kbd></button>'
         + '<button type="button" role="menuitem" data-p="speed" title="Change speed: 0.5x, 1x or 2x">' + bIco('speed') + '<span>Speed</span><em>1x</em></button>'
         + '<button type="button" role="menuitem" data-p="fit" aria-label="Fit all: show the whole battlefield" title="Fit all: show the whole battlefield">' + bIco('fit') + '<span>Fit all</span></button>'
         + '<button type="button" role="menuitemcheckbox" data-p="snd" aria-checked="true" aria-label="Sound" title="Sound (M)">' + bIco('snd') + '<span>Sound</span><em>On</em><kbd>M</kbd></button>'
-        + '<button type="button" role="menuitem" data-p="full" aria-label="Full screen" title="Full screen (F)"></button></div>';
+        + '<button type="button" role="menuitem" data-p="full" aria-label="Full screen" title="Full screen (F)"></button>'
+        + '<button type="button" role="menuitem" data-p="math" class="s-only" hidden>' + bIco('math') + '<span>How this hit was counted</span></button>'
+        + '<button type="button" role="menuitem" data-p="flagm" class="s-only" hidden>' + bIco('flag') + '<span></span></button></div>';
       var A = function () { return api(); }, refresh = function () { var p = A() && A().phase ? A().phase() : null; if (p && p.replay) hud(p); };
       hudEl.querySelector('[data-p="pause"]').onclick = function () { if (A() && A().pause) { var on = A().pause(); pauseSet(this, on); } };
       hudEl.querySelector('[data-p="skip"]').onclick = function () { if (A() && A().skip) A().skip(); refresh(); };
@@ -328,12 +361,15 @@ export function battleClient() {
       hudEl.querySelector('[data-p="full"]').onclick = function () { if (A() && A().full) { A().full(!A().full()); menuSet(false); setTimeout(fsSync, 60); } };
       document.addEventListener('fullscreenchange', fsSync); fsSync();
       hudEl.querySelector('[data-p="snd"]').onclick = function () { if (A() && A().sound) A().sound(!A().sound()); refresh(); };   // D6 (Mike 11-20): sound on by default for a pressed replay; a mute is remembered
+      hudEl.querySelector('[data-p="pic"]').onclick = function () { if (this.getAttribute('aria-disabled') === 'true') return; menuSet(false); if (A() && A().savePic) A().savePic(); };   // U8: the strike that landed last, also paused
+      hudEl.querySelector('[data-p="math"]').onclick = function () { var hb2 = hudEl.querySelector('[data-p="hit"]'); menuSet(false); if (hb2) hb2.click(); };   // U3: the hit line's action on small panes
+      hudEl.querySelector('[data-p="flagm"]').onclick = function () { menuSet(false); if (hudFlag) flagAsk(hudFlag); };
       hudEl.querySelector('[data-p="hit"]').onclick = function () { menuSet(false); if (!hudHit) return; var s = nightShots(hudHit.night)[hudHit.ix]; if (!s) return; if (A() && A().pause) A().pause(true); refresh(); openHow(s); };
       document.addEventListener('keydown', function (e) {   // 11-20: keys during a replay (right/left: next/previous strike, space: pause)
         if (!hudEl || !document.documentElement.classList.contains('w-replay') || document.documentElement.classList.contains('w-board') || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '') || (e.target && e.target.closest && e.target.closest('.b-menu'))) return;
         if (puEl && /^[123]$/.test(e.key)) { e.preventDefault(); puToggle(BPU.kind(e.key).k); return; }   // power-ups: 1 2 3 arm, Esc disarms
         if (e.key === 'Escape' && puDisarm()) { e.preventDefault(); return; }
-        var k = e.key === 'ArrowRight' ? 'skip' : e.key === 'ArrowLeft' ? 'prev' : e.key === ' ' ? 'pause' : e.key === 'm' || e.key === 'M' ? 'snd' : e.key === 'f' || e.key === 'F' ? 'full' : ''; if (!k) return;
+        var k = e.key === 'ArrowRight' ? 'skip' : e.key === 'ArrowLeft' ? 'prev' : e.key === ' ' ? 'pause' : e.key === 'm' || e.key === 'M' ? 'snd' : e.key === 'f' || e.key === 'F' ? 'full' : e.key === 's' || e.key === 'S' ? 'pic' : ''; if (!k) return;
         var b = hudEl.querySelector('[data-p="' + k + '"]'); if (b) { e.preventDefault(); b.click(); } });
       document.addEventListener('pointerdown', function (e) { if (!hudEl || hudEl.querySelector('.b-menu').hidden) return; var t = e.target; if (t && t.closest && (t.closest('.b-menu') || t.closest('[data-p="more"]'))) return; menuSet(false); }, true);
       stage.appendChild(hudEl); fsSync(); puOn(); }
@@ -342,14 +378,18 @@ export function battleClient() {
     // the bar, its menu and the power-up tray step aside (CSS below) and no key acts behind it; the board stays until a button
     if (ph.board) { menuSet(false); puDisarm(); if (playing) { clearTimeout(playing); playing = null; } }
     var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'fall' ? 'Final strike' : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
-    var sbeat = st === 'beat' || st === 'pre' ? ph.beat + '/' + ph.beats : st === 'fall' ? 'Final' : st === 'wide' ? 'All ' + ph.beats + ' in' : beat, dm = ph.demo ? 'Demo \u00b7 ' : '', bt = dm + beat + '|' + dm + sbeat, be = hudEl.querySelector('[data-p="beat"]');
+    var sbeat = st === 'beat' || st === 'pre' ? ph.beat + '/' + ph.beats : st === 'fall' ? 'Final' : st === 'wide' ? 'All ' + ph.beats + ' in' : beat, dm = ph.demo ? 'Demo \u00b7 ' : '', pz = ph.paused && beat ? 1 : 0; if (pz) { beat += ', paused'; sbeat += ' paused'; } var bt = dm + beat + '|' + dm + sbeat, be = hudEl.querySelector('[data-p="beat"]');
     if (be.getAttribute('data-t') !== bt) { be.setAttribute('data-t', bt); be.innerHTML = '<span class="sr">' + esc(dm + beat) + '</span><span aria-hidden="true">' + esc(dm + sbeat) + '</span>'; }
     var lb = hudEl.querySelector('[data-p="label"]'); lb.textContent = ph.label || ''; lb.title = ph.label || '';
     var hs = ph.hit && !ph.demo ? nightShots(ph.night)[ph.hit.ix] : null, ht = ph.hit ? hitLine(ph.hit) + bombTail(hs) : '';
     var mh = me && me.h ? String(me.h) : null, fl = hudEl.querySelector('[data-p="flag"]'), canFlag = !!(me && bombOf(hs) && !hs[8].hid && hs[0] !== mh && !flagBusy);
     if (canFlag && !fl) { hudEl.querySelector('.b-pt').insertAdjacentHTML('beforeend', flagHtml(hs)); fl = hudEl.querySelector('[data-p="flag"]'); }
     if (fl) { if (!canFlag) fl.remove(); else { fl.setAttribute('aria-label', 'Report the word ' + hs[8].word); fl.onclick = function () { flagAsk(hs); }; } }
+    hudFlag = canFlag ? hs : null; var fm = hudEl.querySelector('[data-p="flagm"]'); fm.hidden = !canFlag; if (canFlag) { var fw = 'Report the word ' + hs[8].word; if (fm.lastChild.textContent !== fw) fm.lastChild.textContent = fw; }
     var hb = hudEl.querySelector('[data-p="hit"]'); hb.textContent = ht + (ht && !ph.demo ? ' \u00b7 math' : ''); hb.hidden = !ht; hb.classList.toggle('sh', !!(ph.hit && (ph.hit.shield || ph.hit.sh > 0))); hudHit = ph.hit && !ph.demo ? { night: ph.night, ix: ph.hit.ix } : null;
+    hudEl.querySelector('[data-p="math"]').hidden = !(ht && !ph.demo);
+    var pc = hudEl.querySelector('[data-p="pic"]'), pk = api() && api().canPic ? api().canPic() : 'off'; pc.hidden = pk === 'off' || !pk; pc.setAttribute('aria-disabled', String(pk !== 'ready'));
+    progSet(ph);
     pauseSet(hudEl.querySelector('[data-p="pause"]'), !!ph.paused);
     var sk = hudEl.querySelector('[data-p="skip"]'), skw = st === 'rebuild' ? 'Finish' : st === 'wide' ? 'Cranes' : '';
     if (sk.getAttribute('data-w') !== skw) { sk.setAttribute('data-w', skw); sk.classList.toggle('t', !!skw); sk.innerHTML = bIco('next') + (skw ? '<span>' + skw + '</span>' : ''); var skl = st === 'rebuild' ? 'Finish the replay' : st === 'wide' ? 'Skip to the cranes' : 'Next strike'; sk.setAttribute('aria-label', skl); sk.title = skl + ' (\u2192)'; }
@@ -416,7 +456,11 @@ export function battleClient() {
     if (!hudEl) return; var a = puEl.getBoundingClientRect(), b = hudEl.getBoundingClientRect(), s = stage.getBoundingClientRect();
     if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) puEl.style.bottom = Math.round(s.bottom - b.top + 8) + 'px'; }
   // ---- power-ups end
-  function hudOff() { puOff(); if (hudEl) { hudEl.remove(); hudEl = null; } }
+  function hudOff() { puOff(); if (hudEl) { hudEl.remove(); hudEl = null; } hudFlag = null; }
+  /** U7: the strike progress line on the bar's top edge (not a control, not read: "Strike 2 of 7" is in the bar) */
+  function progSet(ph) { var pg = hudEl && hudEl.querySelector('.b-prog'); if (!pg) return; var rm = false; try { rm = matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    var P = BSPD.prog(ph, rm); if (pg.children.length !== P.length) pg.innerHTML = P.map(function () { return '<i></i>'; }).join('');
+    P.forEach(function (v, i) { var c = pg.children[i], s = v.toFixed(3); if (c.getAttribute('data-p') !== s) { c.setAttribute('data-p', s); c.style.setProperty('--p', s); } }); }
   function pauseSet(b, on) { if (!b || b.getAttribute('aria-pressed') === String(on) && b.firstChild) return; b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-label', on ? 'Play' : 'Pause'); b.title = (on ? 'Play' : 'Pause') + ' (Space)'; b.innerHTML = bIco(on ? 'play' : 'pause'); }
   function menuSet(open, focus) { if (!hudEl) return; var m = hudEl.querySelector('.b-menu'), mb = hudEl.querySelector('[data-p="more"]'); if (!m || !mb) return; m.hidden = !open; mb.setAttribute('aria-expanded', String(!!open)); puPlace(); if (open && focus) { var f = m.querySelector('button:not([hidden])'); if (f) f.focus(); } }
   var flagBusy = false;
@@ -544,11 +588,11 @@ export function battleClient() {
   addEventListener('hashchange', function () { var h = location.hash.slice(1); if (TABS.indexOf(h) >= 0) setTab(h); });
   // ---------------------------------------------------------------- replay: the cinematic strike-by-strike replay (or the demo)
   var cap = q('[data-b="cap"]'), hudT = 0;
-  function stopPlay() { try { if (api() && api().full && api().full()) api().full(false); } catch (e) {} setTimeout(fsSync, 60); if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); document.documentElement.classList.remove('fb-hide'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); }
+  function stopPlay() { var had = !!hudEl; try { if (api() && api().full && api().full()) api().full(false); } catch (e) {} setTimeout(fsSync, 60); if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); document.documentElement.classList.remove('fb-hide'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); if (had) { var rb = mapReplay(); if (rb) try { rb.focus({ preventScroll: true }); } catch (e) {} } }
   function play(mode, auto) {
     if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0;
     closeHow();
-    // the results board's buttons (LEADERBOARD.md): Watch again = play() in the same mode, Exit = stopPlay(), Add your city = /#start
+    // the results board's buttons (LEADERBOARD.md): Replay again = play() in the same mode, Exit = stopPlay(), Add your city = /#start
     if (api() && api().boardHooks) api().boardHooks({ again: function (demo) { play(demo ? 'demo' : undefined); }, exit: function () { stopPlay(); }, add: '/#start', signedIn: function () { return !!me; } });
     var n = on && api() && api().replay ? api().replay(mode, { speed: speed, auto: !!auto }) : 0;
     if (!n) { if (cap) cap.textContent = mode === 'demo' ? 'The demo needs two cities with repo towers on the map.' : 'No battle to replay. Watch a demo battle instead.'; playing = setTimeout(stopPlay, 3500); return; }
@@ -891,7 +935,8 @@ export const BATTLE_CSS = `
 .b-puret::after{content:"";position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:var(--c)}
 html.pu-armed #stage canvas{cursor:none}
 @media (max-width:899px){.b-puslot{width:48px;height:48px}.b-puslot svg{width:24px;height:24px}}
-@media (max-width:600px){.b-pu{right:10px;bottom:94px}.b-putoast{top:56px}}
+@media (max-width:1009px){.b-pu{bottom:68px}}   /* BATTLE.md U3: under 1010 px the tray sits above the bar, never on it */
+@media (max-width:600px){.b-pu{right:10px;bottom:68px}.b-putoast{top:56px}}
 @media (prefers-reduced-motion:reduce){.b-puslot{transition:none}.b-putoast{animation:none}}
 /* replay bar, Mike 11-21 (Fable design reports/2026-11-21-replay-bar/BAR.md) */
 .b-play{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:7;display:flex;align-items:center;gap:8px;width:min(560px,calc(100% - 20px));min-height:44px;padding:4px 4px 4px 12px;border-radius:12px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);font:500 12px/1.3 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;font-variant-numeric:tabular-nums;box-sizing:border-box}
@@ -941,6 +986,19 @@ html.pu-armed #stage canvas{cursor:none}
 .b-play .b-menu span{flex:1 1 auto;min-width:0}
 .b-play .b-menu em{font-style:normal;font-weight:600;color:#3DF2FF}
 .b-play .b-menu [aria-checked="false"] em{color:#9A9AA5}
+.b-play .b-menu .s-only{display:none}.b-play .b-menu [aria-disabled="true"]{opacity:.45;cursor:default}
+.b-play .b-prog{position:absolute;left:12px;right:12px;top:-1px;height:3px;display:flex;gap:3px;pointer-events:none}   /* BATTLE.md U7: one part per strike */
+.b-play .b-prog i{flex:1 1 0;height:100%;border-radius:2px;background:rgba(255,255,255,.2);overflow:hidden;position:relative}
+.b-play .b-prog i::after{content:"";position:absolute;inset:0;background:#F4F6FA;transform-origin:0 50%;transform:scaleX(var(--p,0))}
+/* BATTLE.md U2: one Replay look in every place: a white pill with a play icon (36 px; 44 px on small panes and on the map) */
+.b-rp{-webkit-appearance:none;appearance:none;margin:0;position:relative;box-sizing:border-box;display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 15px 0 12px;border-radius:18px;border:0;background:#F4F6FA;color:#0B0D13;font:600 13.5px/1 var(--ui,'IBM Plex Sans',sans-serif);white-space:nowrap;cursor:pointer;box-shadow:0 0 0 1px rgba(11,13,19,.5);touch-action:manipulation}
+.b-rp svg{width:14px;height:14px;flex:none}.b-rp:hover{background:#fff}.b-rp:active{transform:translateY(1px)}.b-rp:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}.b-rp[hidden]{display:none}
+.b-rp-map{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:7;height:44px;padding:0 20px 0 16px;border-radius:22px;font-size:14.5px;box-shadow:0 0 0 1px rgba(11,13,19,.55),0 10px 26px -8px rgba(0,0,0,.75)}
+.b-rp-map:active{transform:translateX(-50%) translateY(1px)}.b-rp-map svg{width:16px;height:16px}
+.b-rp-map kbd{margin-left:4px;padding:3px 5px;border-radius:5px;border:1px solid rgba(11,13,19,.28);font:600 10.5px/1 var(--font-mono,'IBM Plex Mono',monospace);color:rgba(11,13,19,.62)}
+@media (max-width:600px){.b-rp{height:44px;border-radius:22px}.b-rp-map kbd{display:none}}
+html.w-replay .b-rp-map,html.w-board .b-rp-map,html:not(.w-battle) .b-rp-map{display:none}
+.c-stage.c-full .bcall{top:calc(12px + env(safe-area-inset-top,0px))}   /* BATTLE.md section 7: the strike callout under the notch in full screen */
 .b-play .b-menu kbd{min-width:9px;padding:2px 4px;border:1px solid rgba(255,255,255,.16);border-radius:4px;font:500 10px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#8B8E9C;text-align:center}
 /* Report confirm row: the bar stacks while the question is open */
 .b-play:has(.b-flagq){flex-direction:column;align-items:stretch;gap:6px;padding:8px 4px 4px}
@@ -951,7 +1009,7 @@ html.pu-armed #stage canvas{cursor:none}
 .b-play .b-flagq span{flex:1 1 200px;min-width:0}
 .b-play .b-flagq button{flex:none;height:32px;padding:0 12px;border-radius:8px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.06);color:#E8EEF8;font:600 12px/1 var(--font-mono,'IBM Plex Mono',monospace)}
 .b-play .b-flagq [data-p="flagyes"]{background:#8B6CF6;border-color:#8B6CF6;color:#fff}
-@media (max-width:600px){.b-play{left:10px;right:10px;bottom:10px;transform:none;width:auto;flex-direction:column;align-items:stretch;gap:5px;padding:6px 5px 5px}.b-play .b-pt{flex:none;padding:0 5px}.b-play .b-hit{padding:13px 0;margin:-13px 0}.b-play .b-pb{gap:3px}.b-play .b-pb button{width:40px;height:40px}.b-play .b-pb [data-p="prev"],.b-play .b-pb [data-p="skip"]{flex:1 1 40px;width:auto;background:rgba(255,255,255,.06)}.b-play .b-pb [data-p="pause"]{flex:1 1 40px;width:auto}.b-play .b-pb [data-p="follow"]{width:auto;margin-right:2px}.b-play .b-sep{margin:0 2px}.b-play .b-menu{width:220px}.b-play .b-menu button{height:44px;padding:0 10px}.b-play .b-menu kbd{display:none}.b-play:has(.b-flagq){padding:8px 5px 5px}.b-play .b-flagq span{flex-basis:100%}.b-play .b-flagq button{flex:1 1 0;height:40px}}
+@media (max-width:600px){.b-play{left:10px;right:10px;bottom:10px;transform:none;width:auto;min-height:50px;gap:4px;padding:4px 5px}.b-play [data-p="label"],.b-play .b-hit,.b-play .b-flag{display:none}.b-play .b-pt{flex:none;display:block;min-width:38px;padding-left:5px}.b-play .b-pb{flex:1 1 auto;gap:3px}.b-play .b-pb button{width:40px;height:40px}.b-play .b-pb [data-p="prev"],.b-play .b-pb [data-p="skip"]{flex:1 1 40px;width:auto;background:rgba(255,255,255,.06)}.b-play .b-pb [data-p="pause"]{flex:1 1 40px;width:auto}.b-play .b-pb [data-p="follow"]{width:40px;padding:0;margin-right:2px;border-radius:8px}.b-play .b-pb [data-p="follow"] span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.b-play .b-sep{margin:0 2px}.b-play .b-menu{width:236px}.b-play .b-menu button{height:44px;padding:0 10px}.b-play .b-menu kbd{display:none}.b-play .b-menu .s-only{display:flex}.b-play:has(.b-flagq){flex-direction:column;align-items:stretch;padding:8px 5px 5px}.b-play:has(.b-flagq) .b-pt{display:grid}.b-play .b-flagq span{flex-basis:100%}.b-play .b-flagq button{flex:1 1 0;height:40px}}
 .b-chip i{width:7px;height:7px;border-radius:50%;background:#FFB347;box-shadow:0 0 8px #FFB347;flex:none}.b-chip.rebuild i{background:#4FD1C5;box-shadow:0 0 8px #4FD1C5}.b-chip b{font-weight:600;color:#fff}.b-chip span{color:#C9D2E6}
 @media (prefers-reduced-motion: reduce){.b-chip i{box-shadow:none}}
 .b-szs{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}.b-sz{display:inline-flex;align-items:center;gap:4px;font:600 11.5px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#9A9AA5;border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:3px 6px 3px 3px;font-variant-numeric:tabular-nums}
@@ -977,7 +1035,7 @@ html.w-board .b-play,html.w-board .b-pu,html.w-board .b-puret,html.w-board .b-pu
 html.w-replay .b-chip{display:none}   /* the replay bar says the same (strike, cities, last hit) and the chip would sit on the Labels chip at the top left */
 .w-main .c-stage.c-full{height:100%;min-height:0}
 .w-battle-only{display:none}html.w-battle .w-battle-only{display:revert}html.w-battle .w-now-only,html.w-battle .w-grow-only{display:none}
-@media (max-width:600px){.b-chip{top:auto;bottom:10px}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{bottom:calc(10px + env(safe-area-inset-bottom,0px))}}
+@media (max-width:600px){.b-chip{top:52px;bottom:auto;left:12px}.c-stage.c-full .b-play{bottom:calc(10px + env(safe-area-inset-bottom,0px))}.c-stage.c-full .b-chip{top:calc(52px + env(safe-area-inset-top,0px))}}   /* BATTLE.md U2: on small panes the chip sits under the World | Battle switch; the bottom edge is for Replay */
 .b-un{flex:none;font:600 10px/1 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.06em;text-transform:uppercase;padding:3px 5px;border-radius:4px;border:1px dashed rgba(201,210,230,.55);color:#C9D2E6}
 .b-tp{grid-area:p;display:grid;gap:8px;margin:2px 0 4px;padding:8px;border-radius:10px;border:1px solid rgba(61,242,255,.28);background:#12141D;min-width:0}
 .b-tp-in{position:relative}

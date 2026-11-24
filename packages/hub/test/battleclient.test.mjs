@@ -279,7 +279,7 @@ test("power-ups: the tray only in a replay, keys 1 2 3 and Esc in the replay key
   const css = M.BATTLE_CSS;
   assert.ok(/\.b-puslot\{[^}]*width:56px;height:56px[^}]*border-radius:14px/.test(css), "56 px slots, radius 14"); assert.ok(/max-width:899px\)\{\.b-puslot\{width:48px;height:48px\}/.test(css), "48 px on Duo and phone");
   assert.ok(/\.b-putray\{display:flex;gap:8px/.test(css)); assert.ok(css.includes(".b-puslot.armed{") && css.includes("translateY(-4px)") && css.includes(".b-puslot.cool::after") && css.includes("conic-gradient") && /\.b-puslot\.empty\{border-style:dashed/.test(css), "Ready, Armed, Recharging, Empty");
-  assert.ok(/max-width:600px\)\{\.b-pu\{right:10px;bottom:94px\}/.test(css), "phone: right aligned above the full-width bar"); assert.ok(css.includes(".b-pu.mhide{visibility:hidden}"));
+  assert.ok(/max-width:600px\)\{\.b-pu\{right:10px;bottom:68px\}/.test(css), "phone: right aligned above the one-row bar (BATTLE.md U3)"); assert.ok(/@media \(max-width:1009px\)\{\.b-pu\{bottom:68px\}\}/.test(css), "601 to 1009 px: above the bar, never on it"); assert.ok(css.includes(".b-pu.mhide{visibility:hidden}"));
   assert.ok(/\.b-puret\{[^}]*width:64px;height:32px[^}]*dashed/.test(css), "the 64 x 32 dashed reticle"); assert.ok(/prefers-reduced-motion:reduce\)\{\.b-puslot\{transition:none\}/.test(css));
 });
 
@@ -308,4 +308,55 @@ test("armWho stays a function: no var of the same name overwrites it (armory pan
   const src = readFileSync(new URL("../src/battleclient.ts", import.meta.url), "utf8");
   assert.ok(/\bfunction armWho\(/.test(src));
   assert.ok(!/\b(var|let|const) armWho\b|\barmWho\s*=[^=]/.test(src), "armWho is never assigned");
+});
+
+// ---- the battle screen (BATTLE.md, Fable design 11-24): the Replay button on the map, the one-row bar, the progress line, Save in the menu
+test("BATTLE.md U2: mapReplay() show rule: only in the idle Battle view; not in World view, a replay, on the board or while the battle runs; the demo when no battle last night", () => {
+  const R = L.mapRp, base = { on: true, replay: false, board: false, running: false, shots: 12 };
+  assert.deepEqual(R(base), { demo: false, label: "Replay last night", aria: "Replay last night’s battle", title: "Replay last night (R)" });
+  assert.deepEqual(R({ ...base, shots: 0 }), { demo: true, label: "Watch a demo battle", aria: "Watch a demo battle", title: "Watch a demo battle (R)" }, "no battle last night: today's demo words");
+  for (const k of ["replay", "board", "running"]) assert.equal(R({ ...base, [k]: true }), null, `not ${k}`);
+  assert.equal(R({ ...base, on: false }), null, "not in World view"); assert.equal(R(null), null);
+  const js = M.BATTLE_CLIENT_JS, N = (x) => String(x).replace(/\s+/g, "").replace(/"/g, "'"), J = N(js);
+  assert.ok(J.includes(N("function chipTick() {\n    mapReplay();")), "called from chipTick (also in World view, to hide it)");
+  assert.ok(J.includes(N("rpEl.className = 'b-rp b-rp-map'")) && J.includes(N("rpEl.setAttribute('data-bl', 'replay')")) && J.includes(N("rpEl.setAttribute('data-bdemo', '')")), "one white pill, data-bl=replay or data-bdemo");
+  assert.ok(J.includes(N("if (rpEl.hasAttribute('data-bdemo')) play('demo'); else setLayer('replay', true);")), "the click does what the card's button does");
+  assert.ok(J.includes(N("running: !!lockAt() && left <= 0 && !reb")), "'Battle running' as the chip says it");
+  const stop = J.slice(J.indexOf("functionstopPlay(){"), J.indexOf("functionplay(mode,auto){"));
+  assert.ok(stop.startsWith(N("function stopPlay() { var had = !!hudEl;")) && stop.includes(N("if (had) { var rb = mapReplay(); if (rb) try { rb.focus({ preventScroll: true }); }")), "after End or Exit the button gets the focus");
+  const css = M.BATTLE_CSS;
+  assert.ok(/\.b-rp-map\{position:absolute;left:50%;bottom:14px;transform:translateX\(-50%\);z-index:7;height:44px/.test(css), "bottom centre, 44 px");
+  assert.ok(css.includes("html.w-replay .b-rp-map,html.w-board .b-rp-map,html:not(.w-battle) .b-rp-map{display:none}"));
+  assert.ok(/@media \(max-width:600px\)\{\.b-rp\{height:44px;border-radius:22px\}\.b-rp-map kbd\{display:none\}\}/.test(css), "no key cap on small panes");
+  assert.ok(/\.b-rp\{[^}]*background:#F4F6FA;color:#0B0D13/.test(css), "white, not a purple label pill");
+});
+
+test("BATTLE.md U2 and section 8: the Last night card's Replay is the white pill and comes first; key R starts from the idle view, S saves during a replay", () => {
+  const js = M.BATTLE_CLIENT_JS, N = (x) => String(x).replace(/\s+/g, "").replace(/"/g, "'"), J = N(js);
+  const lr = J.slice(J.indexOf("functionlastRender(){"), J.indexOf("functionpost(path,body){"));
+  assert.ok(lr.includes(N(`<div class="b-lbtn"><button type="button" class="b-rp" data-bl="replay"`)) && lr.includes(N(`<div class="b-lbtn"><button type="button" class="b-rp" data-bdemo`)), "first, white");
+  assert.ok(!lr.includes(N(`class="b-gb" data-bl="replay"`)) && lr.includes(N(`class="b-gb b-share"`)), "Copy link and Layers stay outline");
+  const r0 = J.indexOf(N("if (e.key !== 'r' && e.key !== 'R' ||")), rk = J.slice(r0, r0 + 600); assert.ok(r0 > 0);
+  assert.ok(rk.includes("INPUT|TEXTAREA|SELECT") && rk.includes(N("if (!on || cl.contains('w-replay') || cl.contains('w-board') || popEl) return;")) && rk.includes(N("var b = mapReplay(); if (!b) return; e.preventDefault(); b.click();")), "R: Battle view on, no replay, no board, no field");
+  assert.ok(J.includes(N("e.key === 's' || e.key === 'S' ? 'pic'")), "S clicks Save strike picture inside the replay key handler (which ignores the board and fields)");
+});
+
+test("BATTLE.md U3/U7/U8: the progress line, the new menu rows, 2/7 paused; one row of 50 px at 600 px and under; the chip under the switch", () => {
+  const js = M.BATTLE_CLIENT_JS, N = (x) => String(x).replace(/\s+/g, "").replace(/"/g, "'"), J = N(js), css = M.BATTLE_CSS;
+  assert.ok(J.includes(N(`hudEl.innerHTML = '<div class="b-prog" aria-hidden="true"></div><div class="b-pt">`)), "the progress line is the first child of the bar, not read");
+  const ph = { stage: "beat", t: 1500, strikes: [[0, 1000], [1000, 3000], [3000, 5000]] };
+  assert.deepEqual(L.prog(ph), [1, .25, 0], "done white, the current fills with the clock, the rest empty"); assert.deepEqual(L.prog(ph, true), [1, 0, 0], "reduced motion: in steps");
+  for (const st of ["fall", "wide", "rebuild"]) assert.deepEqual(L.prog({ ...ph, stage: st }), [1, 1, 1], st); assert.deepEqual(L.prog({ stage: "pre", t: -5, strikes: [[0, 10]] }), [0]); assert.deepEqual(L.prog(null), []);
+  assert.ok(J.includes(N(`data-p="pic" aria-disabled="true" title="Save a picture of the strike that landed last (S)" hidden>' + bIco('pic') + '<span>Save strike picture</span><kbd>S</kbd>`)), "Save strike picture, key S, dimmed until a strike landed");
+  assert.ok(J.includes(N("pc.hidden = pk === 'off' || !pk; pc.setAttribute('aria-disabled', String(pk !== 'ready'));")) && J.includes(N("if (A() && A().savePic) A().savePic();")), "hidden where the page cannot save");
+  assert.ok(J.includes(N(`data-p="math" class="s-only" hidden>' + bIco('math') + '<span>How this hit was counted</span>`)) && J.includes(N(`data-p="flagm" class="s-only" hidden>`)) && J.includes(N("var fw = 'Report the word ' + hs[8].word;")), "small panes: the hit line and the flag move into More");
+  assert.ok(J.includes(N("if (pz) { beat += ', paused'; sbeat += ' paused'; }")), "2/7 paused, read as Strike 2 of 7, paused");
+  const mq = css.slice(css.indexOf("@media (max-width:600px){.b-play{"), css.indexOf("\n", css.indexOf("@media (max-width:600px){.b-play{")));
+  assert.ok(mq.includes(".b-play{left:10px;right:10px;bottom:10px;transform:none;width:auto;min-height:50px;gap:4px;padding:4px 5px}") && !mq.includes(".b-play{left:10px;right:10px;bottom:10px;transform:none;width:auto;flex-direction:column"), "one row, 50 px");
+  assert.ok(mq.includes('.b-play [data-p="label"],.b-play .b-hit,.b-play .b-flag{display:none}') && mq.includes(".b-play .b-menu .s-only{display:flex}") && mq.includes('.b-play .b-pb [data-p="follow"]{width:40px;padding:0'), "no label or hit line in the bar; Follow is a 40 px icon");
+  assert.ok(mq.includes(".b-play:has(.b-flagq){flex-direction:column;align-items:stretch"), "the report question keeps its stacked layout");
+  assert.ok(/\.b-play \.b-prog\{position:absolute;left:12px;right:12px;top:-1px;height:3px;display:flex;gap:3px;pointer-events:none\}/.test(css) && css.includes("transform:scaleX(var(--p,0))"));
+  assert.ok(css.includes("@media (max-width:600px){.b-chip{top:52px;bottom:auto;left:12px}"), "small panes: the chip under the switch");
+  assert.ok(css.includes(".c-stage.c-full .bcall{top:calc(12px + env(safe-area-inset-top,0px))}"), "full screen: the callout clears the notch");
+  assert.ok(!/—/.test(js + css), "no em dashes");
 });

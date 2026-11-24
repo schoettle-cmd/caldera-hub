@@ -26,7 +26,7 @@ test("D4 CSS: phone header is one 44px row; the switch sits top left with the st
   assert.match(css, /\.w-mode\{position:absolute;left:12px;top:12px;z-index:7;/);
   assert.match(css, /\.w-mode button\[aria-pressed="true"\]\{background:#F4F6FA;color:#0B0D13\}/, "selected segment white");
   assert.match(css, /html\.w-battle \.w-main \.c-stage:has\(\.w-mode\) \.b-chip\{left:136px;top:12px/);
-  assert.match(css, /html\.w-battle \.w-main \.c-stage:has\(\.w-mode\) \.b-chip\{left:10px;top:auto\}/, "phone: the chip stays at the bottom");
+  assert.match(css, /html\.w-battle \.w-main \.c-stage:has\(\.w-mode\) \.b-chip\{left:12px;top:52px;bottom:auto\}/, "phone: the chip sits under the switch (BATTLE.md U2, the bottom edge is for Replay)");
   assert.match(css, /\.c-tools>\.w-time\{display:none\}/, "hidden until the renderer moves it into Layers");
   assert.match(css, /html\.w-replay \.w-mode,html\.w-replay \.w-main \.g-today\{display:none\}/, "the theater shows only the replay");
   assert.match(W.CARD_CLEAR_JS, /'\.b-chip,\.w-mode,\.w-of-chip,\.c-tools,/, "the city card opens under the switch");
@@ -76,11 +76,11 @@ test("D6: Sound sits in the replay bar's menu, wired to the renderer's sound(); 
 });
 
 test("Mike 11-21: Full screen is the viewer's own choice (menu item, F key, Exit icon while on); End leaves it; nothing forces it", () => {
-  assert.match(BC, /role="menuitem" data-p="full" aria-label="Full screen" title="Full screen \(F\)"><\/button><\/div>/);
+  assert.match(BC, /role="menuitem" data-p="full" aria-label="Full screen" title="Full screen \(F\)"><\/button>/);
   assert.match(BC, /data-p="unfull" aria-label="Exit full screen" title="Exit full screen \(F\)" hidden>/);
   assert.match(BC, /hudEl\.querySelector\('\[data-p="full"\]'\)\.onclick = function \(\) \{ if \(A\(\) && A\(\)\.full\) \{ A\(\)\.full\(!A\(\)\.full\(\)\);/);
   assert.match(BC, /e\.key === 'f' \|\| e\.key === 'F' \? 'full'/);
-  assert.match(BC, /function stopPlay\(\) \{ try \{ if \(api\(\) && api\(\)\.full && api\(\)\.full\(\)\) api\(\)\.full\(false\);/);
+  assert.match(BC, /function stopPlay\(\) \{ var had = !!hudEl; try \{ if \(api\(\) && api\(\)\.full && api\(\)\.full\(\)\) api\(\)\.full\(false\);/);
   assert.match(BC, /document\.addEventListener\('fullscreenchange', fsSync\)/);
 });
 
@@ -89,7 +89,7 @@ test("Mike 11-21: compact replay bar: only Prev, Play/Pause, Next, More and End 
   const inBar = [...pb.matchAll(/data-p="(\w+)"/g)].map(m => m[1]);
   assert.deepEqual(inBar, ["follow", "prev", "pause", "skip", "unfull", "more", "stop"]);
   const menu = BC.slice(BC.indexOf('<div class="b-menu"'), BC.indexOf("var A = function () { return api(); }"));
-  assert.deepEqual([...menu.matchAll(/data-p="(\w+)"/g)].map(m => m[1]), ["speed", "fit", "snd", "full"]);
+  assert.deepEqual([...menu.matchAll(/data-p="(\w+)"/g)].map(m => m[1]), ["pic", "speed", "fit", "snd", "full", "math", "flagm"], "BATTLE.md (11-24): Save strike picture first; the hit line and the report flag move in on small panes");
   assert.doesNotMatch(pb, />(Prev|Pause|Next|End|Fit|Sound)</, "icon controls, no text buttons");
   assert.match(BC, /st === 'beat' \|\| st === 'pre' \? ph\.beat \+ '\/' \+ ph\.beats/, "short beat 5/7");
   assert.match(BC, /e\.target\.closest\('\.b-menu'\)\)\) return;/, "keys inside the menu do not pause");
