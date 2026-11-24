@@ -63,6 +63,44 @@ export function powerupLib() {
   return { KINDS: KINDS, MAX: MAX, EVERY: EVERY, GAP: GAP, CAP: CAP, kind: kind, fresh: fresh, left: left, why: why, canArm: canArm, use: use, view: view, hint: hint, toast: toast };
 }
 
+/** The evening turn's pure helpers (LOOP.md c.6 and c.10), shared by the page and the tests: the summary open rule, the result
+ *  words, the Tonight card's line under the clock (19:45 PT lock, 20:00 PT battle; the viewer's own clock when it differs) */
+export function eveningLib() {
+  var PTZ = 'America/Los_Angeles';
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function ptClock(t) { try { var p = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: PTZ }).format(new Date(t)); return p.replace(/^24/, '00'); } catch (e) { return ''; } }
+  function localClock(t) { var d = new Date(t); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function span(ms) { var m = Math.max(0, Math.round(ms / 60000)); return m >= 60 ? Math.floor(m / 60) + 'h ' + (m % 60) + 'm' : m + 'm'; }
+  /** the full-screen "Last night" card opens by itself one time a day: a member with a night that is not seen, not during a
+   *  replay, the results board or a battle, never from a replay link; ?summary=1 opens it again */
+  function summaryOpen(o) {
+    var me = o.me, L = me && me.last, q = String(o.search || '');
+    if (!me || !me.h || !me.war || !L || !L.res) return false;
+    if (o.replay || o.board || o.running || /[?&]replay=1(&|$)/.test(q)) return false;
+    if (/[?&]summary=1(&|$)/.test(q)) return true;
+    return !L.seen;
+  }
+  function resCard(res) { return { WON: 'Your city won', HELD: 'Your shield held', LOST: 'Your city lost', FELL: 'Your city fell' }[res] || 'Quiet night for your city'; }
+  function resBig(res) { return { WON: ['won', 'Your city', 'won'], HELD: ['held', 'Your shield', 'held'], LOST: ['lost', 'Your city', 'lost'], FELL: ['fell', 'Your city', 'fell'] }[res] || ['quiet', 'Quiet', 'night']; }
+  function moveWords(mv) { return mv > 0 ? 'up ' + mv : mv < 0 ? 'down ' + -mv : 'no change'; }
+  /** the line under the Tonight clock: [words, 'hot' in the last hour] */
+  function tnSub(o) {
+    var lk = ptClock(o.lockAt), st = ptClock(o.startAt);
+    if (o.running || o.now >= o.startAt) return ['The replay opens when the battle ends.', ''];
+    if (o.now >= o.lockAt) return ['Locked at ' + lk + ' PT. Your city fires by itself at ' + st + ' PT.', ''];
+    if (o.lockAt - o.now < 3600000) return ['Last hour. Defenses lock in ' + span(o.lockAt - o.now) + ', at ' + lk + ' PT.', 'hot'];
+    var loc = localClock(o.lockAt);
+    return ['Defenses lock at ' + lk + ' PT' + (loc !== lk ? ' (' + loc + ' your time)' : '') + '. Your city fires by itself at ' + st + ' PT.', ''];
+  }
+  /** "6 commits, 1 merged PR": the counted work of the day */
+  function workWords(w) {
+    var p = [], pl = function (n, a, b) { return n + ' ' + (n === 1 ? a : b); };
+    if (w.commits) p.push(pl(w.commits, 'commit', 'commits')); if (w.prs) p.push(pl(w.prs, 'merged PR', 'merged PRs')); if (w.releases) p.push(pl(w.releases, 'release', 'releases')); if (w.ci) p.push('green CI');
+    return p.join(', ');
+  }
+  return { ptClock: ptClock, localClock: localClock, span: span, summaryOpen: summaryOpen, resCard: resCard, resBig: resBig, moveWords: moveWords, tnSub: tnSub, workWords: workWords };
+}
+
 export function battleClient() {
   'use strict';
   var B0 = window.CALDERA_BATTLE; if (!B0) return;
@@ -119,7 +157,7 @@ export function battleClient() {
   // an avatar that fails to load turns into the initial circle
   document.addEventListener('error', function (e) { var im = e.target; if (!im || im.tagName !== 'IMG' || !im.classList || !im.classList.contains('b-av')) return; var i = document.createElement('i'); i.className = 'b-av b-avi'; i.setAttribute('aria-hidden', 'true'); i.textContent = im.getAttribute('data-i') || '?'; if (im.parentNode) im.parentNode.replaceChild(i, im); }, true);
   function dl(rows) { return '<dl class="b-math">' + rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('') + '</dl>'; }
-  /** one shot, step by step: the same numbers the 2am battle used (the row's x) */
+  /** one shot, step by step: the same numbers the nightly battle used (the row's x) */
   function shotHtml(s) {
     var x = s[8], w = wOf(s[2]), r = rules(), who = (s[0].charAt(0) === '@' ? s[0] : 'Raiders') + ' fired at ' + nameOf(s[1]);
     if (!x || !w || !r) return '<p><b>' + esc(who) + '</b> with a ' + esc(wName(s[2])) + '. That night was fought before the dollar rules: ' + (s[6] ? 'the shield held.' : 'the hit counts as ' + usd(shotUsd(s)) + '.') + '</p>';
@@ -164,7 +202,7 @@ export function battleClient() {
     var unlock = ['any city', 'a mid-rise', 'a tower', 'a campus'];
     var ex = howShot || pickShot(), mine = ex && me && me.h && (ex[0] === String(me.h).replace(/^@?/, '@') || ex[1] === String(me.h).replace(/^@?/, '@'));
     var pts = [0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4].map(function (t) { return (10 + t * 55) + ',' + (70 - 60 * (1 - Math.exp(-t / r.fire.tauH))).toFixed(1); }).join(' ');
-    return '<h2 id="b-how-t">How damage works</h2><p class="b-lede">These are the numbers the 2am battle runs on. Every missile does damage: nothing is rounded to zero, no shield stops a hit outright, and nothing is capped.</p>'
+    return '<h2 id="b-how-t">How damage works</h2><p class="b-lede">These are the numbers the nightly battle runs on. Every missile does damage: nothing is rounded to zero, no shield stops a hit outright, and nothing is capped.</p>'
       + '<section id="b-how-shot"><h3>' + (howShot ? 'This shot' : ex ? (mine ? 'Your city last night' : 'From last night') : 'A worked example') + '</h3>' + (ex ? shotHtml(ex) : sampleHtml()) + '</section>'
       + '<section><h3>1. Your day of code is the budget</h3>' + tbl(['Work that day', 'Firepower'], [['Commit', usd(r.usd)], ['Merged pull request', usd(r.usd * r.w.pr) + ' (' + usd(r.usd * r.w.pr_self) + ' if you merged your own)'], ['Release', usd(r.usd * r.w.release)], ['Green CI run', usd(r.usd * r.w.ci_green)]])
       + '<p>AI work multiplies a repo by up to 1.6 and a streak multiplies the day by up to 1.5. There is no cap: twice the work buys twice the missiles. Bot, empty, merge and fork commits earn nothing, and a revert cancels the commit it reverts.</p></section>'
@@ -229,6 +267,7 @@ export function battleClient() {
     if (TABS.indexOf(k) < 0) return; tab = k;
     TABS.forEach(function (t) { var b = q('[data-tab="' + t + '"]'), p = bar ? bar.querySelector('#' + t) : null; if (b) { b.setAttribute('aria-selected', String(t === k)); b.tabIndex = t === k ? 0 : -1; if (t === k && focus) b.focus(); } if (p) p.hidden = t !== k; });
     if (save) try { localStorage.setItem(TKEY, k); } catch (e) {}
+    if (save && k === 'season') scoutDone('season');   // the Scout order "Open the season ranking"
   }
   function moreBtn(k, n) { return n > 8 && !more[k] ? '<button type="button" class="b-more" data-more="' + k + '">Show all ' + n + '</button>' : ''; }
   function shotRow(s, i) {
@@ -249,11 +288,29 @@ export function battleClient() {
       sl.innerHTML = S.length ? '<ul class="b-sl">' + (more.shots ? ord : ord.slice(0, 8)).map(function (i) { return shotRow(S[i], i); }).join('') + '</ul>' + moreBtn('shots', S.length) : ''; }
     setText('seasonsum', 'Season ' + data.season.n + ' · week ' + data.season.week + '. Score = damage you dealt + half of what your shield blocked, per person.');
     var bd = q('[data-b="board"]'), Bd = data.board || [];
+    var sh = q('[data-b="seasonhead"]'); if (sh) sh.innerHTML = seasonHtml();
     if (bd) bd.innerHTML = Bd.length ? '<ol class="b-rk">' + (more.season ? Bd : Bd.slice(0, 8)).map(function (r, i) { var you = r[0] === mh; return '<li' + (you ? ' class="you"' : '') + '><button type="button" class="b-hit0" data-fly="' + esc(r[0]) + '" aria-label="Show ' + esc(r[0]) + ' on the map"></button><span class="b-rn">' + (i + 1) + '</span>' + who(r[0], 'n') + (you ? '<i class="b-yq" aria-hidden="true"></i><small>Your city</small>' : '') + '<b>' + usd(r[1]) + '</b></li>'; }).join('') + '</ol>' + moreBtn('season', Bd.length) : '<p class="b-empty">No scores yet. The first battle sets the ranking.</p>';
     setText('armsum', armed.length + ' of ' + keys.length + ' cit' + (keys.length === 1 ? 'y has' : 'ies have') + ' missiles so far today.');
     var ar = q('[data-b="arsenals"]');
     if (ar) ar.innerHTML = armed.length ? '<ul class="b-al">' + (more.arsenals ? armed : armed.slice(0, 8)).map(function (k) { var m = M[k]; return '<li><button type="button" class="b-hit0" data-fly="' + esc(k) + '" aria-label="Show ' + esc(k) + ' on the map"></button>' + who(k, 'n') + '<span>' + (m.shots || 0) + ' missile' + (m.shots === 1 ? '' : 's') + '</span><b>' + usd(m.usd || 0) + '</b></li>'; }).join('') + '</ul>' + moreBtn('arsenals', armed.length)
       : '<p class="b-empty">' + (keys.length ? 'No city has missiles yet today. Code pushed today loads them.' : 'No cities in the battles yet.') + '</p>';
+  }
+  /** the season card (LOOP.md c.5): eyebrow, podium 2 / 1 / 3, the member's rank, the bar to the next rank, badges */
+  function seasonHtml() {
+    var se = data.season || {}, P = se.podium || [], fin = !!se.final, out = '';
+    if (!se.n) return '';
+    out += '<p class="b-eb" style="color:var(--gd)">' + (fin ? 'Season ' + se.n + ' final' : 'Season ' + se.n + ' / week ' + se.week + ' / ' + (se.left || 0) + ' day' + (se.left === 1 ? '' : 's') + ' left') + '</p>';
+    if (P.length >= 3) out += '<div class="b-pod">' + [1, 0, 2].map(function (i) { return '<div' + (i === 0 ? ' class="p1"' : '') + '><b>' + (i + 1) + '</b><span>' + esc(P[i][0]) + '</span><i>' + esc(usd(P[i][1])) + '</i></div>'; }).join('') + '</div>'
+      + '<p class="b-sub">' + esc(fin ? 'The three winners keep a Season ' + se.n + ' badge. Season ' + (se.n + 1) + ' starts tonight at 20:00 PT. Every rank starts again at Recruit.' : 'The top three at the end of the season keep a season badge.') + '</p>';
+    var R = me && me.war ? me.rank : null;
+    if (R) {
+      out += '<div class="b-top" style="margin-top:14px;align-items:center"><span class="b-rank">' + CHEV + esc(R.name) + '<i>Level ' + R.level + ' of 8</i></span>' + (R.place ? '<span class="b-cred">You: #' + R.place + '</span>' : '') + '</div>'
+        + (R.next ? '<div class="b-lvl" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + R.pct + '" aria-label="Progress to ' + esc(R.next) + '"><i style="width:' + R.pct + '%"></i></div><p class="b-sub" style="margin:0">' + esc(usd(R.toNext) + ' more season score for ' + R.next + '.') + '</p>'
+          : '<div class="b-lvl" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-label="Top rank"><i style="width:100%"></i></div><p class="b-sub" style="margin:0">Top rank of the season.</p>');
+      var BG = me.badges || [];
+      if (BG.length) out += '<div class="b-bdgs" aria-label="Your badges">' + BG.map(function (b) { return '<span class="b-bdg' + (b.gold ? ' gold' : '') + '">' + DOT + esc(b.name) + '</span>'; }).join('') + '</div><p class="b-fine">A badge never changes a score.</p>';
+    }
+    return out;
   }
   // ---------------------------------------------------------------- the Last night card (PAGE.md 5b)
   function yourCity() {
@@ -276,6 +333,14 @@ export function battleClient() {
     var lay = '<button type="button" class="b-gb" data-pop="layers" aria-haspopup="dialog" aria-expanded="' + (popKind === 'layers') + '">' + ic('layers') + 'Layers</button>';
     if (!S.length) { el.innerHTML = eb + '<h2 class="b-big b-none">No battle last night</h2><p class="b-sub">No city had missiles. Watch a demo to see how a battle looks.</p><div class="b-lbtn"><button type="button" class="b-rp" data-bdemo aria-pressed="false">' + ic('play') + 'Watch a demo battle</button>' + lay + '</div>'; popRefresh(); return; }
     var dmg = data.usd != null ? data.usd : S.reduce(function (t, x) { return t + shotUsd(x); }, 0);
+    var L = me && me.war && me.last && me.last.res ? me.last : null;
+    if (L) {   // the member's own night (LOOP.md c.6): the result, one line, Replay first, then the summary and the share sheet
+      var sm = L.sum || { cities: data.cities || 0, hits: landed, usd: dmg };
+      el.innerHTML = '<p class="b-eb" style="color:var(--gd)">Last night / ' + esc(dLabel(L.key)) + '</p><h2 class="b-big">' + esc(BEV.resCard(L.res)) + '</h2><p class="b-sub">' + esc(sm.cities + ' cities fought, ' + sm.hits + ' missiles hit, ' + usd(sm.usd) + ' damage.') + '</p>' + yourCity()
+        + '<div class="b-lbtn"><button type="button" class="b-rp" data-bl="replay" aria-pressed="' + !!(layers.replay && playing) + '">' + ic('play') + 'Replay</button><button type="button" class="b-gb" data-sum aria-haspopup="dialog">Your summary</button>'
+        + (L.res === 'QUIET' ? '' : '<button type="button" class="b-gb" data-shr aria-haspopup="dialog">Share my city\'s night</button>') + lay + '<a class="b-allshots" href="#shots" data-ball>All ' + S.length + ' shot' + (S.length === 1 ? '' : 's') + '</a></div>';
+      popRefresh(); return;
+    }
     el.innerHTML = eb + '<div class="b-nums"><div><b>' + (data.cities || 0) + '</b><span>' + (data.cities === 1 ? 'city fought' : 'cities fought') + '</span></div><div><b>' + landed + '</b><span>missile' + (landed === 1 ? '' : 's') + ' hit</span></div><div class="g"><b>' + esc(usd(dmg)) + '</b><span>damage</span></div></div>' + yourCity()
       + '<div class="b-lbtn"><button type="button" class="b-rp" data-bl="replay" aria-pressed="' + !!(layers.replay && playing) + '">' + ic('play') + 'Replay</button><button type="button" class="b-gb b-share">' + ic('copy') + '<span>Copy link</span></button>' + lay
       + '<a class="b-allshots" href="#shots" data-ball>All ' + S.length + ' shot' + (S.length === 1 ? '' : 's') + '</a></div>';
@@ -290,15 +355,18 @@ export function battleClient() {
   // ---------------------------------------------------------------- the view: shown and hidden by the switcher (growthclient.ts)
   var chip = null, chipT = 0, pollT = 0;
   /** the one clock (PAGE.md P1): the Armory lock time, which is the next battle; the server's clock when the member panel told us its skew */
-  function lockAt() { return me && me.armory ? me.armory.locksAt : data.next; }
+  function lockAt() { return me && me.tonight ? me.tonight.lockAt : me && me.armory ? me.armory.locksAt : data.lock || data.next; }
+  /** the battle itself (20:00 PT): the title counts down to it; the lock (19:45 PT) is in the line under it */
+  function startAt() { return me && me.tonight ? me.tonight.startAt : data.next; }
   function leftMs() { return (lockAt() || 0) - (Date.now() + armSkew); }
   function chipTick() {
     mapReplay();
     if (!on || !api() || !api().phase) return; var ph = api().phase();
     if (!chip) { chip = document.createElement('div'); chip.className = 'b-chip'; chip.setAttribute('role', 'timer'); chip.setAttribute('aria-live', 'off'); chip.innerHTML = '<i></i><span class="b-ct"></span>'; if (stage) stage.appendChild(chip); }
     var ct = chip.querySelector('.b-ct'), t;
+    if (ph.replay && ph.board && !ph.demo) scoutDone('replay');   // the Scout order: the replay reached the results board
     if (ph.replay) { chip.classList.toggle('rebuild', ph.stage === 'rebuild'); t = '<b>' + (ph.demo ? 'Demo replay' : 'Replay') + '</b> ' + esc((ph.stage === 'beat' || ph.stage === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats + (ph.label ? ' · ' + ph.label : '') : ph.label || '') + (ph.paused ? ' · paused' : '')); if (ct.innerHTML !== t) ct.innerHTML = t; hud(ph); return; }
-    var left = leftMs(), reb = ph.seg === 'rebuild' && left > 0, n = ph.total || 0;
+    var left = (startAt() || 0) - nowS(), reb = ph.seg === 'rebuild' && left > 0, n = ph.total || 0;
     if (reb) t = 'Cranes rebuild until <b>12:00</b>';
     else if (left <= 0) t = '<b>Battle running</b>';
     else { var sp = esc(armSpan(left)); t = '<span class="b-cw">Battle starts in <b>' + sp + '</b> · <b>' + n + '</b> missile' + (n === 1 ? '' : 's') + ' loaded</span><span class="b-cn">Starts in <b>' + sp + '</b></span>'; }
@@ -309,8 +377,8 @@ export function battleClient() {
   var rpEl = null;
   function rpState() {
     var ph = null; try { ph = api() && api().phase ? api().phase() : null; } catch (e) {}
-    var left = leftMs(), reb = !!(ph && ph.seg === 'rebuild' && left > 0), cl = document.documentElement.classList;
-    return BSPD.mapRp({ on: on && !!api(), replay: !!(ph && ph.replay) || cl.contains('w-replay'), board: cl.contains('w-board'), running: !!lockAt() && left <= 0 && !reb, shots: (data.shots || []).length });
+    var left = (startAt() || 0) - nowS(), reb = !!(ph && ph.seg === 'rebuild' && left > 0), cl = document.documentElement.classList;
+    return BSPD.mapRp({ on: on && !!api(), replay: !!(ph && ph.replay) || cl.contains('w-replay'), board: cl.contains('w-board'), running: !!startAt() && left <= 0 && !reb, shots: (data.shots || []).length });
   }
   function mapReplay() {
     var s = rpState(); if (!s) { if (rpEl) rpEl.hidden = true; return null; } if (!stage) return null;
@@ -483,7 +551,7 @@ export function battleClient() {
     on = true; if (bar) bar.hidden = false; document.documentElement.classList.add('w-battle');
     if (api()) { api().layers(layers); api().view(true, data); }
     stats(); load(); mine(); chipTick(); clearInterval(chipT); chipT = setInterval(chipTick, 1000); clearInterval(pollT); pollT = setInterval(load, 600000);
-    if (layers.replay) play(replayMode, true);
+    if (layers.replay) play(replayMode, true); else maybeSummary();
   }
   function hide() {
     on = false; stopPlay(); closeHow(); popClose(false); if (bar) bar.hidden = true; document.documentElement.classList.remove('w-battle'); if (api()) api().view(false); clearInterval(chipT); clearInterval(pollT); if (chip) { chip.remove(); chip = null; }
@@ -568,6 +636,14 @@ export function battleClient() {
   // ---------------------------------------------------------------- one click handler for the deck's buttons (the cards re-render, the handler stays)
   if (bar) bar.addEventListener('click', function (e) {
     var t = e.target && e.target.closest ? e.target : null, b; if (!t) return;
+    // the evening turn: every change saves at once
+    if ((b = t.closest('[data-place]'))) { if (!b.disabled && b.getAttribute('aria-checked') !== 'true') tnSave('/v1/world/battle/tonight', { place: +b.getAttribute('data-place') }, '[data-place="' + b.getAttribute('data-place') + '"]'); return; }
+    if ((b = t.closest('[data-ord]'))) { if (b.getAttribute('aria-checked') !== 'true') tnSave('/v1/world/battle/tonight', { order: b.getAttribute('data-ord') }, '[data-ord="' + b.getAttribute('data-ord') + '"]'); return; }
+    if ((b = t.closest('[data-aim]'))) { var ah = b.getAttribute('data-aim'), ad = b.getAttribute('data-d'); tnSave('/v1/world/battle/aim', ad === '1' ? { target: ah } : { target: ah, off: true }, '[data-aim="' + ah + '"][data-d="' + ad + '"]'); return; }
+    if ((b = t.closest('[data-strike]'))) { tnSave('/v1/world/battle/tonight', { strike: b.getAttribute('aria-pressed') !== 'true' }, '[data-strike]'); return; }
+    if ((b = t.closest('[data-armo]'))) { armOpen = !armOpen; render(); var fb = panel.querySelector(armOpen ? '.b-bc:not([disabled])' : '[data-armo]'); if (fb) try { fb.focus({ preventScroll: true }); } catch (e5) {} return; }
+    if ((b = t.closest('[data-sum]'))) { summaryOpen(b, false); return; }
+    if ((b = t.closest('[data-shr]'))) { shareOpen(b); return; }
     if ((b = t.closest('[data-bl]'))) { setLayer(b.getAttribute('data-bl'), b.getAttribute('aria-pressed') !== 'true'); return; }
     if ((b = t.closest('[data-bdemo]'))) { play('demo'); return; }
     if ((b = t.closest('[data-pop]'))) { var pk = b.getAttribute('data-pop'); if (popKind === pk) popClose(true); else popOpen(pk, b); return; }
@@ -580,6 +656,7 @@ export function battleClient() {
     if ((b = t.closest('[data-shot]'))) { var i = +b.getAttribute('data-shot'); openShot = openShot === i ? -1 : i; lists(); var nb = q('[data-shot="' + i + '"]'); if (nb) try { nb.focus({ preventScroll: true }); } catch (e4) {} return; }
     if ((b = t.closest('[data-fly]'))) { if (api()) api().fly(b.getAttribute('data-fly')); return; }
   });
+  if (bar) bar.addEventListener('keydown', radioKey);
   // the tab row: arrow keys, Home and End move between the tabs (role="tablist")
   var trow = q('[role="tablist"]'); if (trow) trow.addEventListener('keydown', function (e) {
     var i = TABS.indexOf(tab), k = e.key === 'ArrowRight' ? (i + 1) % 3 : e.key === 'ArrowLeft' ? (i + 2) % 3 : e.key === 'Home' ? 0 : e.key === 'End' ? 2 : -1;
@@ -806,7 +883,7 @@ export function battleClient() {
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; }); })
       .then(function (x) {
         armBusy = false;
-        if (x.status === 200) { cart = []; me = x.j.me && x.j.me.h ? x.j.me : me; armOk = 'Loaded: ' + n + ' bomb' + (n === 1 ? '' : 's') + '. They fly at ' + armClock(me.armory.locksAt) + '. Watch them hit in the morning replay.'; armRender(); return; }
+        if (x.status === 200) { cart = []; me = x.j.me && x.j.me.h ? x.j.me : me; armOk = 'Loaded: ' + n + ' bomb' + (n === 1 ? '' : 's') + '. They fly at ' + armClock(me.armory.startAt || me.armory.locksAt) + '. Watch them hit in the replay.'; armRender(); return; }
         if (x.status === 422 && x.j.rows) { x.j.rows.forEach(function (r) { if (cart[r.i]) cart[r.i].err = r.error || 'Write a word for this bomb.'; }); armErr = x.j.error; armRender('.b-ar.bad input'); return; }
         if (x.status === 402 && typeof x.j.balance === 'number') me.armory.balance = x.j.balance;
         armErr = x.j && x.j.error ? x.j.error : 'Could not buy right now. Nothing was charged. Try again.'; armRender();
@@ -815,12 +892,22 @@ export function battleClient() {
   /** the Tonight title's countdown, every 15 s (role="timer", aria-live off). At the lock the card turns to "Battle running" and the
    *  member panel reloads a minute later (the next Armory window). */
   function armTick() {
-    if (!panel || !meLoaded) return; var left = leftMs(), c = panel.querySelector('[data-arm="clock"]');
+    if (!panel || !meLoaded) return;
+    if (me && me.tonight) {   // the evening turn: a state change re-renders; else the clock and the line under it
+      var X = tnState(), st = X.run ? 'run' : X.lk ? 'lock' : 'open';
+      if (panel.getAttribute('data-lk') !== st) { if (st === 'run' && !armTick.poll) armTick.poll = setInterval(function () { mine(); }, 120000); render(); return; }
+      if (!X.run && armTick.poll) { clearInterval(armTick.poll); armTick.poll = 0; }
+      var cl = panel.querySelector('[data-arm="clock"]'), sb = panel.querySelector('[data-arm="sub"]'), sub = BEV.tnSub({ now: X.t, lockAt: X.T.lockAt, startAt: X.T.startAt, running: X.run });
+      if (cl) { cl.textContent = armSpan(X.T.startAt - X.t); cl.classList.toggle('last', X.T.startAt - X.t < 3600000); }
+      if (sb && sb.textContent !== sub[0]) { sb.textContent = sub[0]; sb.classList.toggle('hot', !!sub[1]); }
+      return;
+    }
+    var left = leftMs(), c = panel.querySelector('[data-arm="clock"]');
     if (left <= 0) { if (c || panel.querySelector('.b-arm[data-st="open"]')) { clearInterval(armT); armT = 0; render(); setTimeout(me ? mine : load, 60000); } return; }
     if (!c) return; c.textContent = armSpan(left); var last = left < 3600000;
     if (c.classList.contains('last') !== last) { c.classList.toggle('last', last); var s = panel.querySelector('[data-arm="sub"]'); if (s && me) s.textContent = openSub(left); }
   }
-  function armClockGo() { clearInterval(armT); armT = setInterval(armTick, 15000); }
+  function armClockGo() { clearInterval(armT); armT = setInterval(armTick, me && me.tonight ? 30000 : 15000); }
   function armStart() {
     if (!me || !me.armory) return;
     armWire();
@@ -834,13 +921,169 @@ export function battleClient() {
   var panel = q('[data-b="me"]'), meLoaded = false;
   function mine() {
     return fetch('/v1/world/battle/me', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (m) { me = m && m.h ? m : null; meLoaded = true; if (me && me.armory) armSkew = me.armory.now - Date.now(); render(); lastRender(); lists(); return me; })
+      .then(function (m) { me = m && m.h ? m : null; meLoaded = true; if (me && me.armory) armSkew = me.armory.now - Date.now(); render(); lastRender(); lists(); ordersRender(); maybeSummary(); return me; })
       .catch(function () { meLoaded = true; render(); });
   }
   function tnHead(title, sub, right) { return '<div class="b-ch1"><div><p class="b-eb">Tonight</p><h2 class="b-big" id="b-tn-t">' + title + '</h2>' + (sub ? '<p class="b-sub" data-arm="sub">' + sub + '</p>' : '') + '</div>' + (right || '') + '</div>'; }
   function gearBtn() { return '<button type="button" class="b-gear" data-pop="set" aria-haspopup="dialog" aria-expanded="' + (popKind === 'set') + '" aria-label="Battle settings" title="Battle settings">' + ic('gear') + '</button>'; }
   function clockTitle(left) { return left > 0 ? 'Battle starts in <b data-arm="clock" role="timer" aria-live="off"' + (left < 3600000 ? ' class="last"' : '') + '>' + esc(armSpan(left)) + '</b>' : 'Battle running'; }
   function openSub(left) { return left < 3600000 ? 'Last hour. Your bombs lock at ' + armClock(lockAt()) + '.' : 'Your bombs lock then. Your city fires by itself.'; }
+  function nowS() { return Date.now() + armSkew; }
+  // ---------------------------------------------------------------- the evening turn (LOOP.md part c, mockup c-evening-turn.html)
+  var CHEV = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6 L8 2 L14 6 L14 9 L8 5 L2 9Z M2 11 L8 7 L14 11 L14 14 L8 10 L2 14Z" fill="currentColor"/></svg>';
+  var TICK = '<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2 6.5 L5 9 L10 3" fill="none" stroke="#0C0E13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var DOT = '<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="6" cy="6" r="1.4" fill="currentColor"/></svg>';
+  var PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>';
+  var ORDN = { atk: 'All-in attack', bal: 'Balanced', tur: 'Turtle' }, AVC = ['#6D4AE8', '#138A6A', '#B5650A', '#2F6FD0', '#B2394B', '#5A6478'];
+  var tnErr = '', tnBusy = false, armOpen = false, tnFocus = '';
+  /** the Tonight state: run (the battle is on), lk (defenses locked) */
+  function tnState() { var T = me.tonight, t = nowS(), run = !!T.running || t >= T.startAt; return { T: T, t: t, run: run, lk: run || !!T.locked || t >= T.lockAt }; }
+  function chipsHtml() {
+    var R = me.rank, A2 = me.armory;
+    return '<div class="b-chips">' + (R ? '<span class="b-rank" title="Level ' + R.level + '">' + CHEV + esc(R.name) + '<i>L' + R.level + '</i></span>' : '')
+      + (me.points != null ? '<a class="b-cred b-pts" href="/points" aria-label="' + me.points + ' Caldera Points"><b>' + me.points + '</b> points</a>' : '')
+      + (A2 ? '<span class="b-cred" aria-label="' + A2.balance + ' Armory credits"><b data-arm="bal">' + A2.balance + '</b> credits</span>' : '') + gearBtn() + '</div>';
+  }
+  function avOf(h, i) { var a = avHtml(h); return a || '<span class="av" style="background:' + AVC[i % AVC.length] + '" aria-hidden="true">' + esc(String(h).replace(/^@/, '').charAt(0).toUpperCase()) + '</span>'; }
+  function whole(T) { return T.opts && T.opts[T.order] ? T.opts[T.order].shield : T.shield; }
+  function tonightHtml() {
+    var X = tnState(), T = X.T, lk = X.lk, W = T.work || {}, lkPT = BEV.ptClock(T.lockAt), stPT = BEV.ptClock(T.startAt), sub = BEV.tnSub({ now: X.t, lockAt: T.lockAt, startAt: T.startAt, running: X.run });
+    var aimedN = (T.rivals || []).reduce(function (a, r) { return a + (r.n || 0); }, 0), canPlace = !!T.canPlace, pl = canPlace ? T.place : -1, wh = whole(T), TW = T.towers || [];
+    var head = '<div class="b-top"><div><p class="b-eb">Tonight</p><h2 class="b-big" id="b-tn-t">' + clockTitle(T.startAt - X.t) + '</h2><p class="b-sub' + (sub[1] ? ' hot' : '') + '" data-arm="sub">' + esc(sub[0]) + '</p></div>' + chipsHtml() + '</div>';
+    var ww = BEV.workWords(W) || workLine(me.arsenal);
+    var work = '<div class="b-work"><p class="w0">Your work today</p><p class="w1">' + (W.missiles ? esc(ww) + ' = <b>' + W.missiles + ' missile' + (W.missiles === 1 ? '' : 's') + '</b>' : 'No counted work yet today = <b>0 missiles</b>') + '</p><p class="w2">'
+      + esc(lk ? 'Work you push now counts for tomorrow\'s battle.' : W.missiles ? 'Push more work before ' + lkPT + ' PT for more missiles.' : 'Work you push before ' + lkPT + ' PT becomes tonight\'s missiles.') + '</p></div>';
+    var shNow = pl < 0 ? wh + '%' : T.through[pl] + '% / ' + wh + '%';
+    var tiles = '<div class="b-tiles"><div class="b-tile"><span>Firepower</span><b>' + esc(usd(W.usd || 0)) + '</b><i>from today\'s work</i></div>'
+      + '<div class="b-tile"><span>Missiles</span><b>' + (W.fired || 0) + ((W.fired || 0) < (W.missiles || 0) ? ' of ' + W.missiles : '') + '</b><i>' + (T.order === 'tur' && W.missiles ? 'turtle: 1 in 3 stays home' : 'fire at ' + stPT + ' PT') + '</i></div>'
+      + '<div class="b-tile"><span>Reach</span><b>' + T.reachTonight + ' rivals</b><i>' + (aimedN + (T.strike ? 1 : 0)) + ' aimed, rest auto</i></div>'
+      + '<div class="b-tile"><span>Shield</span><b class="cy">' + shNow + '</b><i>' + (T.dome ? 'beginner dome' : T.shield ? T.streak + '-day streak' : T.order === 'atk' ? 'all-in: hits do 25% more' : T.streak + ' of 7 days') + '</i></div></div>';
+    var shWords = pl < 0 ? 'whole city ' + wh + '%' : (TW[pl] ? TW[pl].name : 'tower') + ' ' + T.through[pl] + '%, other towers ' + wh + '%';
+    if (lk) return head + work + tiles + '<div class="b-lock" role="status"><b>' + (X.run ? 'Battle running' : 'Locked') + '</b><p>' + esc('Shield: ' + shWords + '. Targets: ' + (aimedN ? aimedN + ' aimed' : 'auto') + (T.strike && T.rival ? ', strike back at ' + T.rival.h : '') + '. Orders: ' + ORDN[T.order] + '.') + '</p><p>You can set the next night after this battle.</p></div>'
+      + (armOpen || (me.armory && me.armory.bought.length) ? armoryHtml(true) : '');
+    // step 1: the shield
+    var mx = TW.reduce(function (a, t) { return Math.max(a, t.h || 0); }, 1);
+    var hs = TW.map(function (t, i) { return '<div style="height:' + Math.max(24, Math.round(86 * (t.h || 0) / mx)) + '%"' + (canPlace && pl === i ? ' class="hi"' : canPlace && pl >= 0 ? ' class="lo"' : '') + '><em>' + T.through[i] + '%</em><span>' + esc(t.name) + '</span></div>'; }).join('');
+    var pill = function (v, name) { var on = canPlace ? pl === v : v === -1; return '<button type="button" class="b-pill" role="radio" aria-checked="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-place="' + v + '"' + (canPlace ? '' : ' disabled') + '>' + esc(name) + '</button>'; };
+    var s1 = '<div class="b-step"><h3><i>1</i>Shield</h3><p>' + esc(T.dome ? 'Your beginner dome covers every tower. You can place a shield when the dome ends.' : !T.shield ? 'No shield yet. A 7-day streak raises one. You are at ' + T.streak + ' of 7 days.' : 'Missiles aim at your three tallest towers. Cover all of them, or guard one harder.') + '</p>'
+      + '<div class="b-tw" aria-hidden="true">' + hs + '</div><div class="b-twp" role="radiogroup" aria-label="Shield placement">' + pill(-1, 'Whole city') + TW.map(function (t, i) { return pill(i, t.name); }).join('') + '</div>'
+      + '<p class="b-fact">' + esc(!canPlace ? 'Every tower ' + wh + '%.' : pl < 0 ? 'Whole city: every tower ' + wh + '%.' : (TW[pl] ? TW[pl].name : 'tower') + ' ' + T.through[pl] + '%, the other towers ' + wh + '%.') + '</p></div>';
+    // step 2: targets (the rival first)
+    var cap = T.cap || 3, riv = T.rival;
+    var rows = (T.rivals || []).map(function (r, i) {
+      var isR = riv && r.h === riv.h, stp = '<span class="b-stp"><button type="button" data-aim="' + esc(r.h) + '" data-d="-1" aria-label="Remove a shot from ' + esc(r.h) + '"' + (r.n ? '' : ' disabled') + '>-</button><output aria-label="Shots at ' + esc(r.h) + '">' + (r.n || 0) + '</output><button type="button" data-aim="' + esc(r.h) + '" data-d="1" aria-label="Aim a shot at ' + esc(r.h) + '"' + (aimedN >= cap ? ' disabled' : '') + '>+</button></span>';
+      return '<div class="b-rv' + (isR ? ' rival' : '') + '">' + avOf(r.h, i) + '<span class="nm">' + who(r.h) + '<small>' + esc(r.dome ? 'Beginner dome ' + r.sh + '%' : r.sh ? 'Shield ' + r.sh + '%' : 'No shield') + '</small></span>' + stp
+        + (isR ? '<span class="rv2">' + (riv.canStrike ? '<span>Your rival. Hit you for ' + esc(usd(riv.usd)) + ' last night.</span><button type="button" class="b-gb" data-strike aria-pressed="' + !!T.strike + '"' + (T.strike ? ' style="border-color:var(--atk);color:var(--atk)"' : '') + '>' + (T.strike ? 'Strike back set. Remove' : 'Strike back') + '</button>'
+          : '<span>' + esc('You hit ' + riv.h + ' last night. No city is hit by the same rival two nights in a row.') + '</span>') + '</span>' : '') + '</div>';
+    }).join('');
+    var s2 = '<div class="b-step"><h3><i>2</i>Targets</h3><p>' + esc(W.missiles ? 'Aim up to ' + cap + ' shots. The rest pick a fair rival by themselves. You reach ' + T.reachTonight + ' rivals tonight.' : 'You have no missiles yet. Your aims stay ready for the work you push.') + '</p>' + rows
+      + '<p class="b-fact">' + esc(aimedN + ' of ' + cap + ' aimed' + (T.strike && riv ? ' + 1 strike back at ' + riv.h : '') + '.' + (riv && riv.canStrike && !T.strike ? ' Strike back = 1 extra aimed shot at your rival.' : '')) + '</p></div>';
+    // step 3: tonight's orders
+    var O = T.opts || {}, n = W.missiles || 0, sh0 = T.shield || T.dome;
+    var eff = function (k) { var o = O[k] || { reach: T.reach, shield: wh, fired: n }; return '<em>' + esc(k === 'atk' ? (sh0 ? 'Tonight: reach ' + o.reach + ', shield ' + o.shield + '%' : 'Tonight: reach ' + o.reach + ', no shield, hits do 25% more') : k === 'tur' ? 'Tonight: shield ' + o.shield + '%, ' + o.fired + ' of ' + n + ' missiles fire' : 'Tonight: reach ' + o.reach + ', shield ' + o.shield + '%, all ' + n + ' missiles fire') + '</em>'; };
+    var opt = function (k, lines) { var on = T.order === k; return '<button type="button" class="b-opt" role="radio" aria-checked="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-ord="' + k + '"><b>' + ORDN[k] + '</b>' + lines + eff(k) + '</button>'; };
+    var s3 = '<div class="b-step"><h3><i>3</i>Tonight\'s orders</h3><p>Pick one. Rivals see your orders only in the replay.</p><div role="radiogroup" aria-label="Tonight\'s orders">'
+      + opt('atk', '<span class="plus">Reach 2 more rivals</span><span class="minus">25 points more of every hit gets through</span>') + opt('bal', '<span>Your reach and your shield as you earned them</span>')
+      + opt('tur', '<span class="plus">20 points less of every hit gets through</span><span class="minus">1 missile in 3 stays home and is not kept</span>') + '</div></div>';
+    return head + (T.dome ? '<p class="b-sub" style="margin-top:10px">First battles: your beginner dome holds 99% of every hit for your first 30 days.</p>' : '') + work + tiles + '<div class="b-steps">' + s1 + s2 + s3 + '</div>'
+      + '<div class="b-foot"><span role="status">' + (T.savedAt && !tnErr ? '<span class="ok">Saved ' + hhmm(T.savedAt) + '.</span> ' : '') + 'You can change all of this until ' + lkPT + ' PT.</span><button type="button" class="b-gb" data-armo aria-expanded="' + armOpen + '">Armory: add a bomb</button></div>'
+      + (tnErr ? '<p class="b-arm-err" role="alert">' + esc(tnErr) + '</p>' : '') + (armOpen ? armoryHtml(false) : '');
+  }
+  /** each change saves at once (LOOP.md c.10); the card re-renders from the answer and the focus goes back to the same control */
+  function tnSave(path, body, focus) {
+    if (tnBusy) return; tnBusy = true; tnFocus = focus || '';
+    post(path, body).then(function (m) { tnBusy = false; tnErr = ''; if (m && m.h) me = m; render(); ordersRender(); lastRender(); })
+      .catch(function (e) { tnBusy = false; if (String(e && e.message) === 'locked' && me.tonight) me.tonight.locked = true; tnErr = 'Not saved. Try again.'; render(); });
+  }
+  function tnRefocus() { if (!tnFocus || !panel) return; var f = panel.querySelector(tnFocus); tnFocus = ''; if (f && !f.disabled) try { f.focus({ preventScroll: true }); } catch (e) {} }
+  /** a radiogroup: the arrow keys move the choice (LOOP.md c.9) */
+  function radioKey(e) {
+    var g = e.target && e.target.closest && e.target.closest('[role="radiogroup"]'); if (!g || !panel || !panel.contains(g)) return;
+    var d = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0; if (!d) return;
+    var L = Array.prototype.slice.call(g.querySelectorAll('[role="radio"]:not([disabled])')), i = L.indexOf(e.target); if (i < 0) return;
+    e.preventDefault(); L[(i + d + L.length) % L.length].click();
+  }
+  // ---------------------------------------------------------------- Today's orders (LOOP.md c.3)
+  var scoutSent = false;
+  function ordersRender() {
+    var el = q('[data-b="orders"]'); if (!el) return; var O = me && me.war && me.orders ? me.orders : [];
+    if (!O.length) { el.hidden = true; el.innerHTML = ''; return; }
+    var n = O.filter(function (o) { return o.done; }).length, KN = { build: 'Build', fight: 'Fight', scout: 'Scout' };
+    el.hidden = false;
+    el.innerHTML = '<div class="b-top"><p class="b-eb" id="b-or-h">Today\'s orders</p><span class="b-cred">' + n + ' of 3 done</span></div>'
+      + O.map(function (o) { var pill = !o.done && o.kind === 'scout' && o.text === 'Watch last night\'s replay';
+        return '<div class="b-orow' + (o.done ? ' done' : '') + '"><span class="ck" aria-hidden="true">' + (o.done ? TICK : '') + '</span><span class="t"><small>' + KN[o.kind] + '</small><b>' + esc(o.text) + '</b></span>'
+          + (pill ? '<button type="button" class="b-rp" data-bl="replay" aria-pressed="false">' + PLAY + 'Replay</button>' : '<span></span>') + '<span class="p">' + (o.done ? o.points + ' earned' : '+' + o.points) + '</span></div>'; }).join('')
+      + '<p class="b-fine">New orders at 20:00 PT. Orders pay Caldera Points. Points buy promotion for your project and have no cash value.</p>';
+  }
+  /** Scout is done when the replay reaches the results board, or the ranking tab opens */
+  function scoutDone(what) {
+    if (scoutSent || !me || !me.orders) return; var o = me.orders.filter(function (x) { return x.kind === 'scout'; })[0]; if (!o || o.done) return;
+    if ((what === 'replay') !== (o.text === 'Watch last night\'s replay')) return;
+    scoutSent = true; post('/v1/world/battle/order-done', { kind: 'scout' }).then(function (r) { if (r && r.me && r.me.h) me = r.me; else o.done = 1; ordersRender(); render(); }).catch(function () { scoutSent = false; });
+  }
+  // ---------------------------------------------------------------- the full-screen "Last night" card and the share sheet (LOOP.md c.6, c.7)
+  var dlgEl = null, dlgFrom = null;
+  function dlgClose() {
+    if (!dlgEl) return; dlgEl.remove(); dlgEl = null; document.documentElement.classList.remove('b-sum-on');
+    var f = dlgFrom; dlgFrom = null; try { (f && document.contains(f) ? f : document.getElementById('b-tn-t') || document.body).focus({ preventScroll: !f }); } catch (e) {}
+  }
+  function dlgOpen(html, from, label) {
+    dlgClose(); dlgFrom = from || null;
+    dlgEl = document.createElement('div'); dlgEl.className = 'b-sum'; dlgEl.setAttribute('role', 'dialog'); dlgEl.setAttribute('aria-modal', 'true'); dlgEl.setAttribute('aria-labelledby', label);
+    dlgEl.innerHTML = html; document.body.appendChild(dlgEl); document.documentElement.classList.add('b-sum-on');
+    dlgEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); dlgClose(); return; }
+      if (e.key !== 'Tab') return; var L = Array.prototype.slice.call(dlgEl.querySelectorAll('a[href],button:not([disabled])')); if (!L.length) return;
+      var a = L[0], z = L[L.length - 1]; if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); } else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+    });
+    dlgEl.addEventListener('click', dlgClick);
+    var f = dlgEl.querySelector('.b-x'); if (f) try { f.focus({ preventScroll: true }); } catch (e) {}
+  }
+  function goTonight() { dlgClose(); if (panel) { try { panel.scrollIntoView({ block: 'start', behavior: 'auto' }); } catch (e) {} var h = panel.querySelector('#b-tn-t'); if (h) { h.tabIndex = -1; try { h.focus({ preventScroll: true }); } catch (e) {} } } }
+  function dlgClick(e) {
+    var t = e.target && e.target.closest ? e.target : null, b; if (!t) return;
+    if ((b = t.closest('.b-x'))) { dlgClose(); return; }
+    if ((b = t.closest('[data-sgo]'))) { e.preventDefault(); goTonight(); return; }
+    if ((b = t.closest('[data-srp]'))) { e.preventDefault(); dlgFrom = null; dlgClose(); if (!on) show(); setLayer('replay', true); return; }
+    if ((b = t.closest('[data-sstrike]'))) { goTonight(); if (me && me.tonight && !me.tonight.strike) tnSave('/v1/world/battle/tonight', { strike: true }, '[data-strike]'); return; }
+    if ((b = t.closest('[data-shr]'))) { e.preventDefault(); shareOpen(null); return; }
+    if ((b = t.closest('[data-scopy]'))) { var u = shareUrl(), lb = b; try { navigator.clipboard.writeText(u).then(function () { lb.textContent = 'Copied'; setTimeout(function () { lb.textContent = 'Copy link'; }, 2000); }, function () { prompt('Link to your night', u); }); } catch (e2) { prompt('Link to your night', u); } return; }
+    if ((b = t.closest('[data-snat]'))) { try { navigator.share({ title: 'Caldera', url: shareUrl() }).catch(function () {}); } catch (e3) {} return; }
+  }
+  function shareUrl() { return location.origin + '/world?view=battle&replay=1&city=' + encodeURIComponent(String(me.h).replace(/^@/, '')); }
+  function summaryHtml() {
+    var L = me.last, r = L.res, T = BEV.resBig(r), q2 = r === 'QUIET', riv = me.tonight && me.tonight.rival, tot = (L.points || []).reduce(function (a, p) { return a + p.n; }, 0);
+    var eb = '<p class="b-eb" style="color:var(--gd)">Last night / ' + esc(dLabel(L.key)) + '</p>';
+    return '<div class="b-sum-in"><div class="b-sum-h">' + eb + '<button class="b-x" type="button" aria-label="Close and go back to my city">Back to my city</button></div>'
+      + '<h2 class="b-res ' + T[0] + '" id="b-sum-h"><small>' + T[1] + '</small>' + T[2] + '</h2>'
+      + (q2 ? '<p class="b-sub" style="font-size:15px">No missiles in or out. Your city fired nothing because no work counted that day.</p>'
+        : '<div class="b-f3"><div class="b-tile"><span>Dealt</span><b>' + esc(usd(L.dealt)) + '</b></div><div class="b-tile"><span>Took</span><b>' + esc(usd(L.took)) + '</b></div><div class="b-tile"><span>Shield held</span><b style="color:var(--cy)">' + esc(usd(L.held)) + '</b></div></div>'
+          + (L.rank ? '<p class="b-sub" style="font-size:15px;margin:0">Season rank <b style="color:var(--ink)">#' + L.rank + '</b>, ' + (L.move > 0 ? '<span style="color:var(--up)">' : L.move < 0 ? '<span style="color:var(--fall)">' : '<span>') + BEV.moveWords(L.move) + '</span>.' + (r === 'FELL' ? ' Cranes rebuild your towers. Whole by noon.' : '') + '</p>' : r === 'FELL' ? '<p class="b-sub" style="font-size:15px;margin:0">Cranes rebuild your towers. Whole by noon.</p>' : ''))
+      + (L.rankUp ? '<div class="b-up" role="status">' + CHEV.replace('<svg', '<svg style="color:var(--gd)"') + '<b>Rank up: ' + esc(L.rankUp.name) + '</b><span>Level ' + L.rankUp.level + ' of 8. Your season score passed ' + esc(usd(L.rankUp.at)) + '.</span></div>' : '')
+      + ((L.newBadges || []).length ? '<div class="b-bdgs">' + L.newBadges.map(function (n) { return '<span class="b-bdg new">' + DOT + 'New badge: ' + esc(n) + '</span>'; }).join('') + '</div>' : '')
+      + (riv && !q2 ? '<div class="b-card" style="border-color:rgba(255,106,61,.5)"><div class="b-rv" style="border:0">' + avOf(riv.h, 3) + '<span class="nm">' + esc(riv.h) + ' is your rival tonight<small>Hit you for ' + esc(usd(riv.usd)) + ' last night.</small></span>' + (riv.canStrike && !(me.tonight.locked) ? '<button class="b-gb" type="button" data-sstrike>Strike back</button>' : '<span></span>') + '</div></div>' : '')
+      + ((L.points || []).length ? '<div class="b-card"><p class="b-eb" style="color:var(--pt)">Caldera Points</p><ul class="b-plist">' + L.points.map(function (p) { return '<li><span>' + esc(p.what) + '</span><b>+' + p.n + '</b></li>'; }).join('') + '<li class="tot"><span>Last night</span><b>+' + tot + '</b></li></ul></div>' : '')
+      + '<div class="b-row3"><a class="b-cta2" href="#armory" data-sgo>Set tonight\'s defenses</a><a class="b-rp big" href="/world?view=battle&amp;replay=1" data-srp>' + PLAY + 'Watch the replay</a>' + (q2 ? '' : '<button class="b-gb b-gbl" type="button" data-shr>Share my city\'s night</button>') + '</div>'
+      + '<p class="b-fine">You see this one time a day. It is always in the "Last night" card.</p></div>';
+  }
+  function summaryOpen(from, auto) {
+    if (!me || !me.last || !me.last.res) return;
+    dlgOpen(summaryHtml(), from, 'b-sum-h');
+    if (auto && !me.last.seen) { me.last.seen = 1; post('/v1/world/battle/seen', { date: me.last.key }).catch(function () {}); }
+  }
+  function shareOpen(from) {
+    if (!me || !me.last || !me.last.key) return; var h = String(me.h).replace(/^@/, ''), base = '/v1/world/battle/card/' + me.last.key + '/' + encodeURIComponent(h);
+    dlgOpen('<div class="b-sum-in" style="max-width:640px"><div class="b-sum-h"><p class="b-eb" id="b-sh-h">Share my city\'s night</p><button class="b-x" type="button">Close</button></div>'
+      + '<img class="b-shimg" src="' + base + '.png" width="1200" height="630" alt="" decoding="async">'
+      + '<div class="b-row3">' + (navigator.share ? '<button class="b-cta2" type="button" data-snat>Share</button>' : '') + '<button class="b-gb b-gbl" type="button" data-scopy>Copy link</button><a class="b-gb b-gbl" href="' + base + '.png" download="caldera-' + me.last.key + '-' + esc(h) + '.png">Save picture</a><a class="b-gb b-gbl" href="' + base + '.story.png" download="caldera-' + me.last.key + '-' + esc(h) + '-story.png">Save story size (9:16)</a></div>'
+      + '<p class="b-sub">The link opens the replay at your city. The picture shows on X, LinkedIn, Slack and Discord.</p></div>', from || dlgFrom, 'b-sh-h');
+  }
+  /** the automatic open: one time a day, on the Battle view, never in the embed (BEV.summaryOpen has the rest of the rule) */
+  function maybeSummary() {
+    if (window.CALDERA_EMBED || !on || dlgEl || !me) return; var cl = document.documentElement.classList;
+    if (BEV.summaryOpen({ me: me, replay: cl.contains('w-replay'), board: cl.contains('w-board'), running: !!(me.tonight && me.tonight.running), search: location.search })) summaryOpen(null, true);
+  }
   /** the four firepower tiles, the work line and (while the Armory is open) the Targets row; m null: the loading state */
   function fireHtml(m, locked) {
     var tiles;
@@ -856,7 +1099,7 @@ export function battleClient() {
       + '</div>';
   }
   function render() {
-    if (!panel) return; var left = leftMs();
+    if (!panel) return; var left = me && me.tonight || !meLoaded || !me ? (startAt() || 0) - nowS() : leftMs();
     if (!meLoaded) { panel.setAttribute('aria-busy', 'true'); panel.innerHTML = tnHead(clockTitle(left), '') + '<div class="b-tnb">' + fireHtml(null) + '</div>'; return; }
     panel.removeAttribute('aria-busy');
     if (!me) {
@@ -867,8 +1110,15 @@ export function battleClient() {
       panel.innerHTML = tnHead('Your city is out of the battles', 'No shots in or out. Rejoin and it fights by itself each night.', gearBtn()) + '<button type="button" class="b-cta2 b-join">Rejoin the battles</button>';
       panel.querySelector('.b-join').onclick = function () { act('/v1/world/battle/opt', { war: true }); };
       popRefresh(); return; }
+    if (me.tonight) {
+      var X = tnState(); panel.setAttribute('data-lk', X.run ? 'run' : X.lk ? 'lock' : 'open'); panel.innerHTML = tonightHtml();
+      if (armOpen || X.lk) armStart(); armClockGo(); popRefresh(); tnRefocus();
+      if (location.hash === '#armory' && !render.did) { render.did = 1; try { panel.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
+      if (location.hash === '#reports' && !render.rep) { render.rep = 1; setTimeout(function () { var g = panel.querySelector('[data-pop="set"]'); if (g) popOpen('set', g); }, 0); }
+      return;
+    }
     var A2 = me.armory, locked = !(left > 0);
-    panel.innerHTML = tnHead(clockTitle(left), locked ? 'Bombs are locked. The replay is ready in the morning.' : openSub(left), '<div class="b-tools">' + (A2 ? '<span class="b-cred"><b data-arm="bal">' + A2.balance + '</b> credits</span>' : '') + gearBtn() + '</div>')
+    panel.innerHTML = tnHead(clockTitle(left), locked ? 'Bombs are locked. The replay opens when the battle ends.' : openSub(left), '<div class="b-tools">' + (A2 ? '<span class="b-cred"><b data-arm="bal">' + A2.balance + '</b> credits</span>' : '') + gearBtn() + '</div>')
       + '<div class="b-tnb">' + fireHtml(me, locked) + armoryHtml(locked) + '</div>';
     armStart(); armClockGo(); popRefresh();
     if (location.hash === '#armory' && !render.did) { render.did = 1; try { panel.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
@@ -929,7 +1179,7 @@ export function battleClient() {
     });
   })();
 }
-export const BATTLE_CLIENT_JS = "(function(BSPD,BPU){return (" + battleClient.toString() + ")();})((" + battleSpeedLib.toString() + ")(),(" + powerupLib.toString() + ")());";
+export const BATTLE_CLIENT_JS = "(function(BSPD,BPU,BEV){return (" + battleClient.toString() + ")();})((" + battleSpeedLib.toString() + ")(),(" + powerupLib.toString() + ")(),(" + eveningLib.toString() + ")());";
 
 export const BATTLE_CSS = `
 .b-chip{position:absolute;left:10px;top:10px;z-index:6;display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--font-mono,'IBM Plex Mono',monospace);color:#E8EEF8;background:rgba(15,16,22,.92);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:6px 11px 6px 9px;font-variant-numeric:tabular-nums;pointer-events:none;max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1295,19 +1545,123 @@ html.w-battle:not(.w-replay) .c-stage:has(.b-chip) .g-today{top:80px;max-height:
 .b-shot{padding-left:0}
 .b-cw{display:none}.b-cn{display:inline}
 }
+/* ---------- the evening turn (LOOP.md part c; the classes after "NEW" in reports/2026-11-24-battle-loop/c-evening-turn.html) ---------- */
+.b-deck,.b-sum{--up:#4BE38A;--fall:#FF4D5E;--atk:#FF6A3D;--def:#58B4FF;--pt:#4FB89A;--head:'Saira Extra Condensed','Barlow Condensed','Arial Narrow',Arial,sans-serif}
+.b-col{display:grid;gap:var(--gap);min-width:0;align-content:start}
+.b-sub.hot{color:var(--gd)}
+.b-top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px 12px}
+.b-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.b-cred{text-decoration:none}
+.b-tn .b-tiles{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:10px}
+.b-rank{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 10px 0 8px;border:1px solid rgba(255,200,61,.45);border-radius:10px;font:700 13px var(--disp);letter-spacing:.1em;text-transform:uppercase;color:var(--gd);white-space:nowrap}
+.b-rank svg{width:14px;height:14px}.b-rank i{font:500 11px var(--mono);letter-spacing:0;color:var(--ink2);font-style:normal}
+.b-pts b{color:var(--pt)}
+.b-work{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 16px;align-items:center;margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(139,108,246,.12);border:1px solid rgba(139,108,246,.3)}
+.b-work p{margin:0}.b-work .w1{font:600 15px var(--ui)}.b-work .w1 b{font:700 20px var(--disp);letter-spacing:.02em;color:var(--gd)}
+.b-work .w0{font:700 11.5px var(--disp);letter-spacing:.16em;text-transform:uppercase;color:#B9A6FF;grid-column:1/-1}
+.b-work .w2{font-size:12.5px;color:var(--ink2);text-align:right}
+.b-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin-top:12px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+.b-step{background:#14171E;padding:12px;min-width:0}
+.b-step h3{display:flex;align-items:center;gap:8px;margin:0 0 4px;font:700 15px var(--disp);letter-spacing:.1em;text-transform:uppercase}
+.b-step h3 i{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--you);color:#fff;font:600 11px var(--mono);font-style:normal}
+.b-step>p{margin:0 0 8px;font-size:12.5px;color:var(--ink2)}
+.b-opt{display:grid;grid-template-columns:18px minmax(0,1fr);gap:1px 8px;width:100%;min-height:44px;margin-top:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.b-opt::before{content:"";grid-row:1/4;width:14px;height:14px;margin-top:3px;border-radius:50%;border:2px solid var(--ink3)}
+.b-opt[aria-checked="true"]{border-color:var(--you);background:rgba(139,108,246,.14)}
+.b-opt[aria-checked="true"]::before{border-color:var(--you);background:radial-gradient(circle,#fff 0 3px,var(--you) 4px)}
+.b-opt b{font:600 13.5px var(--ui)}.b-opt span{grid-column:2;font-size:12px;color:var(--ink2)}
+.b-opt span.plus::before{content:"+ ";color:var(--up);font-weight:600}.b-opt span.minus::before{content:"- ";color:var(--atk);font-weight:600}
+.b-opt em{grid-column:2;font:500 11.5px var(--mono);font-style:normal;color:var(--cy)}
+.b-opt:disabled{opacity:.5;cursor:default}
+.b-tw{display:flex;align-items:flex-end;gap:10px;height:96px;margin:4px 0 2px;padding:0 6px;position:relative}
+.b-tw div{flex:1;min-width:0;border-radius:4px 4px 0 0;background:#3A4257;position:relative}
+.b-tw div span{position:absolute;left:0;right:0;bottom:-18px;font:500 10.5px var(--mono);color:var(--ink2);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-tw div em{position:absolute;left:0;right:0;top:-18px;font:600 11px var(--mono);font-style:normal;color:var(--cy);text-align:center}
+.b-tw div.hi{box-shadow:0 0 0 2px var(--cy),0 0 18px rgba(61,242,255,.35)}.b-tw div.lo em{color:var(--ink2)}
+.b-twp{display:flex;flex-wrap:wrap;gap:6px;margin-top:26px}
+.b-pill{min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:none;color:var(--ink);font:500 12px var(--ui);cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-pill[aria-checked="true"]{border-color:var(--cy);background:rgba(61,242,255,.12);color:var(--cy)}
+.b-pill:disabled{opacity:.5;cursor:default}
+.b-fact{margin:8px 0 0!important;font:500 12px var(--mono)!important;color:var(--cy)!important}
+.b-rv{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:8px;align-items:center;min-height:44px;border-top:1px solid var(--rule)}
+.b-rv:first-of-type{border-top:0}
+.b-rv .av,.b-rv .b-av{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:600 12px var(--ui);color:#fff}
+.b-rv .nm{min-width:0;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-rv .nm small{display:block;font:400 11.5px var(--ui);color:var(--ink2);overflow:hidden;text-overflow:ellipsis}
+.b-rv.rival{margin:0 -6px 4px;padding:2px 6px 8px;border:1px solid rgba(255,106,61,.5);border-radius:10px;background:rgba(255,106,61,.08)}
+.b-rv .rv2{grid-column:2/-1;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;font-size:12px;color:var(--atk);white-space:normal}
+.b-stp{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.b-stp button{width:32px;height:32px;border:0;background:none;color:var(--ink);font:600 15px var(--mono);cursor:pointer}.b-stp button:disabled{opacity:.35;cursor:default}
+.b-stp output{min-width:22px;text-align:center;font:600 13px var(--mono)}
+.b-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px;margin-top:12px;font-size:12.5px;color:var(--ink2)}
+.b-foot .ok{color:var(--up)}
+.b-tn .b-arm{margin-top:12px;padding-top:12px;border-top:1px solid var(--rule)}
+.b-lock{margin-top:12px;padding:12px;border-radius:10px;border:1px solid rgba(255,200,61,.45);background:rgba(255,200,61,.08)}
+.b-lock b{display:block;font:700 15px var(--disp);letter-spacing:.1em;text-transform:uppercase;color:var(--gd)}
+.b-lock p{margin:4px 0 0;font-size:13px;color:var(--ink2)}
+.b-orow{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:10px;align-items:center;min-height:48px;border-top:1px solid var(--rule)}
+.b-orow .ck{width:20px;height:20px;border-radius:6px;border:2px solid var(--ink3);display:grid;place-items:center}
+.b-orow.done .ck{border-color:var(--up);background:var(--up)}.b-orow.done .t b{color:var(--ink2);text-decoration:line-through}
+.b-orow .t b{display:block;font-weight:600;font-size:13.5px}.b-orow .t small{font:700 11px var(--disp);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+.b-orow .p{font:600 12.5px var(--mono);color:var(--pt);white-space:nowrap}
+.b-orow .b-rp{height:32px}
+.b-lvl{height:6px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden;margin:8px 0 6px}.b-lvl i{display:block;height:100%;background:var(--gd)}
+.b-bdgs{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.b-bdg{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px 0 7px;border:1px solid var(--line);border-radius:999px;font:600 11.5px var(--ui);color:var(--ink2);white-space:nowrap}
+.b-bdg svg{width:12px;height:12px}.b-bdg.gold{border-color:#8A6A1F;background:rgba(240,191,90,.12);color:#F0BF5A}.b-bdg.new{border-color:var(--up);color:var(--up)}
+.b-sea{padding:10px 0 4px}
+.b-pod{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:end;text-align:center;margin:8px 0}
+.b-pod div{border-radius:10px;background:rgba(255,255,255,.045);padding:12px 6px;min-width:0}.b-pod .p1{padding:24px 6px;box-shadow:inset 0 0 0 1px rgba(255,200,61,.5)}
+.b-pod b{display:block;font:900 34px/1 var(--head);color:var(--ink)}.b-pod .p1 b{color:var(--gd)}.b-pod span{display:block;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis}.b-pod i{font:500 12px var(--mono);font-style:normal;color:var(--ink2)}
+.b-row3{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+/* the once-a-day "Last night" card and the share sheet: opaque, over the deck and the map; never during play or a replay */
+html.b-sum-on{overflow:hidden}
+.b-sum{--ink:#F4F6FA;--ink2:rgba(244,246,250,.68);--ink3:rgba(244,246,250,.44);--line:rgba(255,255,255,.14);--rule:rgba(255,255,255,.09);--cy:#3DF2FF;--you:#8B6CF6;--gd:#FFC83D;--disp:'Barlow Condensed','Arial Narrow',Arial,sans-serif;--ui:var(--font-sans,'IBM Plex Sans',sans-serif);--mono:var(--font-mono,'IBM Plex Mono',monospace);
+  position:fixed;inset:0;z-index:200;display:grid;place-items:start center;overflow-y:auto;padding:24px 16px;background:#07080C;color:var(--ink);font:14px/1.45 var(--ui);container-type:inline-size}
+.b-sum :focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+.b-sum-in{width:100%;max-width:560px;display:grid;gap:14px}
+.b-sum-h{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.b-x{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:none;color:var(--ink);font:600 13px var(--ui);cursor:pointer}
+.b-res{margin:0;font:900 clamp(56px,17cqi,96px)/.9 var(--head);text-transform:uppercase;transform:skewX(-8deg);transform-origin:left bottom;letter-spacing:.01em}
+.b-res small{display:block;font-size:.42em;color:var(--ink);text-shadow:none;line-height:1.05}
+.b-res.won{color:var(--up);text-shadow:2px 1px 0 #1E7A45,4px 2px 0 #1E7A45,6px 3px 0 #0E3F23}
+.b-res.held{color:var(--cy);text-shadow:2px 1px 0 #16808A,4px 2px 0 #16808A,6px 3px 0 #0A4046}
+.b-res.lost{color:var(--atk);text-shadow:2px 1px 0 #9C3414,4px 2px 0 #9C3414,6px 3px 0 #521A08}
+.b-res.fell{color:var(--fall);text-shadow:2px 1px 0 #9A1F2C,4px 2px 0 #9A1F2C,6px 3px 0 #4F0E15}
+.b-res.quiet{color:var(--ink2)}
+.b-f3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.b-up{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;align-items:center;padding:14px;border-radius:12px;border:1px solid rgba(255,200,61,.5);background:rgba(255,200,61,.08)}
+.b-up svg{grid-row:1/3;width:44px;height:44px;animation:bstamp .5s cubic-bezier(.2,1.4,.4,1) .25s both}
+.b-up b{font:900 34px/1 var(--head);text-transform:uppercase;color:var(--gd);letter-spacing:.02em}.b-up span{font-size:13px;color:var(--ink2)}
+@keyframes bstamp{from{transform:scale(2.2) rotate(-12deg);opacity:0}to{transform:none;opacity:1}}
+.b-plist{margin:0;padding:0;list-style:none}.b-plist li{display:flex;justify-content:space-between;gap:12px;min-height:34px;align-items:center;border-top:1px solid var(--rule);font-size:13.5px}
+.b-plist li:first-child{border-top:0}.b-plist li b{font:600 13px var(--mono);color:var(--pt)}.b-plist li.tot{font-weight:600}
+.b-sum .b-cta2{min-height:48px;height:auto}.b-sum .b-gbl{min-height:44px;height:auto;border-radius:999px;padding:0 18px}
+.b-rp.big{height:48px;border-radius:24px;padding:0 20px 0 16px;font-size:14.5px}
+.b-shimg{display:block;width:100%;height:auto;aspect-ratio:1200/630;border-radius:12px;border:1px solid var(--line);background:#0B0D13}
+.b-story{position:relative;width:216px;aspect-ratio:9/16;border-radius:12px;overflow:hidden;background:#0B0D13;border:1px solid var(--line);flex:none}
+@media (prefers-reduced-motion:reduce){.b-up svg{animation:none}}
+@media (max-width:899px){.b-steps{grid-template-columns:1fr}}
+@media (min-width:700px) and (max-width:899px){.b-work .w1{font-size:13px}.b-step{padding:10px}.b-step>p{font-size:11.5px}.b-rank{height:28px;font-size:11.5px}}
+@media (max-width:699px){
+.b-rp,.b-orow .b-rp{height:44px}.b-stp button{width:40px;height:40px}.b-pill{min-height:44px}
+.b-tn .b-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.b-tile b{font-size:22px}
+.b-work{grid-template-columns:1fr}.b-work .w2{text-align:left}
+}
+
 `;
 
 /** The deck under the map (PAGE.md 5): the Tonight and Last night cards, then one tab panel. The cards are filled by battleClient. */
 export function battleMarkup(): string {
   return `<div class="b-deck" id="b-bar" hidden aria-label="Battles">
-<div class="b-grid"><section class="b-card b-tn" id="armory" data-b="me" aria-labelledby="b-tn-t" aria-busy="true"></section><section class="b-card b-ln" data-b="last" aria-label="Last night"></section></div>
+<div class="b-grid"><div class="b-col"><section class="b-card b-tn" id="armory" data-b="me" aria-labelledby="b-tn-t" aria-busy="true"></section><section class="b-card b-or" data-b="orders" aria-labelledby="b-or-h" hidden></section></div><section class="b-card b-ln" data-b="last" aria-label="Last night"></section></div>
 <p class="b-msg" data-b="msg" role="alert"></p><p class="b-cap" data-b="cap" aria-live="polite"></p>
 <section class="b-tabs" aria-label="Battle lists"><div class="b-tabrow" role="tablist" aria-label="Battle lists">
 <button type="button" role="tab" id="b-tab-shots" data-tab="shots" aria-controls="shots" aria-selected="true"><span class="b-tl">Shot by shot</span><span class="b-ts">Shots</span> <small data-b="nshots">0</small></button>
 <button type="button" role="tab" id="b-tab-season" data-tab="season" aria-controls="season" aria-selected="false" tabindex="-1"><span class="b-tl">Season ranking</span><span class="b-ts">Season</span></button>
 <button type="button" role="tab" id="b-tab-arsenals" data-tab="arsenals" aria-controls="arsenals" aria-selected="false" tabindex="-1"><span class="b-tl">Arming today</span><span class="b-ts">Arming</span> <small><span class="b-tl" data-b="narmed">0</span><span class="b-ts" data-b="narmeds">0</span></small></button></div>
 <div class="b-panel" role="tabpanel" id="shots" aria-labelledby="b-tab-shots"><p class="b-tabhint" data-b="shotsum"></p><div data-b="shotlist"></div><button type="button" class="b-more" data-bhow aria-haspopup="dialog" aria-expanded="false">How battles work</button></div>
-<div class="b-panel" role="tabpanel" id="season" aria-labelledby="b-tab-season" hidden><p class="b-tabhint" data-b="seasonsum"></p><div data-b="board"></div></div>
+<div class="b-panel" role="tabpanel" id="season" aria-labelledby="b-tab-season" hidden><div class="b-sea" data-b="seasonhead"></div><p class="b-tabhint" data-b="seasonsum"></p><div data-b="board"></div></div>
 <div class="b-panel" role="tabpanel" id="arsenals" aria-labelledby="b-tab-arsenals" hidden><p class="b-tabhint" data-b="armsum"></p><div data-b="arsenals"></div></div>
 </section></div>`;
 }

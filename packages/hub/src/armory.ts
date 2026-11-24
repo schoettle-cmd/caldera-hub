@@ -2,15 +2,16 @@
  * The Armory (Mike 11-17, asked for Orion, built for every battle player): before each battle night a player buys custom bombs
  * with their help credits (in-game only, no cash value) and writes one short word on each. The word rises over the map as a
  * smoke cloud when the bomb hits in the replay. Rules:
- *  - the window opens when the last battle ends and locks when the next night runs (battleAt: 10:00 UTC = 02:00 PST / 03:00 PDT),
- *    so it is open at 6 PM in every time zone; each player gets one "Armory open" alert at 6 PM their time (Mike 11-18);
+ *  - the window opens when the last battle ends and locks with the defenses at 19:45 PT, 15 minutes before the next battle at
+ *    20:00 PT (lockAt; LOOP.md part c, 11-24: until then the lock was the 10:00 UTC battle); each player gets one "Armory open"
+ *    alert at 6 PM their time, or 8 AM where 6 PM is under 4 hours before the lock (all of the Americas now) (Mike 11-18);
  *  - four types at different prices; each flies as one of the battle's weapons (same physics, same shields);
  *  - per bomb: a word (anything, 1-12 characters, no filter: Mike 11-18 "No boundaries") and a target ("random" or a city in the battle);
  *  - nobody buys: the night is exactly what it was (the bombs fire after every normal shot, from their own random stream);
  *  - a bomb that cannot fire (the buyer left the battles, no valid target, the night was skipped) is refunded;
  *  - a shown word can be reported; the operator hides a word (admin battle-word-hide <id>).
  */
-import { battleAt, lastNight, type Weapon } from "./battle";
+import { battleAt, lockAt, lastNight, type Weapon } from "./battle";
 
 export type BombKind = "sparkler" | "thunderbolt" | "inferno" | "nova";
 export interface BombSpec { k: BombKind; name: string; cost: number; w: Weapon; line: string }
@@ -43,11 +44,11 @@ export const ptOffset = (t: number) => tzOffset(t, "America/Los_Angeles");
 export function wallToUtc(wall: number, tz: string): number { let t = wall - tzOffset(wall, tz); t = wall - tzOffset(t, tz); return t; }
 /** a valid IANA zone name, or null */
 export function cleanTz(raw: unknown): string | null { const z = String(raw ?? "").trim(); if (!z || z.length > 64 || !/^[A-Za-z_]+(\/[A-Za-z0-9_+\-]+){0,2}$/.test(z) && z !== "UTC") return null; try { new Intl.DateTimeFormat("en-US", { timeZone: z }); return z; } catch { return null; } }
-/** the window for battle night n: opens when night n-1 ran, locks when night n runs */
-export function armoryWindow(night: number): { night: number; open: number; lock: number } { return { night, open: battleAt(night - 1), lock: battleAt(night) }; }
-/** the night a purchase made now goes to (the next night to run); the window is always open between two nights */
-export function armoryNow(now: number): { night: number; open: number; lock: number; state: "open" } {
-  return { ...armoryWindow(lastNight(now) + 1), state: "open" };
+/** the window for battle night n: opens when night n-1 ran, locks at night n's lock (19:45 PT, 15 minutes before it runs) */
+export function armoryWindow(night: number): { night: number; open: number; lock: number } { return { night, open: battleAt(night - 1), lock: lockAt(night) }; }
+/** the night a purchase made now goes to (the next night to run); locked from the lock until that night runs */
+export function armoryNow(now: number): { night: number; open: number; lock: number; state: "open" | "locked" } {
+  const w = armoryWindow(lastNight(now) + 1); return { ...w, state: now >= w.lock ? "locked" : "open" };
 }
 /** the latest local hh:mm strictly before t, as a UTC instant */
 function lastLocal(t: number, tz: string, h: number, m = 0): number {
@@ -72,12 +73,12 @@ export function remindAt(night: number, tz: string): number | null {
   return t - openAlertAt(night, tz) < 3 * 3600_000 || t <= w.open ? null : t;
 }
 /** a clock time in the player's zone: "5:00 AM" */
-/** When a night's salvo plays on the map for a viewer in tz: 20:00 local on the day of the first local noon at or after the
- *  battle time (citybattle.ts bPlan/bPick: a local day shows the night whose battle time falls in the 24 h before its noon). */
+/** When a night's salvo plays on the map for a viewer in tz: the first 20:00 local at or after the battle time (citybattle.ts
+ *  bPick: a local day shows the night whose battle time falls in the 24 h before its 20:00). With the battle at 20:00 PT, the
+ *  Pacific map fires it live. */
 export function salvoAt(battle: number, tz: string): number {
-  const off = tzOffset(battle, tz), wall = battle + off, noonWall = Math.floor(wall / 86_400_000) * 86_400_000 + 12 * 3_600_000;
-  const pick = wall <= noonWall ? noonWall : noonWall + 86_400_000;
-  return wallToUtc(pick + 8 * 3_600_000, tz);
+  const off = tzOffset(battle, tz), wall = battle + off, at8 = Math.floor(wall / 86_400_000) * 86_400_000 + 20 * 3_600_000;
+  return wallToUtc(wall <= at8 ? at8 : at8 + 86_400_000, tz);
 }
 export function clockIn(t: number, tz: string, locale = "en-US"): string {
   try { return new Intl.DateTimeFormat(locale, { timeZone: tz, hour: "numeric", minute: "2-digit" }).format(new Date(t)).replace(/ /g, " "); }
@@ -212,7 +213,7 @@ export function armoryEmail(o: { name: string; lock: number; tz: string; balance
   const url = `${hub}/world#armory`, set = `${hub}/settings#notifications`;
   const subject = ascii(`Your Armory is open until ${at}`), pre = ascii(`${o.balance} credits to spend. Pick your bombs and write a word before the battle.`);
   const text = ascii([`Hey ${first},`, "", "Your Armory is open for the next battle. Pick your bombs and write one word on each. The word rises over the hit in the replay, for everyone to see.", "",
-    `Locks: ${at} your time (${pt} Pacific), when the battle runs`, `Balance: ${o.balance} credits`, ...(o.reward > 0 ? [`Last battle: +${o.reward} credits, because your city fired`] : []), "",
+    `Locks: ${at} your time (${pt} Pacific), 15 minutes before the battle`, `Balance: ${o.balance} credits`, ...(o.reward > 0 ? [`Last battle: +${o.reward} credits, because your city fired`] : []), "",
     `Open the Armory: ${url}`, "", "Bombs start at 5 credits. Credits are for the game only and have no cash value.", "",
     "You get this email once a day when your Armory opens.", `Turn off Armory emails: ${o.unsubArmory}`, `Unsubscribe from all Caldera email: ${o.unsubAll}`, `Caldera, ${o.postal}`].join("\n"));
   const td = (k: string, v: string) => `<tr><td style="padding:2px 16px 2px 0;color:#5F5C6B">${k}</td><td style="padding:2px 0">${v}</td></tr>`;
@@ -221,7 +222,7 @@ export function armoryEmail(o: { name: string; lock: number; tz: string; balance
 <p style="margin:0 0 14px">Hey ${escH(first)},</p>
 <p style="margin:0 0 14px">Your Armory is open for the next battle. Pick your bombs and write one word on each. The word rises over the hit in the replay, for everyone to see.</p>
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px;border-collapse:collapse;font:15px/1.5 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#24222B">
-${td("Locks", `<b>${escH(at)} your time</b> (${escH(pt)} Pacific), when the battle runs`)}
+${td("Locks", `<b>${escH(at)} your time</b> (${escH(pt)} Pacific), 15 minutes before the battle`)}
 ${td("Balance", `<b>${o.balance} credits</b>`)}${o.reward > 0 ? "\n" + td("Last battle", `+${o.reward} credits, because your city fired`) : ""}</table>
 <p style="margin:0 0 18px"><a href="${escH(url)}" style="display:inline-block;background:#6E4FE0;color:#fff;text-decoration:none;font-weight:600;font-size:16px;line-height:48px;padding:0 26px;border-radius:999px">Open the Armory</a></p>
 <p style="margin:0 0 22px;color:#5F5C6B;font-size:13.5px">Bombs start at 5 credits. Credits are for the game only and have no cash value.</p>

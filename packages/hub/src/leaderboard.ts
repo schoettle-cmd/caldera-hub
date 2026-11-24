@@ -130,6 +130,9 @@ export const LB_CSS = `
 tr.lb-top1 .lb-r span{color:#F2C46D}tr.lb-top2 .lb-r span,tr.lb-top3 .lb-r span{color:#F2F2F5}
 .lb-who a{gap:10px;color:#F2F2F5;font-weight:600}.lb-who a:hover .lb-h{text-decoration:underline}
 .lb-av{flex:none;width:32px;height:32px;border-radius:50%;background:#3A2F5C;color:#D6CBFF;display:grid;place-items:center;font-size:13px;font-weight:600;overflow:hidden}.lb-av img{width:100%;height:100%;object-fit:cover}
+.lb-st{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin-top:3px}.lb-rk{font:500 11px/1.4 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.04em;text-transform:uppercase;color:#C9B8FF}
+.lb-bd{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px 0 5px;border:1px solid #5B4A99;border-radius:999px;font:600 11px/1 var(--font-body,'IBM Plex Sans',sans-serif);color:#C9B8FF}.lb-bd svg{width:11px;height:11px}.lb-bd.gold{border-color:#8A6A1F;color:#F0BF5A}
+@media (max-width:640px){.lb-bd{display:none}}
 .lb-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lb-nm small{display:block;font:400 12.5px/1.3 var(--font-body,'IBM Plex Sans',sans-serif);color:#8A8A93}
 .lb-num,.lb-tr,.lb-tier,.lb-war{text-align:right}.lb-num span,.lb-tr span,.lb-tier span,.lb-war span{justify-content:flex-end}
 .lb-num span{font:600 16px var(--font-mono,'IBM Plex Mono',monospace);color:#F2F2F5}
@@ -147,8 +150,21 @@ tr.lb-gap td{height:14px;border:0;background:var(--bg,#1C1C1F)}tr.lb-gap td span
 `;
 const TREND_HEAD: Record<LbWindow, string> = { day: "vs yesterday", week: "vs last week", month: "vs last month", all: "" };
 const TAB: [LbWindow, string][] = [["day", "Today"], ["week", "Week"], ["month", "Month"], ["all", "All-time"]];
-export function leaderboardPage(rows: LbRow[], o: { win: LbWindow; me: string | null; hub: string; nav: string; pToday: number; at: number; /** the Orpheus badge: 0 none, 1 linked, 2 Founding Fleet (never changes rank) */ orph?: (id: string) => 0 | 1 | 2 }): string {
+export type LbStanding = { rank: string; level: number; badges: { k: string; name: string; gold?: 1 }[] };
+const RING = `<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="6" cy="6" r="1.4" fill="currentColor"/></svg>`;
+/** the rank name and the battle badges under the handle (LOOP.md c.5: outline chips, the FLEET look). Founding Fleet shows as the Orpheus badge already */
+export function standingHtml(st: LbStanding): string {
+  const b = st.badges.filter(x => x.k !== "founding");
+  return `<span class="lb-st"><span class="lb-rk">${esc(st.rank)}</span>${b.map(x => `<span class="lb-bd${x.gold ? " gold" : ""}">${RING}${esc(x.name)}</span>`).join("")}</span>`;
+}
+/** the profile head version (sandboxed page: inline styles, no class CSS) */
+export function profileStanding(st: LbStanding): string {
+  const chip = (body: string, gold?: boolean) => `<span style="display:inline-flex;align-items:center;gap:5px;vertical-align:middle;height:22px;margin-left:6px;padding:0 8px 0 6px;border:1px solid ${gold ? "#8A6A1F" : "var(--line-strong,#3A3A40)"};border-radius:999px;color:${gold ? "#F2CB6B" : "var(--accent-text,#B39DFA)"};font:600 11.5px/1 var(--font-body,'IBM Plex Sans',Arial,sans-serif);letter-spacing:0;white-space:nowrap">${body}</span>`;
+  return ` <span data-tie="battle-rank" style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 0;vertical-align:middle">${chip(esc(st.rank))}${st.badges.filter(x => x.k !== "founding").map(x => chip(RING.replace("<svg ", '<svg width="12" height="12" ') + esc(x.name), !!x.gold)).join("")}</span>`;
+}
+export function leaderboardPage(rows: LbRow[], o: { win: LbWindow; me: string | null; hub: string; nav: string; pToday: number; at: number; /** the Orpheus badge: 0 none, 1 linked, 2 Founding Fleet (never changes rank) */ orph?: (id: string) => 0 | 1 | 2; standing?: (id: string) => LbStanding | null }): string {
   const orph = (r: LbRow) => { const l = o.orph?.(r.id) || 0; return l ? fleetBadge(l === 2) : ""; };
+  const stand = (r: LbRow) => { let st: LbStanding | null = null; try { st = o.standing?.(r.id) || null; } catch { st = null; } return st ? standingHtml(st) : ""; };
   const hub = o.hub.replace(/\/$/, ""), shipped = rows.filter(r => r.metric > 0), list = rows.slice(0, LB_TOP),   // always the top 10 (Mike 11-08): who shipped first, then the next members by rank at 0
     me = o.me ? rows.find(r => r.id === o.me) || null : null;
   const total = Math.round(shipped.reduce((t, r) => t + r.metric, 0));
@@ -157,7 +173,7 @@ export function leaderboardPage(rows: LbRow[], o: { win: LbWindow; me: string | 
   const av = (r: LbRow) => `<span class="lb-av">${r.avatar ? `<img src="${esc(r.avatar)}" alt="" loading="lazy">` : esc((r.name || r.handle).charAt(0).toUpperCase())}</span>`;
   const trend = (r: LbRow) => r.trend === null ? `<span class="none">&ndash;</span>` : r.prev <= 0 && r.metric > 0 ? `<span class="new">new</span>` : r.trend > 0 ? `<span class="up"><i></i>+${r.trend.toFixed(1)}</span>` : r.trend < 0 ? `<span class="down"><i></i>${r.trend.toFixed(1)}</span>` : `<span class="flat">0.0</span>`;
   const row = (r: LbRow, mine: boolean) => `<tr class="${r.rank <= 3 ? `lb-top${r.rank}` : ""}${mine ? " lb-me" : ""}"${mine ? ' aria-current="true"' : ""}><td class="lb-r"><span>${r.rank}</span></td>`
-    + `<td class="lb-who"><a href="${esc(r.url)}">${av(r)}<span class="lb-nm"><span class="lb-h">@${esc(r.handle)}</span>${r.name && r.name !== "@" + r.handle && r.name !== r.handle ? `<small>${esc(r.name)}</small>` : ""}</span>${orph(r)}${mine ? `<span class="lb-you">you</span>` : ""}</a></td>`
+    + `<td class="lb-who"><a href="${esc(r.url)}">${av(r)}<span class="lb-nm"><span class="lb-h">@${esc(r.handle)}</span>${r.name && r.name !== "@" + r.handle && r.name !== r.handle ? `<small>${esc(r.name)}</small>` : ""}${stand(r)}</span>${orph(r)}${mine ? `<span class="lb-you">you</span>` : ""}</a></td>`
     + `<td class="lb-num"><span>${r.metric.toFixed(1)}</span></td><td class="lb-tr">${trend(r)}</td>`
     + `<td class="lb-tier" data-t="${r.tier}"><span>${r.tier ? `<i class="lb-sq"></i>${esc(r.tierName)}` : `<span style="color:#8A8A93">no plot yet</span>`}</span></td>`
     + `<td class="lb-war">${r.battle.in ? `<span><i class="lb-dot"></i><b>${fmtUsd(Math.round(r.battle.ammo) * 50000)} budget</b> ${r.battle.hits} hit${r.battle.hits === 1 ? "" : "s"}${r.battle.usd > 0 ? `, ${fmtUsd(r.battle.usd)} damage` : ""}</span>` : `<span class="off">peaceful</span>`}</td></tr>`;
@@ -199,6 +215,7 @@ export interface LbCtx {
   /** CALDERA_LEADERBOARD_POST=0: the page stays, the daily post stops */ postOn?: () => boolean;
   now?: () => number;
   /** the Orpheus badge level per member (fleet.ts orphLevel) */ orph?: (profileId: string) => 0 | 1 | 2;
+  /** the battle rank name and badges (battlehub standing; LOOP.md c.5), null outside the battles */ standing?: (profileId: string) => LbStanding | null;
 }
 export function leaderboard(c: LbCtx) {
   const now = () => (c.now ? c.now() : Date.now()), hub = c.hub.replace(/\/$/, "");
@@ -250,7 +267,7 @@ export function leaderboard(c: LbCtx) {
       const w = winOf(url) || "day", t = now();
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache", vary: "Cookie",
         "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" });
-      res.end(leaderboardPage(rankFor(w), { win: w, me: c.memberOf(req), hub, nav: c.nav(), pToday: pacificDay(t), at: t, orph: c.orph })); return true;
+      res.end(leaderboardPage(rankFor(w), { win: w, me: c.memberOf(req), hub, nav: c.nav(), pToday: pacificDay(t), at: t, orph: c.orph, standing: c.standing })); return true;
     }
     return false;
   }

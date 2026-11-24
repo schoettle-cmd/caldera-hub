@@ -25,7 +25,7 @@ export interface GiftCtx {
   q: (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
   hub: string; now: () => number; postal: string;
   A: ArmoryStore;
-  /** the night's battle time (battleAt: 10:00 UTC, when the Armory locks and the night resolves) */ battleAt: (night: number) => number;
+  /** the night's battle time (battleAt: 20:00 PT; the Armory locks 15 minutes before) */ battleAt: (night: number) => number;
   /** the night's battle has run (shots are stored) */ ran: (night: number) => boolean;
   /** the summary post for a night, and who it names (same numbers as the post) */
   summary: (night: number) => { postId: string; top: [string, number][]; hit: [string, { f: number; towers: number }][] } | null;

@@ -13,7 +13,7 @@
  * earn() is idempotent per (owner, kind, ref): a night, an order or a podium pays one time.
  */
 import { DAY, dayOf } from "./growth";
-import { WAR, RAIDERS, fallenOf, usdOf, heldOf, lastNight, type Shot } from "./battle";
+import { WAR, RAIDERS, SWITCH_NIGHT, battleAt, resultOf, lastNight, type Shot } from "./battle";
 
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
 
@@ -29,20 +29,9 @@ export const POINTS = {
 };
 export type OrderKind = keyof typeof POINTS.order;
 
-/** the spend day: the day that ends at 20:00 PT (04:00 UTC the next UTC day) */
-export const spendDayOf = (t: number) => dayOf(t - POINTS.spendHourUtc * 3600_000);
-
-/** One result word for a member's night (LOOP.md section 0): FELL, WON, HELD, LOST or QUIET */
-export type NightResult = "FELL" | "WON" | "HELD" | "LOST" | "QUIET";
-export function nightResult(id: string, shots: Shot[], fallen: string | null = fallenOf(shots)): NightResult {
-  const inn = shots.filter(s => s.d === id), out = shots.filter(s => s.a === id);
-  if (!inn.length && !out.length) return "QUIET";
-  if (fallen === id) return "FELL";
-  const dealt = out.reduce((t, s) => t + usdOf(s), 0), taken = inn.reduce((t, s) => t + usdOf(s), 0);
-  if (dealt > taken) return "WON";
-  if (inn.length && inn.reduce((t, s) => t + heldOf(s), 0) >= taken) return "HELD";
-  return "LOST";
-}
+/** the spend day: the day that ends at 20:00 PT, with the battle (lastNight: 04:00 UTC in winter, 03:00 in summer). Before the
+ *  battle moved there (night 2026-11-24 ran at 10:00 UTC), the day that ended at 04:00 UTC. */
+export const spendDayOf = (t: number) => t < battleAt(SWITCH_NIGHT - 1) ? dayOf(t - POINTS.spendHourUtc * 3600_000) : lastNight(t);
 
 export interface SeasonOf { (night: number): { n: number; from: number } }
 export interface LedgerRow { owner: string; ts: number; season: number; kind: string; ref: string; amount: number; note: string }
@@ -112,11 +101,11 @@ export function pointsStore(q: Q, o: { seasonOf: SeasonOf; now?: () => number })
     /** after a night is resolved: a won night +30 or a held night +20 (never both), and +100 for each 7 nights in a row that
      *  the city fought (shots in or out). prior(n): the stored shots of an earlier night. Returns what it paid. */
     awardNight(night: number, shots: Shot[], prior: (n: number) => Shot[]): { owner: string; kind: string; amount: number }[] {
-      const paid: { owner: string; kind: string; amount: number }[] = [], fallen = fallenOf(shots), season = o.seasonOf(night).n;
+      const paid: { owner: string; kind: string; amount: number }[] = [], season = o.seasonOf(night).n;
       const fought = (sh: Shot[]) => new Set(sh.flatMap(s => [s.a, s.d]).filter(id => id && id !== RAIDERS && !id.startsWith("uc:") && !id.startsWith("~")));
       const tonight = fought(shots);
       for (const id of tonight) {
-        const r = nightResult(id, shots, fallen);
+        const r = resultOf(id, shots);
         if (r === "WON" && S.earn(id, "night", String(night), POINTS.won, "won", season)) paid.push({ owner: id, kind: "won", amount: POINTS.won });
         else if (r === "HELD" && S.earn(id, "night", String(night), POINTS.held, "held", season)) paid.push({ owner: id, kind: "held", amount: POINTS.held });
       }
@@ -131,6 +120,13 @@ export function pointsStore(q: Q, o: { seasonOf: SeasonOf; now?: () => number })
       for (const [id, len] of run) if (len % POINTS.streakEvery === 0 && S.earn(id, "streak", String(night), POINTS.streak, "7-night streak", season)) paid.push({ owner: id, kind: "streak", amount: POINTS.streak });
       return paid;
     },
+    /** the rows a night paid (the "Last night" card, LOOP.md c.6): the won or held night and the streak of that night, and the
+     *  orders of the day before it (orders of day n-1 lead to night n) */
+    nightRows(owner: string, night: number): LedgerRow[] {
+      return (q("SELECT * FROM points_ledger WHERE owner=? AND ((kind IN ('night','streak') AND ref=?) OR (kind='order' AND ref LIKE ?)) ORDER BY rowid").all(owner, String(night), `${night - 1}:%`) as any[])
+        .map(r => ({ owner: r.owner, ts: Number(r.ts), season: Number(r.season), kind: r.kind, ref: String(r.ref), amount: Number(r.amount), note: String(r.note || "") }));
+    },
+    hasOrder: (owner: string, day: number, kind: string): boolean => !!q("SELECT 1 FROM points_ledger WHERE owner=? AND kind='order' AND ref=?").get(owner, `${day}:${kind}`),
     /** one daily order done (LOOP.md c.3): Build +20, Fight +10, Scout +10; name = the order's words ("Merge a pull request") */
     awardOrder(owner: string, day: number, order: OrderKind, name: string): boolean {
       const amount = POINTS.order[order]; if (!amount) return false;

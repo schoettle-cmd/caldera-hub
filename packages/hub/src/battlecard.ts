@@ -98,6 +98,31 @@ ${band}
 </svg>`;
 }
 
+/** The story picture, 1080x1920 (LOOP.md c.7, mockup c share sheet): the winner line, "Your city" + the result word, Dealt / Took,
+ *  the season rank, one drawn button WATCH THE REPLAY in the lower middle and caldera.social at the foot. House rule 11: the link
+ *  sticker goes on the drawn button only; the left and right 13% (140 px) stay empty for the thumb, and nothing else looks like a button. */
+export function battleStorySvg(n: CardNight, me: CardMe): string {
+  const c = RES_COL[me.res], G: [string, string, string] = ["#FFC83D", "#B07A0E", "#5E3F04"], L = 173, W = 1080 - 2 * L;
+  const w = n.tops[0]?.h || "", wb = bare(w), hs = wb.length <= 10 ? 150 : wb.length <= 15 ? 112 : 84;
+  const mv = me.rank ? `SEASON RANK #${me.rank}, ${me.move > 0 ? "UP " + me.move : me.move < 0 ? "DOWN " + -me.move : "NO CHANGE"}` : "";
+  const lab = (y: number, t: string, col = "#F4F6FA", op = ".7", size = 38) => `<text x="${L}" y="${y}" font-family="${F_LAB}" font-weight="700" font-size="${size}" letter-spacing="3" fill="${col}" fill-opacity="${op}">${t}</text>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920" role="img" aria-label="${esc(battleCardAlt(n, me))}">
+<defs><radialGradient id="sA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(300 200) scale(900 800)"><stop offset="0" stop-color="#FF6A3D" stop-opacity=".2"/><stop offset="1" stop-color="#FF6A3D" stop-opacity="0"/></radialGradient>
+<radialGradient id="sB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 1700) scale(900 700)"><stop offset="0" stop-color="#8B6CF6" stop-opacity=".28"/><stop offset="1" stop-color="#8B6CF6" stop-opacity="0"/></radialGradient></defs>
+<rect width="1080" height="1920" fill="#0B0D13"/><rect width="1080" height="1920" fill="url(#sA)"/><rect width="1080" height="1920" fill="url(#sB)"/>
+${lab(200, "CALDERA NIGHTLY BATTLE", "#3DF2FF", "1", 34)}
+${w ? block(L, 250 + hs, hs, up(w, 18), G) : ""}
+<g transform="translate(${L} ${w ? 320 + hs : 330}) skewX(-8)"><text font-family="${F_HEAD}" font-weight="900" font-size="64" letter-spacing="1" fill="#F4F6FA">WON THE NIGHT</text></g>
+${lab(640, "YOUR CITY", "#B9A6FF", "1")}
+${block(L, 820, 190, me.res, c)}
+${lab(920, `DEALT ${esc(fmtUsd(me.dealt))} / TOOK ${esc(fmtUsd(me.took))}`, "#F4F6FA", ".85", 44)}
+${mv ? lab(990, mv, "#F4F6FA", ".85", 44) : ""}
+<rect x="${L + 108}" y="1306" width="${W - 216}" height="150" rx="75" fill="#8B6CF6"/><rect x="${L + 102}" y="1300" width="${W - 204}" height="162" rx="81" fill="none" stroke="#3DF2FF" stroke-opacity=".7" stroke-width="6"/>
+<text x="540" y="1398" text-anchor="middle" font-family="${F_LAB}" font-weight="700" font-size="48" letter-spacing="4" fill="#fff">WATCH THE REPLAY</text>
+<text x="540" y="1806" text-anchor="middle" font-family="${F_MONO}" font-weight="500" font-size="34" fill="#F4F6FA" fill-opacity=".44">caldera.social</text>
+</svg>`;
+}
+
 /** The alt text (and the SVG's aria-label): the same facts as words (LOOP.md a.3). */
 export function battleCardAlt(n: CardNight, me: CardMe | null): string {
   const at = (h: string) => h;   // "@h" as given; the raiders keep their name ("raiders from the sea")

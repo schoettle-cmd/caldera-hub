@@ -50,11 +50,11 @@ import { buildLand, landJob, landStore, type LandIn, type LandWorld } from "./la
 import { growthHub, type GrowthMember } from "./growthhub";
 import { battleHub } from "./battlehub";
 import { WAR, season, lastNight } from "./battle";
-import { pointsStore } from "./points";
+import { pointsStore, type PointsStore } from "./points";
 import { pointsHub, PR_CSS } from "./promote";
 import { frontier } from "./frontier";
 import { FRONTIER_SEED } from "./frontierseed";
-import { leaderboard as leaderboardHub } from "./leaderboard";
+import { leaderboard as leaderboardHub, profileStanding } from "./leaderboard";
 import { sysPosts, SYSTEM_AGENT } from "./sysposts";
 import { citySnapshot, applyPrivateMode, rewriteCityPage, upgradeCityScript, type CityData } from "../../../../caldera/packages/plugin/src/city";
 import { mentionSearch } from "./mentions.js";
@@ -1756,9 +1756,10 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
     avatarBytes: id => { const pr = profile(id); const a = pr?.handle ? body(pr).photos?.avatar : null; if (!a) return null;
       const dir = path.join(opts.dataDir, "profiles", pr.handle), f = path.resolve(dir, String(a).replace(/^\.?\//, ""));
       if (!f.startsWith(path.resolve(dir) + path.sep)) return null; try { const st = fs.statSync(f); return st.isFile() && st.size <= 1_500_000 ? fs.readFileSync(f) : null; } catch { return null; } },
-    cardPng: svg => toPng(svg, 1200, { fontFiles: cardFonts() }),
+    cardPng: (svg, w = 1200) => toPng(svg, w, { fontFiles: cardFonts() }),
     promo: (): { title: string; line: string; handle: string; url: string; report: string } | null => { const r: { title: string; line: string; handle: string; href: string; report: string } | null | undefined = POINTS?.promoPick("mail"); return r ? { title: r.title, line: r.line, handle: r.handle, url: r.href, report: r.report } : null; },   // Caldera Points: one live card in the battle mail
-    onNight: (n, sh, prior) => { const paid = POINTS?.points.awardNight(n, sh, prior) || []; if (paid.length) console.log(`[points] night ${n}: ${paid.length} awards`); } });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
+    onNight: (n, sh, prior) => { const paid = POINTS?.points.awardNight(n, sh, prior) || []; if (paid.length) console.log(`[points] night ${n}: ${paid.length} awards`); },
+    points: (): PointsStore | null => POINTS ? POINTS.points : null, founding: id => !!ORPH.fleetOf(id)?.founding });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
 
   // ---------------------------------------------------------------- Caldera Points (points.ts, promote.ts; LOOP.md part d, phase 1)
   // Seasons are the battle's (battle.ts season(), from the stored launch night); with battles off, from the first battle night.
@@ -2485,7 +2486,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
     return { owner: f.id, agent: SYSTEM_AGENT(), token: t?.id || null }; } });
   const LB = GROWTH ? leaderboardHub({ q, hub: PUB(), sim: () => GROWTH.sim(), members: growthMembers, systemPost: SYS.systemPost, memberOf: r => memberOf(r), json: (r, s, b) => json(r, s, b),
     nav: () => siteHeader("/leaderboard") + `<script src="/assets/site.js" defer></script>`, postOn: () => process.env.CALDERA_LEADERBOARD_POST !== "0" && (opts as any).leaderboardPost !== false,
-    avatar: id => { const pr = profile(id); if (!pr?.handle) return null; const b = body(pr); return b.photos?.avatar ? `/@${pr.handle}/${String(b.photos.avatar).replace(/^\.?\//, "")}` : null; }, orph: id => orphLevel(ORPH.fleetOf(id)) }) : null;
+    avatar: id => { const pr = profile(id); if (!pr?.handle) return null; const b = body(pr); return b.photos?.avatar ? `/@${pr.handle}/${String(b.photos.avatar).replace(/^\.?\//, "")}` : null; }, orph: id => orphLevel(ORPH.fleetOf(id)), standing: id => BATTLE ? BATTLE.standing(id) : null }) : null;
   if (LB && GROWTH) GROWTH.onTick(() => LB.tick());
   (admin as any).leaderboard = LB; (admin as any).sysposts = SYS;
   MSG = messages({ q, now, hub: opts.publicUrl || "https://caldera.social", profile, byHandle, body, modOf, areFriends, memberOf, sameOrigin, readBody, json, navify, tooMany, coldCap: (id: string) => EMP?.kindOf(id) === "business" ? 5 : 10, seal, unseal,
@@ -2878,6 +2879,9 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
           const sum = welcome ? welcome + (tieT ? tieBanner(tieHref("first_value", tieW().camp), tieT.counted ? originOf(opts.publicUrl || "https://caldera.social") : null, undefined, tieW().w) : "") : (own && prS && (rel === "index.html" || rel === "city.html") && memberOf(req) === prS.id ? summaryBanner(prS.id, m[1]) : "");
           // the Orpheus boost (FLEET.md 3 + 4): badge after the name and the Agent fleet card for every viewer; the owner's empty slot when not linked
           if (rel === "index.html" && prS) html = fleetProfile(html, ORPH.fleetOf(prS.id), { owner: !!own && memberOf(req) === prS.id, handle: m[1] });
+          // the battle rank name and badges after the name (LOOP.md c.5; sandboxed page: inline styles)
+          if (rel === "index.html" && prS && BATTLE) { let st = null; try { st = BATTLE.standing(prS.id); } catch (e: any) { console.error("battle standing", e?.message); }
+            if (st) { const chips = profileStanding(st); html = html.replace(/(<span class="caret">\|<\/span>[\s\S]*?)<\/h1>/, (_x, a) => a + chips + "</h1>"); } }
           let out = /<body[^>]*>/i.test(html) ? html.replace(/<body[^>]*>/i, b => b + bar + sum) : bar + sum + html;
           // signed-out people (never crawlers, link previews, members or the owner): the deeper page blurs under a
           // "Create your profile" card (profile) or a nudge (city). The text stays in the HTML; the blur is paint only.

@@ -32,7 +32,11 @@ const get = async (G, path) => { const u = new URL("https://hub.test" + path), r
 test("salvoAt: 20:00 local on the day that plays the night", () => {
   const battle = Date.UTC(2026, 10, 19, 10);   // 02:00 PT Nov 19, 19:00 Tokyo Nov 19
   assert.equal(new Date(AR.salvoAt(battle, "America/Los_Angeles")).toISOString(), "2026-11-20T04:00:00.000Z", "20:00 PT Nov 19");
-  assert.equal(new Date(AR.salvoAt(battle, "Asia/Tokyo")).toISOString(), "2026-11-20T11:00:00.000Z", "20:00 JST Nov 20: noon Nov 19 came before the battle");
+  assert.equal(new Date(AR.salvoAt(battle, "Asia/Tokyo")).toISOString(), "2026-11-19T11:00:00.000Z", "20:00 JST Nov 19: the first 20:00 at or after the battle (19:00 JST)");
+  // from 2026-11-25 the battle is at 20:00 PT: the Pacific map fires it live, Europe that evening
+  const b2 = Date.parse("2026-11-27T04:00:00Z");
+  assert.equal(new Date(AR.salvoAt(b2, "America/Los_Angeles")).toISOString(), "2026-11-27T04:00:00.000Z", "live at 20:00 PT");
+  assert.equal(new Date(AR.salvoAt(b2, "Europe/Berlin")).toISOString(), "2026-11-27T19:00:00.000Z", "20:00 CET the same day");
   assert.equal(new Date(AR.salvoAt(battle, "Europe/London")).toISOString(), "2026-11-19T20:00:00.000Z");
 });
 

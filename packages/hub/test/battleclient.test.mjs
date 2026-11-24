@@ -129,7 +129,7 @@ test("deck words: none of the retired words in what people read; the morning ove
   for (const w of [/salvo/i, /Guidance/, /\bGPS\b/, /Inertial/, /Munitions/i, /per head/, /resolves/, /'x' \+ a\./, /Arsenals building/, /Season leaderboard/, /What your city did last night/, /Demo replay<\/button>/, /How damage works<\/button>/])
     assert.ok(!w.test(js + M.battleMarkup()), "retired: " + w);
   assert.ok(!js.includes("caldera.world.recap") && !js.includes("function recap("), "the morning card and its key are deleted");
-  for (const t of ["Battle starts in ", "Your bombs lock then. Your city fires by itself.", "Last hour. Your bombs lock at ", "Bombs are locked. The replay is ready in the morning.", "The Armory opens again after the battle.", "No custom bombs tonight.",
+  for (const t of ["Battle starts in ", "Your bombs lock then. Your city fires by itself.", "Last hour. Your bombs lock at ", "Bombs are locked. The replay opens when the battle ends.", "The Armory opens again after the battle.", "No custom bombs tonight.",
     "Your city is out of the battles", "No shots in or out. Rejoin and it fights by itself each night.", "Rejoin the battles", "Put your city in the fight. Your GitHub becomes a city, and today\\'s code becomes missiles. Damage shows only on this map.", "Add your city",
     "Your firepower", "from today\\'s code", "to spend on missiles", "blocked from each hit", "beginner shield, first 30 days", "auto, a fair rival", "Choose a target", "Aim up to ", "Aim a missile", "No rivals in reach yet. Your missiles find a fair match by themselves.",
     "Add a bomb with your word on it. Everyone sees the word in the replay.", "+ Add", "Your word", "Random rival", "Show my name.", "Up to ", " bombs a night. Credits have no cash value.", "Loaded for tonight", "Battle settings", "Battle report email", "Beginner shield", "Leave the battles", "Your city rebuilds at once. You can rejoin at any time.",
@@ -267,7 +267,7 @@ test("power-ups: the tray only in a replay, keys 1 2 3 and Esc in the replay key
   const a = J.indexOf("varpuEl=null"), b = J.indexOf("functionhudOff()"); assert.ok(a > 0 && b > a, "the tray block");
   const tray = J.slice(a, b), lib = N(M.powerupLib.toString());
   for (const bad of ["fetch(", "post(", "XMLHttpRequest", "sendBeacon", "localStorage", "sessionStorage", "indexedDB", "document.cookie", "WebSocket"]) { assert.ok(!tray.includes(bad), `no ${bad} in the tray`); assert.ok(!lib.includes(bad), `no ${bad} in the lib`); }
-  assert.ok(has("(function(BSPD,BPU){") && has("function powerupLib()"), "the lib ships ahead of the client as BPU");
+  assert.ok(has("(function(BSPD,BPU,BEV){") && has("function powerupLib()"), "the lib ships ahead of the client as BPU");
   assert.ok(has("stage.appendChild(hudEl); fsSync(); puOn(); }"), "the tray is made with the replay bar"); assert.ok(has("function hudOff() { puOff();"), "and goes with it");
   assert.ok(tray.includes("api().drop") && tray.includes("window.CALDERA_BATTLE_TAP=puTap"), "drops through the plugin API from the map tap");
   const k0 = J.indexOf("/^[123]$/.test(e.key)"), kd = J.slice(J.lastIndexOf("addEventListener('keydown'", k0), k0 + 300);
@@ -321,7 +321,7 @@ test("BATTLE.md U2: mapReplay() show rule: only in the idle Battle view; not in 
   assert.ok(J.includes(N("function chipTick() {\n    mapReplay();")), "called from chipTick (also in World view, to hide it)");
   assert.ok(J.includes(N("rpEl.className = 'b-rp b-rp-map'")) && J.includes(N("rpEl.setAttribute('data-bl', 'replay')")) && J.includes(N("rpEl.setAttribute('data-bdemo', '')")), "one white pill, data-bl=replay or data-bdemo");
   assert.ok(J.includes(N("if (rpEl.hasAttribute('data-bdemo')) play('demo'); else setLayer('replay', true);")), "the click does what the card's button does");
-  assert.ok(J.includes(N("running: !!lockAt() && left <= 0 && !reb")), "'Battle running' as the chip says it");
+  assert.ok(J.includes(N("running: !!startAt() && left <= 0 && !reb")), "'Battle running' as the chip says it");
   const stop = J.slice(J.indexOf("functionstopPlay(){"), J.indexOf("functionplay(mode,auto){"));
   assert.ok(stop.startsWith(N("function stopPlay() { var had = !!hudEl;")) && stop.includes(N("if (had) { var rb = mapReplay(); if (rb) try { rb.focus({ preventScroll: true }); }")), "after End or Exit the button gets the focus");
   const css = M.BATTLE_CSS;

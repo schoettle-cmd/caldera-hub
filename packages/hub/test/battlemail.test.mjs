@@ -118,6 +118,10 @@ test("the SVG is valid XML for 1, 2 and 3 rows and a 39-character handle; result
   for (const [res, col] of [["WON", "#4BE38A"], ["HELD", "#3DF2FF"], ["LOST", "#FF6A3D"], ["FELL", "#FF4D5E"]]) { const s = K.battleCardSvg(night(), { ...ME, res }); assert.ok(s.includes(`fill="${col}">${res}</text>`), res); }
   assert.ok(K.battleCardSvg(night(), ME).includes('d="M0 12 L8 0 L16 12 Z"') && K.battleCardSvg(night(), { ...ME, move: -2 }).includes('d="M0 0 L16 0 L8 12 Z"') && !K.battleCardSvg(night(), { ...ME, move: 0 }).includes("L8 12 Z"));
   assert.ok(K.battleCardSvg(night(), ME).includes(">CITY DOWN</tspan>"));
+  // the story picture: the link sticker goes on the drawn button only; the left and right 13% (140 px) stay empty
+  for (const res of ["WON", "HELD", "LOST", "FELL"]) { const st = K.battleStorySvg(night(3, true), { ...ME, res }); assert.doesNotThrow(() => new Resvg(st), res);
+    const xs = [...st.matchAll(/ x="(\d+(?:\.\d+)?)"/g)].map(m => +m[1]).filter(x => x > 10); assert.ok(xs.every(x => x >= 140 && x <= 940), "nothing in the edges: " + xs.join(","));
+    assert.equal((st.match(/WATCH THE REPLAY/g) || []).length, 1); assert.ok(st.includes("caldera.social") && st.includes("SEASON RANK #12, UP 3") && st.includes("DEALT $14M / TOOK $4M")); }
   const gen = K.battleCardSvg(night(), null); for (const s of ["NEXT BATTLE", "TONIGHT 20:00 PT", "Your GitHub becomes a city.", "ADD YOUR CITY"]) assert.ok(gen.includes(s), s);
   assert.ok(!/[←-⇿▲▼]/.test(K.battleCardSvg(night(), ME) + gen), "no arrow characters");
   const png1 = "data:image/png;base64," + Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]).toString("base64");
@@ -190,6 +194,10 @@ test("live: default daily for members who never chose, the first-mail line one t
     assert.ok(Buffer.from(await (await fetch(`${base}/v1/world/battle/card/${day}.png`)).arrayBuffer()).equals(gb), "the stored picture again");
     assert.equal((await fetch(`${base}/v1/world/battle/card/${day}/ana.png`)).status, 200);
     assert.equal((await fetch(`${base}/v1/world/battle/card/${day}/nobody.png`)).status, 404);
+    // the story picture (LOOP.md c.7): 1080x1920 for a member, stored apart from the 1200x630 one; none for the generic picture
+    const sp = await fetch(`${base}/v1/world/battle/card/${day}/ana.story.png`);
+    if (B2.summaryOf(n) && sp.status === 200) { const sb = Buffer.from(await sp.arrayBuffer()); assert.equal(sb.readUInt32BE(16), 1080); assert.equal(sb.readUInt32BE(20), 1920); }
+    assert.equal((await fetch(`${base}/v1/world/battle/card/${day}.story.png`)).status, 404, "a story is always one member's");
     assert.equal((await fetch(`${base}/v1/world/battle/card/2020-01-01.png`)).status, 404, "no night, no picture");
     // og:image on the replay link
     const page = await (await fetch(base + "/world?view=battle&replay=1")).text();

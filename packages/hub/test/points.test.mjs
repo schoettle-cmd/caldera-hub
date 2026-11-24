@@ -12,7 +12,7 @@ const __tmpDirs = [];
 __afterAll(() => { for (const d of __tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });
 
 const load = async (f) => { const { build } = await import("esbuild"); const o = await build({ entryPoints: [new URL("../src/" + f, import.meta.url).pathname], bundle: true, platform: "node", format: "esm", packages: "external", write: false }); return import("data:text/javascript;base64," + Buffer.from(o.outputFiles[0].text).toString("base64")); };
-const PT = await load("points.ts"), PR = await load("promote.ts");
+const PT = await load("points.ts"), PR = await load("promote.ts"), BT = await load("battle.ts");
 const DAY = 86_400_000, LAUNCH = 20400;   // a launch night; seasons are 42 nights
 const at = (night, h = 12) => night * DAY + h * 3600_000;
 
@@ -26,10 +26,10 @@ const shot = (a, d, f, o = {}) => ({ k: 0, a, d, w: "shell", ammo: o.ammo || 1, 
 test("a night pays one time: won +30 or held +20, never both; the fallen city and quiet cities get nothing", () => {
   const { P } = setup(), N = LAUNCH + 3;
   const shots = [shot("A", "B", 0.5), shot("B", "A", 0.1), shot("C", "B", 0.6), shot("C", "E", 0.01, { blocked: true, ammo: 10 }), shot("~raiders", "A", 0.05)];
-  assert.equal(PT.nightResult("A", shots), "WON");
-  assert.equal(PT.nightResult("B", shots), "FELL");
-  assert.equal(PT.nightResult("E", shots), "HELD");
-  assert.equal(PT.nightResult("Z", shots), "QUIET");
+  assert.equal(BT.resultOf("A", shots), "WON");
+  assert.equal(BT.resultOf("B", shots), "FELL");
+  assert.equal(BT.resultOf("E", shots), "HELD");
+  assert.equal(BT.resultOf("Z", shots), "QUIET");
   const paid = P.awardNight(N, shots, () => []);
   assert.deepEqual(paid.map(p => p.owner + ":" + p.kind).sort(), ["A:won", "C:won", "E:held"]);
   assert.equal(P.balanceOf("A"), 30); assert.equal(P.balanceOf("E"), 20); assert.equal(P.balanceOf("B"), 0); assert.equal(P.balanceOf("~raiders"), 0);

@@ -13,9 +13,11 @@
 import crypto from "node:crypto";
 import type http from "node:http";
 import { DAY, dayOf, dayKey, type GEvent, type SimOut } from "./growth";
-import { WAR, RAIDERS, battleAt, lastNight, arsenal, shield, towersOf, dmgAt, dmgAll, usdOf, fallenOf, heldOf, restrike, fmtUsd, summaryNames, scaledDistance, isBeginner, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
+import { POINTS } from "./points";
+const POINTS_ORDER = POINTS.order;
+import { WAR, RAIDERS, SWITCH_NIGHT, battleAt, lockAt, bdOf, lastNight, arsenal, firedOf, reachOf, rivalOf, rankOf as levelOf, ordersFor, badgesFor, shieldAt, type Order, type OrderKey, shield, towersOf, dmgAt, dmgAll, usdOf, fallenOf, heldOf, restrike, fmtUsd, summaryNames, scaledDistance, isBeginner, towerH as towerHOf, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
   freqOf, nightOf, nightSummary, dateLong, type Fighter, type Shot, type Report, type ReportFreq, type MailOpts, type NightSum } from "./battle";
-import { battleCardSvg, battleCardAlt, fetchAvatar, avatarUri, type CardNight, type CardMe } from "./battlecard";
+import { battleCardSvg, battleStorySvg, battleCardAlt, fetchAvatar, avatarUri, type CardNight, type CardMe } from "./battlecard";
 import type { GrowthMember } from "./growthhub";
 import { giftMail } from "./giftmail";
 import { homeNight, type HomeBattle } from "./homebattle";
@@ -44,9 +46,13 @@ export interface BattleHubCtx {
   /** SVG -> PNG (cards.ts toPng), for the bomb images in the gift email */ png?: (svg: string, width: number) => Promise<Buffer>;
   /** a member's public avatar path on the hub ("/@h/avatar.png"), or null: the battle deck shows it next to their name (Mike 11-20) */ avatar?: (profileId: string) => string | null;
   /** the bytes of that public avatar, read on the server (the battle picture embeds it); absent: fetched from the hub with a short timeout */ avatarBytes?: (profileId: string) => Buffer | null;
-  /** SVG -> PNG for the battle picture, with its fonts (cards.ts toPng + battlecard.ts cardFonts) */ cardPng?: (svg: string) => Promise<Buffer>;
+  /** SVG -> PNG for the battle picture, with its fonts (cards.ts toPng + battlecard.ts cardFonts) */ cardPng?: (svg: string, width?: number) => Promise<Buffer>;
   /** one live promoted card for the battle mail (Caldera Points, part d), or null */ promo?: () => MailOpts["promo"];
   /** after a night is saved (Caldera Points, points.ts awardNight): the night, its shots, and an earlier night's stored shots */ onNight?: (night: number, shots: Shot[], prior: (n: number) => Shot[]) => void;
+  /** Caldera Points (points.ts): the daily orders pay through awardOrder; the Tonight card shows the balance and last night's rows */
+  points?: () => { awardOrder: (owner: string, day: number, order: "build" | "fight" | "scout", name: string) => boolean; balanceOf: (owner: string) => number;
+    nightRows: (owner: string, night: number) => { kind: string; ref: string; amount: number; note: string }[]; hasOrder: (owner: string, day: number, kind: string) => boolean } | null;
+  /** the Founding Fleet badge (fleet.ts, Orpheus) */ founding?: (profileId: string) => boolean;
   now?: () => number;
 }
 
@@ -92,7 +98,7 @@ export function battleHub(c: BattleHubCtx) {
     const sim = x.sims.get(m.id); if (!sim) return null;
     const sn = snapOf(sim, day), active = sim.stats.filter(s => s.d <= day && s.pts > 0).length;
     const tw = towersOf((m.city?.districts || []).flatMap((d: any) => d.repos || []));   // repo towers on the world map, tallest first: the only targets
-    const ars = arsenal(x.evBy.get(m.id) || [], day, { ai: x.ai.get(m.id), streak: sn.streak, lots: sn.lots, reverted: x.reverted, top: tw[0] });
+    const ars = arsenal(x.evBy.get(m.id) || [], day, { ai: x.ai.get(m.id), streak: sn.streak, lots: sn.lots, reverted: x.reverted, top: tw[0], dayOf: bdOf });   // the work day ends at the lock, 19:45 PT
     const o = { streak: sn.streak, joinedDays: day + 1 - dayOf(m.created || now()), activeDays: active, waived: waive };
     return { id: m.id, h: m.handle, ars, sh: shield(o), beg: isBeginner(o), lots: sn.lots, towers: tw.length, tw, side: sn.side, out7: sim.stats.filter(s => s.d > day - 7 && s.d <= day).reduce((t, s) => t + s.pts, 0), heads: heads(m.id), idle: sn.idle };
   }
@@ -114,14 +120,20 @@ export function battleHub(c: BattleHubCtx) {
   function resolve(night: number, o: { force?: boolean; dry?: boolean } = {}): any {
     if (S.hasNight(night) && !o.force && !o.dry) return S.night(night);
     const x = ctxFor(), T = battleAt(night), on = warSet(T, x), opts = new Map(S.opts().map(r => [r.p, r] as [string, any]));
-    const fighters = x.ms.filter(m => on.has(m.id)).map(m => fighterOf(x, m, night - 1, !!opts.get(m.id)?.waive)).filter((f): f is Fighter => !!f);
+    const turns = S.turns(night), strikes = new Map<string, string>();
+    const fighters = x.ms.filter(m => on.has(m.id)).map(m => { const f = fighterOf(x, m, night - 1, !!opts.get(m.id)?.waive); if (!f) return null;
+      const t = turns.get(m.id); f.order = t?.ord || "bal"; f.place = !f.beg && f.sh > 0 ? S.place(m.id).place : -1; if (t?.strike) strikes.set(m.id, t.strike); return f; }).filter((f): f is Fighter => !!f);
+    if (!o.dry) for (const f of fighters) { try { payOrders(x, x.byId.get(f.id)!, night - 1, f); } catch (e: any) { console.error("[points] orders", e?.message); } }   // Build: the work counted before the lock
     const prev = S.shots(night - 1), lastPairs = new Set(prev.filter(s => s.f > 0).map(s => s.a + ">" + s.d));
     const week = new Map<string, number>(); for (const s of S.shots(night - 6, night - 1)) if (s.f > 0) week.set(s.d, (week.get(s.d) || 0) + dmgAll(s));
     const bombs = A.live(night).filter(b => b.state === "paid").map(b => ({ id: b.id, a: b.p, w: bombOf(b.kind)!.w, k: b.kind, word: b.word, target: b.target }));
-    const r = resolveNight({ night, fighters, lastPairs, week, aims: S.aims(night), open: openDamage(x, T, on), bombs, lands: landsNow() });
-    const meta = { night: dayKey(night), at: T, raiders: r.raiders, fighters: fighters.map(f => ({ id: f.id, h: f.h, ammo: f.ars.ammo, usd: f.ars.usd, n: f.ars.n, tech: f.ars.tech, guide: f.ars.guide, shots: f.ars.shots.length, best: f.ars.best, sh: f.sh, beg: f.beg ? 1 : 0, c: f.ars.c, pr: f.ars.pr, rel: f.ars.rel, ai: f.ars.aiX, st: f.ars.streakX })) };
+    const r = resolveNight({ night, fighters, lastPairs, week, aims: S.aims(night), strikes, open: openDamage(x, T, on), bombs, lands: landsNow() });
+    // orders and placement stay hidden until the replay: the night's meta keeps them (o: order, pl: guarded tower, sb: strike back)
+    const meta = { night: dayKey(night), at: T, raiders: r.raiders, fighters: fighters.map(f => ({ id: f.id, h: f.h, ammo: f.ars.ammo, usd: f.ars.usd, n: f.ars.n, tech: f.ars.tech, guide: f.ars.guide, shots: f.ars.shots.length, best: f.ars.best, sh: f.sh, beg: f.beg ? 1 : 0, c: f.ars.c, pr: f.ars.pr, rel: f.ars.rel, ai: f.ars.aiX, st: f.ars.streakX,
+      ...(f.order && f.order !== "bal" ? { o: f.order, fired: firedOf(f.ars, f.order).length } : {}), ...(f.place != null && f.place >= 0 ? { pl: f.place } : {}), ...(strikes.has(f.id) ? { sb: 1 } : {}) })) };
     if (o.dry) return { ...meta, dry: true, shots: r.shots.map(s => ({ a: x.handle(s.a), d: x.handle(s.d), w: s.w, f: s.f, usd: usdOf(s), held: heldOf(s), sh: s.x?.sh || 0 })) };
-    S.saveNight(night, meta, r.shots, now()); dropCards(night); rankMemo.clear();
+    S.saveNight(night, meta, r.shots, now()); dropCards(night); rankMemo.clear(); scoreMemo.clear(); histMemo = null;
+    try { const sc = scoresAt(night, x), rk = ranksAt(night, x); S.setRanks(night, [...rk].map(([id, r2]) => [id, r2, sc.get(id) || 0] as [string, number, number])); } catch (e: any) { console.error("[battle] ranks", e?.message); }
     // the Armory: mark what flew, refund what could not, and pay the daily battle reward to every city that fired
     for (const f of r.fired) A.fired(f.id, f.k);
     for (const id of r.unfired) A.refund(id, "could not fire", now());
@@ -130,6 +142,39 @@ export function battleHub(c: BattleHubCtx) {
     S.prune(night - 120); cache = null;
     console.log(`[battle] night ${dayKey(night)}: ${fighters.length} cities, ${r.shots.length} shots, ${r.shots.filter(s => s.f > 0).length} landed, ${fmtUsd(r.shots.reduce((t, s) => t + usdOf(s), 0))} damage, raiders ${r.raiders.length}`);
     return meta;
+  }
+  /** The release check of LOOP.md c.2 (dry, writes nothing): run the last `nights` resolved nights again with each order for
+   *  each member (the others on Balanced) and count, per member, the order with the best net (damage dealt minus damage
+   *  taken, summed over the nights). No order may be best for more than half of the members. Members whose three runs are
+   *  equal (nothing fired, nothing taken) count as "same". Counts only. */
+  function orderCheck(nights = 14, tune?: Partial<typeof WAR.orders>) {
+    const keep = WAR.orders; if (tune) WAR.orders = { ...keep, ...tune };
+    try { return orderRun(nights); } finally { WAR.orders = keep; }
+  }
+  function orderRun(nights: number) {
+    const x = ctxFor(), lastN = lastNight(now()), net = new Map<string, Record<Order, number>>(), done: number[] = [], fires = new Set<string>();
+    for (let night = lastN - nights + 1; night <= lastN; night++) {
+      if (!S.hasNight(night)) continue;
+      const T = battleAt(night), on = warSet(T, x), opts = new Map(S.opts().map(r => [r.p, r] as [string, any]));
+      const base = x.ms.filter(m => on.has(m.id)).map(m => { const f = fighterOf(x, m, night - 1, !!opts.get(m.id)?.waive); if (!f) return null;
+        f.order = "bal"; f.place = -1; return f; }).filter((f): f is Fighter => !!f);
+      const prev = S.shots(night - 1), lastPairs = new Set(prev.filter(s => s.f > 0).map(s => s.a + ">" + s.d));
+      const week = new Map<string, number>(); for (const s of S.shots(night - 6, night - 1)) if (s.f > 0) week.set(s.d, (week.get(s.d) || 0) + dmgAll(s));
+      const bombs = A.live(night).map(b => ({ id: b.id, a: b.p, w: bombOf(b.kind)!.w, k: b.kind, word: b.word, target: b.target }));
+      const inp = { night, lastPairs, week, aims: S.aims(night), strikes: new Map<string, string>(), open: openDamage(x, T, on), bombs, lands: landsNow() };
+      for (const f of base) for (const o of ["atk", "bal", "tur"] as Order[]) {
+        const r = resolveNight({ ...inp, fighters: base.map(g => g.id === f.id ? { ...g, order: o } : g) });
+        let v = 0; for (const s2 of r.shots) { if (s2.a === f.id) { v += usdOf(s2); if (o === "bal") fires.add(f.id); } if (s2.d === f.id) v -= usdOf(s2); }
+        const m = net.get(f.id) || { atk: 0, bal: 0, tur: 0 }; m[o] += v; net.set(f.id, m);
+      }
+      done.push(night);
+    }
+    const count = (ids: string[]) => { const best: Record<Order | "same", number> = { atk: 0, bal: 0, tur: 0, same: 0 };
+      for (const id of ids) { const v = net.get(id)!, top = Math.max(v.atk, v.bal, v.tur), ks = (["atk", "bal", "tur"] as Order[]).filter(k => v[k] === top); best[ks.length === 1 ? ks[0]! : "same"]++; }
+      const N = ids.length, share = { atk: N ? best.atk / N : 0, bal: N ? best.bal / N : 0, tur: N ? best.tur / N : 0 };
+      return { members: N, best, share, ok: share.atk <= .5 && share.bal <= .5 && share.tur <= .5 }; };
+    // the members who fired at least once (an order is a real choice for them; a city with no missiles is always best on Turtle)
+    return { nights: done, ...count([...net.keys()]), firing: count([...net.keys()].filter(id => fires.has(id))) };
   }
   /** on each growth tick: resolve the night once its time has passed (a hub that was down more than 20 hours skips it: no
    *  retroactive damage), then the report email when it's on and past 9am Pacific */
@@ -141,8 +186,9 @@ export function battleHub(c: BattleHubCtx) {
     try { await armoryAlerts(); } catch (e: any) { console.error("[armory] alerts", e?.message); }
     // the battle mail: once a night, right after the battle at 20:00 PT (spec 11-24 section 2; mailAt follows WAR.hourUtc)
     if (now() >= mailAt(n) && c.emailOn()) { try { await sendReports(); } catch (e: any) { console.error("[battle] email", e?.message); } }
-    // 20:30 Pacific, after the day's salvo on the map (12:00 drop, 20:00 salvo, local): the feed summary
-    if (now() >= battleAt(n) + 18.5 * 3600_000 && c.systemPost) { try { postSummary(); } catch (e: any) { console.error("[battle] summary", e?.message); } }
+    // the feed summary, 30 minutes after the battle (20:30 PT); nights before the switch kept their time (18.5 h after the
+    // 10:00 UTC battle, also 20:30 PT), so on the switch evening both the 11-24 and the 11-25 summaries post (each one time: sysposts key)
+    if (c.systemPost) for (const k of [n - 1, n]) if (S.hasNight(k) && now() >= summaryAt(k) && now() - summaryAt(k) < 24 * 3600_000) { try { postSummary({ night: k }); } catch (e: any) { console.error("[battle] summary", e?.message); } }
     try { await G.tick(); } catch (e: any) { console.error("[gift] tick", e?.message); }   // gift email 2: the morning after, if the summary names them
   }
   c.growth.onTick(tick);
@@ -161,6 +207,7 @@ export function battleHub(c: BattleHubCtx) {
   const rankMemo = new Map<number, { at: number; m: Map<string, number> }>();
   function ranksAt(n: number, x: Ctx): Map<string, number> {
     const hit = rankMemo.get(n); if (hit && now() - hit.at < 60_000) return hit.m;
+    const st = S.ranks(n); if (st) { if (rankMemo.size > 8) rankMemo.clear(); rankMemo.set(n, { at: now(), m: st }); return st; }   // stored after the night (prevRank)
     const se = season(n, launch()), fr = S.fair(), on = warSet(Infinity, x);
     const sc = scoreOf(S.shots(se.from, n), heads, (nn, id) => fr.get(nn + "|" + id) ?? 1);
     const m = new Map([...on].sort((a, b) => (sc.get(b) || 0) - (sc.get(a) || 0) || (a < b ? -1 : 1)).map((id, i) => [id, i + 1] as [string, number]));
@@ -213,6 +260,17 @@ export function battleHub(c: BattleHubCtx) {
     c.q("INSERT OR REPLACE INTO battle_cards (night, who, png, alt, at) VALUES (?,?,?,?,?)").run(n, id || "", png, alt, now());
     return { png, alt };
   }
+  /** the story picture of night n for one member (LOOP.md c.7), 1080x1920; null on a quiet night */
+  async function storyFor(n: number, id: string): Promise<{ png: Buffer; alt: string } | null> {
+    const key = id + ":story", row = c.q("SELECT png, alt FROM battle_cards WHERE night=? AND who=?").get(n, key) as any;
+    if (row?.png) return { png: Buffer.from(row.png), alt: String(row.alt || "") };
+    const x = ctxFor(), sum = summaryOf(n, x); if (!sum) return null;
+    const me = cardMe(n, x, id); if (!me) return null;
+    const render = c.cardPng ? (svg: string) => c.cardPng!(svg, 1080) : c.png ? (svg: string) => c.png!(svg, 1080) : null; if (!render) return null;
+    const cn = cardNight(n, x, sum), alt = battleCardAlt(cn, me), png = await render(battleStorySvg(cn, me));
+    c.q("INSERT OR REPLACE INTO battle_cards (night, who, png, alt, at) VALUES (?,?,?,?,?)").run(n, key, png, alt, now());
+    return { png, alt };
+  }
   const cardUrl = (n: number, handle?: string | null) => `${c.hub.replace(/\/$/, "")}/v1/world/battle/card/${dayKey(n)}${handle ? "/" + handle : ""}.png`;
   /** og:image and og:image:alt of /world?view=battle&replay=1 (&city=handle: that member's picture), the newest resolved night */
   function og(city?: string | null): { image: string; alt: string } | null {
@@ -225,7 +283,7 @@ export function battleHub(c: BattleHubCtx) {
   // ---------------------------------------------------------------- the public state for the Battle view
   function state() {
     if (cache && now() - cache.at < 60_000) return cache.v;
-    const x = ctxFor(), at = now(), n = lastNight(at), on = warSet(Infinity, x), opts = new Map(S.opts().map(r => [r.p, r] as [string, any])), today = dayOf(at);
+    const x = ctxFor(), at = now(), n = lastNight(at), on = warSet(Infinity, x), opts = new Map(S.opts().map(r => [r.p, r] as [string, any])), today = bdOf(at);
     const open = new Map<string, [number, number, number, number, string][]>();
     for (const s of S.shots(n - 4, n)) {
       if (s.f <= 0 || s.lot < 0 || !on.has(s.d)) continue;   // opting out rebuilds instantly
@@ -238,8 +296,9 @@ export function battleHub(c: BattleHubCtx) {
       if (!on.has(m.id)) continue;
       const f = fighterOf(x, m, today, !!opts.get(m.id)?.waive); if (!f) continue;
       const h = "@" + m.handle, last = S.shots(n).filter(s => s.d === m.id && s.f > 0), taken = last.reduce((t, s) => t + dmgAt(s, at), 0), left = last.reduce((t, s) => t + remaining(dmgAt(s, at), s.t, at, x.pts(m.id)), 0);
-      // nx: the arsenal that fires at `next` while it is not today's (00:00 to 10:00 UTC: yesterday's), for the map's Armory yard
-      const fy = at < battleAt(today) ? fighterOf(x, m, today - 1, !!opts.get(m.id)?.waive) : null;
+      // nx: the arsenal that fires at `next` while it is not today's (from the lock at 19:45 PT to the battle at 20:00 PT the
+      // work day has turned), for the map's Armory yard
+      const fy = today !== n ? fighterOf(x, m, n, !!opts.get(m.id)?.waive) : null;
       members[h] = { sh: f.sh, beg: f.beg ? 1 : 0, ammo: f.ars.ammo, usd: f.ars.usd, n: f.ars.n, ...(fy ? { nx: fy.ars.n } : {}), tech: f.ars.tech, guide: f.ars.guide, cep: f.ars.cepX, reach: f.ars.reach, best: f.ars.best, shots: f.ars.shots.length, hits: open.get(h) || [], reb: taken > 0 ? Math.round(100 * (1 - left / taken)) : 100, tgt: targetable(f) ? 1 : 0 };
     }
     const hid = A.hiddenIds([...S.shots(n), ...S.shots(n - 1)].map(s => s.x?.bid).filter((v): v is number => v != null));
@@ -253,7 +312,11 @@ export function battleHub(c: BattleHubCtx) {
     // the renderer fires the night resolved before each local noon from 12:00 to 24:00 and repairs it the next morning, so it also needs the night before (citybattle.ts)
     const fall = (ss: Shot[]) => { const f = fallenOf(ss); return f ? x.handle(f) : null; };   // the city that falls at the end of each night's replay (Mike 11-14)
     const sum = summaryOf(n, x);   // the "Last night" card's numbers: the same function as the mail, the picture and the homepage
-    const v = { at: new Date(at).toISOString(), night: dayKey(n), t0: battleAt(n), next: battleAt(n + 1), fallen: fall(night), prev: { night: dayKey(n - 1), t0: battleAt(n - 1), shots: prevShots, fallen: fall(S.shots(n - 1)) }, season: { n: se.n, week: se.week }, members, shots, board, rules, usd: sum ? sum.usd : 0, held: sum ? sum.held : 0, fires: night.filter(s => s.x?.sp).length, raiders: (S.night(n)?.raiders || []).map((id: string) => x.handle(id)), cities: sum ? sum.cities : Object.keys(members).length, people: peopleOf(x) };
+    // the orders of the night, shown only in the replay and the shot list (LOOP.md c.2): "@h" -> "atk" | "tur" (+ "*" when a tower was guarded)
+    const ordersOf = (k: number) => { const out: Record<string, string> = {}; for (const f of S.night(k)?.fighters || []) if (f.o || f.pl != null) out[x.handle(f.id)] = (f.o || "bal") + (f.pl != null ? "*" : ""); return out; };
+    const final = season(n + 1, launch()).n > se.n, left = se.from + WAR.seasonDays - 1 - n;
+    const v = { at: new Date(at).toISOString(), night: dayKey(n), t0: battleAt(n), next: battleAt(n + 1), lock: lockAt(n + 1), fallen: fall(night), orders: ordersOf(n), prev: { night: dayKey(n - 1), t0: battleAt(n - 1), shots: prevShots, fallen: fall(S.shots(n - 1)), orders: ordersOf(n - 1) },
+      season: { n: se.n, week: se.week, left: Math.max(0, left), final: final ? 1 : 0, podium: board.slice(0, 3) }, members, shots, board, rules, usd: sum ? sum.usd : 0, held: sum ? sum.held : 0, fires: night.filter(s => s.x?.sp).length, raiders: (S.night(n)?.raiders || []).map((id: string) => x.handle(id)), cities: sum ? sum.cities : Object.keys(members).length, people: peopleOf(x) };
     cache = { at, v }; return v;
   }
 
@@ -294,22 +357,129 @@ export function battleHub(c: BattleHubCtx) {
     return reportFor(m.id, m.handle, peace ? [] : S.shots(night), { night, now: now(), peace, pts: x.pts(m.id), handle: x.handle, mvp: mvpOf(x.evBy.get(m.id) || [], day),
       shield: f?.sh ?? 0, streak: sn?.streak || 0, built: st ? st.top : 0, ammo: meta?.ammo || 0, usd: meta?.usd });
   }
+  /** the three tallest repo towers on the world map, with their names (the Tonight card's shield picture) */
+  function towersNamed(m: GrowthMember): { name: string; h: number }[] {
+    const repos = (m.city?.districts || []).flatMap((d: any) => d.repos || []).filter((r: any) => r && !r.kind);
+    const hs = towersOf(repos), named = repos.map((r: any) => ({ name: String(r.name || "").split("/").pop() || "tower", h: towerHOf(Number(r.commits) || 0), s: (Number(r.week) || 0) * 20 + (Number(r.commits) || 0) }))
+      .sort((a: any, b: any) => b.s - a.s).slice(0, 30).sort((a: any, b: any) => b.h - a.h);
+    return hs.slice(0, 3).map((h, i) => ({ name: named[i]?.name || "tower " + (i + 1), h }));
+  }
+  /** the night the Tonight card is about: the next one, or the one running now (its time has passed, not resolved yet) */
+  function turnNight(at = now()): { night: number; running: boolean } {
+    const n = lastNight(at); if (!S.hasNight(n) && at - battleAt(n) < 2 * 3600_000 && n >= SWITCH_NIGHT) return { night: n, running: true };
+    return { night: n + 1, running: false };
+  }
+  /** the season score of every city after night n (the board's score; memo for a minute) */
+  const scoreMemo = new Map<number, { at: number; m: Map<string, number> }>();
+  function scoresAt(n: number, x: Ctx): Map<string, number> {
+    const hit = scoreMemo.get(n); if (hit && now() - hit.at < 60_000) return hit.m;
+    const se = season(n, launch()), fr = S.fair(), m = n < se.from ? new Map<string, number>() : scoreOf(S.shots(se.from, n), heads, (nn, id) => fr.get(nn + "|" + id) ?? 1);
+    if (scoreMemo.size > 8) scoreMemo.clear(); scoreMemo.set(n, { at: now(), m }); return m;
+  }
+  /** the stored nights of the last 120 (badges): night -> shots (memo until the next resolve or a minute) */
+  let histMemo: { at: number; n: number; m: Map<number, Shot[]> } | null = null;
+  function history(n: number): Map<number, Shot[]> {
+    if (histMemo && histMemo.n === n && now() - histMemo.at < 60_000) return histMemo.m;
+    const m = new Map<number, Shot[]>(); for (const s2 of S.shots(n - 119, n)) { if (!m.has(s2.night)) m.set(s2.night, []); m.get(s2.night)!.push(s2); }
+    histMemo = { at: now(), n, m }; return m;
+  }
+  /** the places at the end of each finished season up to night n (badges: top 10, podium, champion); scored cities only */
+  function finalsOf(id: string, n: number): { season: number; rank: number }[] {
+    const out: { season: number; rank: number }[] = [], L = launch();
+    for (let end = L + WAR.seasonDays - 1; end <= n; end += WAR.seasonDays) {
+      const se = season(end, L), fr = S.fair(), sc = scoreOf(S.shots(se.from, end), heads, (nn, id2) => fr.get(nn + "|" + id2) ?? 1);
+      const i = [...sc.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).findIndex(([k]) => k === id);
+      if (i >= 0 && i < 10) out.push({ season: se.n, rank: i + 1 });
+    }
+    return out;
+  }
+  function badgesOf(id: string, upTo: number, n: number) {
+    const nights: { night: number; res: any; out: number }[] = [];
+    for (const [k, sh] of history(n)) if (k <= upTo) { const o = nightOf(id, sh); if (o.res !== "QUIET") nights.push({ night: k, res: o.res, out: o.shotsOut }); }
+    let founding = false; try { founding = !!c.founding?.(id); } catch { founding = false; }
+    return badgesFor({ nights, finals: finalsOf(id, upTo), founding });
+  }
+  /** merged PRs of a member in the 14 days before a work day ends (the Build order) */
+  const prs14 = (x: Ctx, id: string, day: number) => (x.evBy.get(id) || []).filter(e => !e.v && e.k === "pr" && bdOf(e.ts) > day - 14 && bdOf(e.ts) <= day).length;
+  /** Today's orders (LOOP.md c.3) of a member for the orders' day (lastNight: they start again at 20:00 PT), with done flags.
+   *  Build and Fight are done by the server's own facts; Scout only by POST order-done. Paid through points.ts awardOrder. */
+  function ordersOf(x: Ctx, m: GrowthMember, day: number, f?: Fighter | null) {
+    const fi = f === undefined ? fighterOf(x, m, day, !!S.opt(m.id)?.waive) : f, P = c.points?.() || null;
+    const list = ordersFor({ day, prs14: prs14(x, m.id, day), canPlace: !!fi && !fi.beg && fi.sh > 0, battled: S.shots(day).length > 0 });
+    const turn = S.turn(day + 1, m.id), pl = S.place(m.id), start = battleAt(day);
+    const fact: Partial<Record<OrderKey, boolean>> = { "build:pr": (fi?.ars.pr || 0) > 0, "build:commit": (fi?.ars.c || 0) > 0,
+      "fight:aim": S.aimsOf(day + 1, m.id).length > 0 || !!turn.strike, "fight:orders": turn.ordAt != null, "fight:place": pl.at != null && pl.at >= start };
+    const has = (kind: string) => !!P && P.hasOrder(m.id, day, kind);
+    return list.map(o => ({ ...o, points: POINTS_ORDER[o.kind], done: has(o.kind) || (o.kind !== "scout" && !!fact[o.key]) }));
+  }
+  /** pay the Build and Fight orders that are done (idempotent per order and day) */
+  function payOrders(x: Ctx, m: GrowthMember, day: number, f?: Fighter | null) {
+    const P = c.points?.(); if (!P || !m) return;
+    for (const o of ordersOf(x, m, day, f)) if (o.kind !== "scout" && o.done) P.awardOrder(m.id, day, o.kind, o.text);
+  }
+  /** the rank name and the badges for the leaderboard row and the profile head (LOOP.md c.5); null outside the battles.
+   *  Season scores after the newest resolved night, cached per night for 5 min */
+  let stCache: { n: number; at: number; sc: Map<string, number>; b: Map<string, any>; ids: Set<string> } | null = null;
+  function standing(id: string): { rank: string; level: number; badges: { k: string; name: string; gold?: 1 }[] } | null {
+    const at = now(), tn = turnNight(at), lastN = tn.running ? lastNight(at) - 1 : lastNight(at);
+    if (S.opt(id)?.out) return null;
+    if (!stCache || stCache.n !== lastN || at - stCache.at > 300_000) { const x = ctxFor(); stCache = { n: lastN, at, sc: scoresAt(lastN, x), b: new Map(), ids: new Set(x.ms.map(m => m.id)) }; }
+    if (!stCache.ids.has(id)) return null;
+    const lv = levelOf(stCache.sc.get(id) || 0);
+    if (!stCache.b.has(id)) stCache.b.set(id, badgesOf(id, lastN, lastN));
+    return { rank: lv.name, level: lv.level, badges: stCache.b.get(id) };
+  }
   function me(id: string) {
     const x = ctxFor(), m = x.byId.get(id); if (!m) return null;
-    const opt = S.ensure(id), n = lastNight(now()), today = dayOf(now()), f = fighterOf(x, m, today, !!opt.waive);
-    const on = warSet(Infinity, x), rivals = x.ms.filter(o => o.id !== id && on.has(o.id)).map(o => fighterOf(x, o, today, !!S.opt(o.id)?.waive)).filter((y): y is Fighter => !!y && targetable(y))
-      .sort((a, b) => Math.abs(a.side - (f?.side || 2)) - Math.abs(b.side - (f?.side || 2)) || a.h.localeCompare(b.h)).slice(0, 12).map(y => ({ h: "@" + y.h, sh: y.sh, beg: y.beg ? 1 : 0 }));
-    const nights = S.night(n) ? reportOf(x, m, n) : null;
+    const at = now(), opt = S.ensure(id), n = lastNight(at), tn = turnNight(at), work = tn.night - 1, f = fighterOf(x, m, work, !!opt.waive);
+    const on = warSet(Infinity, x), turn = S.turn(tn.night, id), pl = S.place(id), ord: Order = turn.ord, canPlace = !!f && !f.beg && f.sh > 0;
+    const lastN = tn.running ? n - 1 : n, lastShots = S.shots(lastN), riv = rivalOf(id, lastShots), rivOk = riv && on.has(riv.id) ? riv : null;
+    const reach = f ? reachOf(f.ars, ord) : WAR.reach;
+    const close = x.ms.filter(o => o.id !== id && on.has(o.id)).map(o => fighterOf(x, o, work, !!S.opt(o.id)?.waive)).filter((y): y is Fighter => !!y && targetable(y))
+      .sort((a, b) => Math.abs(a.side - (f?.side || 2)) - Math.abs(b.side - (f?.side || 2)) || a.h.localeCompare(b.h));
+    const rivals = close.slice(0, 12).map(y => ({ h: "@" + y.h, sh: y.sh, beg: y.beg ? 1 : 0 }));
+    const aims = S.aimsOf(tn.night, id).map(t => x.handle(t));
+    // the rows of step 2: the rival first, then the closest cities in reach, then any city already aimed at
+    const rowIds = [...new Set([...(rivOk ? [rivOk.id] : []), ...close.slice(0, reach).map(y => y.id), ...S.aimsOf(tn.night, id)])];
+    const rowOf = (rid: string) => { const y = close.find(c2 => c2.id === rid) || fighterOf(x, x.byId.get(rid)!, work, !!S.opt(rid)?.waive); return y ? { h: "@" + y.h, sh: Math.round(y.sh * 100), dome: y.beg ? 1 : 0, n: aims.filter(a => a === "@" + y.h).length } : null; };
+    const nights = S.night(n) ? reportOf(x, m, n) : null, P = c.points?.() || null;
+    // season: rank level by the season score after the newest night; place on the board
+    const sc = scoresAt(lastN, x), lv = levelOf(sc.get(id) || 0), rk = rankOf(id, lastN, x);
+    const fired = f ? firedOf(f.ars, ord).length : 0;
+    const tonight = f ? { night: dayKey(tn.night), lockAt: lockAt(tn.night), startAt: battleAt(tn.night), running: tn.running, locked: at >= lockAt(tn.night),
+      order: ord, place: canPlace ? pl.place : -1, strike: !!turn.strike && !!rivOk && turn.strike === rivOk.id, savedAt: Math.max(turn.at || 0, pl.at || 0) || null,
+      towers: towersNamed(m), shield: Math.round(f.sh * 100), dome: f.beg ? 1 : 0, streak: snapOf(x.sims.get(id)!, work).streak || 0, canPlace,
+      reach: f.ars.reach, reachTonight: reach, cap: WAR.manualCap,
+      through: [0, 1, 2].map(lot => Math.round(100 * shieldAt({ sh: f.sh, beg: f.beg, order: ord, place: canPlace ? pl.place : -1 }, lot))),
+      // each order's line (step 3): reach, the shield on a tower that is not the guarded one, the missiles that fire
+      opts: Object.fromEntries((["atk", "bal", "tur"] as Order[]).map(o => [o, { reach: reachOf(f.ars, o), fired: firedOf(f.ars, o).length,
+        shield: Math.round(100 * shieldAt({ sh: f.sh, beg: f.beg, order: o, place: canPlace ? pl.place : -1 }, canPlace && pl.place === 0 ? 1 : 0)) }])),
+      rivals: rowIds.map(rowOf).filter(Boolean), rival: rivOk ? { h: x.handle(rivOk.id), usd: rivOk.usd, canStrike: rivOk.canStrike } : null,
+      work: { commits: f.ars.c, prs: f.ars.pr, releases: f.ars.rel, ci: f.ars.ci, missiles: f.ars.shots.length, fired, usd: f.ars.usd } } : null;
+    // the "Last night" summary (LOOP.md c.6): result, dollars, rank move, rank up, new badges, points, seen
+    let last: any = nights ? { ...nights, ...lastBombs(x, id, n) } : null;
+    if (last && S.hasNight(lastN) && lastShots.length) {
+      const o = nightOf(id, lastShots), prevLv = levelOf(scoresAt(lastN - 1, x).get(id) || 0), first = lastN === season(lastN, launch()).from;
+      const nb = o.res === "QUIET" ? [] : (() => { const was = new Set(badgesOf(id, lastN - 1, lastN).map(b => b.k)); return badgesOf(id, lastN, lastN).filter(b => !was.has(b.k) && b.k !== "founding").map(b => b.name); })();
+      const rows = P ? P.nightRows(id, lastN) : [];
+      last = { ...last, date: dateLong(dayKey(lastN)), key: dayKey(lastN), res: o.res, dealt: o.dealt, took: o.took, held: o.held, rank: rk.rank, move: rk.move,
+        rankUp: !first && lv.level > prevLv.level || first && lv.level > 1 ? { name: lv.name, level: lv.level, at: lv.at } : null, newBadges: nb,
+        points: rows.map(r => ({ what: r.kind === "night" ? (r.note === "held" ? "Held night" : "Won night") : r.kind === "order" ? "Order: " + r.note : r.kind === "streak" ? "7-night streak" : r.note, n: r.amount })),
+        seen: S.seen(id, lastN) ? 1 : 0, sum: summaryOf(lastN, x) ? { cities: summaryOf(lastN, x)!.cities, hits: summaryOf(lastN, x)!.hits, usd: summaryOf(lastN, x)!.usd } : null };
+    }
     return { h: "@" + m.handle, war: on.has(id) ? 1 : 0, waive: opt.waive, report: freqOf(opt), email: !!c.emailOf(id), emailLive: c.emailOn(),
       arsenal: f ? { usd: f.ars.usd, n: f.ars.n, tech: f.ars.tech, why: f.ars.techWhy, guide: f.ars.guide, cep: f.ars.cepX, reach: f.ars.reach, left: f.ars.left, ammo: f.ars.ammo, c: f.ars.c, pr: f.ars.pr, rel: f.ars.rel, ci: f.ars.ci, ai: f.ars.aiX, streak: f.ars.streakX, best: f.ars.best, shots: f.ars.shots.length } : null,
-      shield: f?.sh ?? 0, beginner: f?.beg ? 1 : 0, next: battleAt(n + 1), aims: S.aimsOf(n + 1, id).map(t => x.handle(t)), aimCap: WAR.manualCap, rivals, last: nights ? { ...nights, ...lastBombs(x, id, n) } : null,
+      shield: f?.sh ?? 0, beginner: f?.beg ? 1 : 0, next: battleAt(n + 1), lockAt: lockAt(n + 1), aims, aimCap: WAR.manualCap, rivals, last,
+      tonight, orders: on.has(id) ? ordersOf(x, m, n).map(o => ({ kind: o.kind, text: o.text, points: o.points, done: o.done ? 1 : 0 })) : [],
+      rank: { level: lv.level, name: lv.name, score: lv.score, next: lv.next, toNext: lv.toNext, pct: lv.pct, place: rk.rank }, badges: badgesOf(id, lastN, lastN),
+      points: P ? P.balanceOf(id) : null,
       armory: on.has(id) ? armoryOf(x, id) : null };
   }
   /** the Armory panel's state for one member (armory-design A7) */
   function armoryOf(x: Ctx, id: string) {
-    const w = armoryNow(now()), on = warSet(Infinity, x), pr = PR.ensure(id), n = lastNight(now());
+    const w = armoryNow(now()), on = warSet(Infinity, x), pr = PR.ensure(id), n = lastNight(now());   // w.lock: 19:45 PT (lockAt)
     const targets = x.ms.filter(o => o.id !== id && on.has(o.id)).map(o => "@" + o.handle).sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
-    return { opensAt: w.open, locksAt: w.lock, now: now(), night: w.night, balance: A.balance(id), cap: ARMORY.perNight, wordMax: ARMORY.wordMax,
+    return { opensAt: w.open, locksAt: w.lock, startAt: battleAt(w.night), state: w.state, now: now(), night: w.night, balance: A.balance(id), cap: ARMORY.perNight, wordMax: ARMORY.wordMax,
       kinds: ARMORY.types.map(t => ({ k: t.k, name: t.name, cost: t.cost, line: t.line })),
       bought: A.of(w.night, id).filter(b => b.state !== "refunded").map(b => ({ id: b.id, k: b.kind, word: b.word, target: b.target ? x.handle(b.target) : null })),
       targets, lands: landsNow().filter(l => (l.towers || 0) > 0).map(l => "@" + l.h).sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" })),
@@ -375,8 +545,11 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
 
   // ---------------------------------------------------------------- the battle mail (LOOP.md part a; spec 11-24 section 2; sends only with CALDERA_BATTLE_EMAIL=1)
   const unsubUrl = (t: string) => `${c.hub.replace(/\/$/, "")}/u/battle?t=${t}`;
-  /** right after the battle: 20:00 PT is 04:00 UTC; the first 04:00 UTC at or after the night's battle time, plus 10 minutes */
-  const mailAt = (n: number) => battleAt(n) + (((4 - WAR.hourUtc) % 24 + 24) % 24) * 3600_000 + 10 * 60_000;
+  /** right after the battle: 10 minutes after it (20:10 PT). Nights before the switch ran at 10:00 UTC and mailed 18 hours later,
+   *  also 20:10 PT; on the switch evening that is the same moment as the 11-25 mail, and sendReports mails the newest night only. */
+  const mailAt = (n: number) => n < SWITCH_NIGHT ? battleAt(n) + 18 * 3600_000 + 10 * 60_000 : battleAt(n) + 10 * 60_000;
+  /** the feed summary: 30 minutes after the battle (20:30 PT); before the switch 18.5 hours after the 10:00 UTC battle */
+  const summaryAt = (n: number) => n < SWITCH_NIGHT ? battleAt(n) + 18.5 * 3600_000 : battleAt(n) + 30 * 60_000;
   function compose(x: Ctx, m: GrowthMember, night: number, weekly: boolean, o: { first?: boolean } = {}) {
     const r = { ...reportOf(x, m, night), ...lastBombs(x, m.id, night) }, opt = S.ensure(m.id), shots = S.shots(night), on = warSet(Infinity, x);
     const built = x.ms.map(o => [x.handle(o.id), x.sims.get(o.id)?.stats.find(s => s.d === night - 1)?.top || 0] as [string, number]).filter(y => y[1] > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
@@ -426,8 +599,8 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
   }
 
   /** the daily feed post, once per battle day (sysposts key battle:<night>); dry: the text only */
-  function postSummary(o: { dry?: boolean } = {}) {
-    const n = lastNight(now()), x = ctxFor(); if (!S.hasNight(n)) return { skip: "no battle yet" };
+  function postSummary(o: { dry?: boolean; night?: number } = {}) {
+    const n = o.night ?? lastNight(now()), x = ctxFor(); if (!S.hasNight(n)) return { skip: "no battle yet" };
     const text = battleSummary(S.shots(n), { night: dayKey(n), handle: x.handle, hub: c.hub }); if (!text) return { skip: "no missiles today", night: dayKey(n) };
     if (o.dry || !c.systemPost) return { dry: true, night: dayKey(n), text };
     return { night: dayKey(n), ...c.systemPost("battle:" + dayKey(n), text, [c.hub.replace(/\/$/, "") + "/world?view=battle&replay=1"]) };
@@ -453,14 +626,15 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
     }
     if (!p.startsWith("/v1/world/battle/")) return false;
     // the nightly battle picture (LOOP.md a.6): public battle data only; rendered one time per night and city, then stored
-    const mc = (req.method === "GET" || req.method === "HEAD") ? p.match(/^\/v1\/world\/battle\/card\/(\d{4}-\d{2}-\d{2})(?:\/([A-Za-z0-9-]{1,39}))?\.png$/) : null;
+    const mc = (req.method === "GET" || req.method === "HEAD") ? p.match(/^\/v1\/world\/battle\/card\/(\d{4}-\d{2}-\d{2})(?:\/([A-Za-z0-9-]{1,39})(\.story)?)?\.png$/) : null;
     if (mc) {
       const night = Math.floor(Date.parse(mc[1] + "T00:00:00Z") / DAY), miss = () => { res.writeHead(404, { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=300" }); res.end("No battle picture here."); return true; };
       if (!Number.isFinite(night) || !S.hasNight(night)) return miss();
       let who: string | null = null;
       if (mc[2]) { const h = mc[2].toLowerCase(), m = ctxFor().ms.find(mm => mm.handle.toLowerCase() === h); if (!m) return miss(); who = m.id; }
       let card: { png: Buffer } | null = null;
-      try { card = await cardFor(night, who); } catch (e: any) { console.error("[battle] card", e?.message); res.writeHead(500, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }); res.end("Could not draw the picture."); return true; }
+      if (mc[3] && !who) return miss();
+      try { card = mc[3] ? await storyFor(night, who!) : await cardFor(night, who); } catch (e: any) { console.error("[battle] card", e?.message); res.writeHead(500, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }); res.end("Could not draw the picture."); return true; }
       if (!card) return miss();
       res.writeHead(200, { "content-type": "image/png", "content-length": String(card.png.length), "cache-control": "public, max-age=604800" });
       res.end(req.method === "HEAD" ? undefined : card.png); return true;
@@ -481,11 +655,43 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
       // every city is in unless it left, and a target must be hittable (towers, not idle)
       const x = ctxFor(), on = warSet(Infinity, x); if (!on.has(id)) { c.json(res, 409, { error: "join the battles first" }); return true; }
       const h = String(b.target || "").replace(/^@/, "").toLowerCase(), t = x.ms.find(m => m.handle.toLowerCase() === h);
-      const night = lastNight(now()) + 1, tf = t && t.id !== id && on.has(t.id) ? fighterOf(x, t, dayOf(now()), !!S.opt(t.id)?.waive) : null;
+      const tn = turnNight(), night = tn.night; if (tn.running || now() >= lockAt(night)) { c.json(res, 409, { error: "locked" }); return true; }
+      const tf = t && t.id !== id && on.has(t.id) ? fighterOf(x, t, night - 1, !!S.opt(t.id)?.waive) : null;
       if (!t || (!b.off && (!tf || !targetable(tf))) || (b.off && t.id === id)) { c.json(res, 400, { error: "that city isn't in tonight's battle" }); return true; }
-      if (b.off) S.unaim(night, id, t.id);
+      if (b.off) S.unaim(night, id, t.id, !!b.all);
       else { if (S.aimsOf(night, id).length >= WAR.manualCap) { c.json(res, 409, { error: `you've aimed all ${WAR.manualCap} shots for tonight` }); return true; } S.aim(night, id, t.id, now()); }
+      try { payOrders(x, x.byId.get(id)!, night - 1); } catch (e: any) { console.error("[points] orders", e?.message); }   // Fight: aim one shot
       c.json(res, 200, me(id)); return true;
+    }
+    // the evening turn (LOOP.md c.10): tonight's orders, the guarded tower, strike back; refused after the lock (19:45 PT)
+    if (p === "/v1/world/battle/tonight") {
+      const x = ctxFor(), on = warSet(Infinity, x), m = x.byId.get(id); if (!m || !on.has(id)) { c.json(res, 409, { error: "join the battles first" }); return true; }
+      const tn = turnNight(), night = tn.night, at = now(); if (tn.running || at >= lockAt(night)) { c.json(res, 409, { error: "locked" }); return true; }
+      const f = fighterOf(x, m, night - 1, !!S.opt(id)?.waive);
+      if (b.order !== undefined) { if (!["atk", "bal", "tur"].includes(b.order)) { c.json(res, 400, { error: "order must be atk, bal or tur" }); return true; } S.setTurn(night, id, { ord: b.order }, at); }
+      if (b.place !== undefined) {
+        const pl = Number(b.place); if (!Number.isInteger(pl) || pl < -1 || pl > 2) { c.json(res, 400, { error: "place must be -1 (whole city) or 0, 1, 2" }); return true; }
+        if (pl >= 0 && !(f && !f.beg && f.sh > 0 && pl < Math.min(3, f.towers))) { c.json(res, 409, { error: "no shield to place yet" }); return true; }
+        S.setPlace(id, pl, at);
+      }
+      if (b.strike !== undefined) {
+        const riv = rivalOf(id, S.shots(night - 1));
+        if (b.strike) { if (!riv || !riv.canStrike || !on.has(riv.id)) { c.json(res, 409, { error: "no rival to strike back at tonight" }); return true; } S.setTurn(night, id, { strike: riv.id }, at); }
+        else S.setTurn(night, id, { strike: null }, at);
+      }
+      try { payOrders(x, m, night - 1, f); } catch (e: any) { console.error("[points] orders", e?.message); }   // Fight: orders or placement
+      c.json(res, 200, me(id)); return true;
+    }
+    if (p === "/v1/world/battle/seen") {   // the "Last night" card was shown (one time a day, on every device)
+      const d = String(b.date || ""), night = /^\d{4}-\d{2}-\d{2}$/.test(d) ? Math.floor(Date.parse(d + "T00:00:00Z") / DAY) : NaN;
+      if (!Number.isFinite(night) || !S.hasNight(night)) { c.json(res, 400, { error: "no such night" }); return true; }
+      S.setSeen(id, night, now()); c.json(res, 200, { ok: true }); return true;
+    }
+    if (p === "/v1/world/battle/order-done") {   // only Scout: Build and Fight are set by the server
+      if (b.kind !== "scout") { c.json(res, 400, { error: "only the scout order" }); return true; }
+      const x = ctxFor(), m = x.byId.get(id), P = c.points?.(); if (!m || !warSet(Infinity, x).has(id)) { c.json(res, 409, { error: "join the battles first" }); return true; }
+      const day = lastNight(now()), o = ordersOf(x, m, day).find(y => y.kind === "scout")!;
+      const paid = P ? P.awardOrder(id, day, "scout", o.text) : false; c.json(res, 200, { ok: true, paid, me: me(id) }); return true;
     }
     if (p === "/v1/world/battle/tz") { const z = cleanTz(b.tz); if (z) PR.setTz(id, z); c.json(res, 200, { ok: !!z }); return true; }
     if (p === "/v1/world/battle/notify") { PR.set(id, { open: typeof b.armoryOpen === "boolean" ? b.armoryOpen : undefined, remind: typeof b.armoryRemind === "boolean" ? b.armoryRemind : undefined }); const pr = PR.ensure(id); c.json(res, 200, { open: pr.open, remind: pr.remind }); return true; }
@@ -521,7 +727,8 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
       items.push({ kind: kind as BombKind, word: w.word.toUpperCase(), target, named: !!(b.showName ?? b.show) && !!target && !target.startsWith("uc:") });
     });
     if (rows.length) return done(422, { error: "Nothing was charged. Change the marked word and tap Buy again.", rows });
-    const w = armoryNow(at), r = A.buy(id, w.night, items, at);
+    const w = armoryNow(at); if (w.state === "locked") return done(409, { error: "locked" });
+    const r = A.buy(id, w.night, items, at);
     if (!r.ok) { const cap = /at most/.test(r.error); return done(cap ? 409 : 402, { error: cap ? `You have ${ARMORY.perNight} bombs for tonight. That is the most per night.` : `Your balance is now ${r.balance} credits. Remove a bomb or pick a smaller one.`, balance: r.balance, cap }); }
     console.log(`[armory] ${x.handle(id)} bought ${items.length} for night ${w.night} (${items.map(i => i.kind).join(",")})`);
     // gift emails go after the reply: a slow mail service never holds up the Buy tap
@@ -533,7 +740,7 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
    *  restruck = when). Nothing is sent: the report email and the feed post only go from the tick, once per night. */
   function restrikeNight(night: number, o: { save?: boolean } = {}) {
     const x = ctxFor(), old = S.shots(night), now2 = restrike(old);
-    if (o.save && old.length) { S.saveNight(night, { ...(S.night(night) || { night: dayKey(night), at: battleAt(night) }), restruck: now() }, now2.map(({ night: _n, ...s }: any) => s), now()); cache = null; dropCards(night); }
+    if (o.save && old.length) { S.saveNight(night, { ...(S.night(night) || { night: dayKey(night), at: battleAt(night) }), restruck: now() }, now2.map(({ night: _n, ...s }: any) => s), now()); cache = null; dropCards(night); S.dropRanks(night); rankMemo.clear(); scoreMemo.clear(); }
     return { night: dayKey(night), n: old.length, old: old.reduce((t, s) => t + usdOf(s), 0), new: now2.reduce((t, s) => t + usdOf(s), 0),
       shots: now2.map((s, i) => ({ a: x.handle(s.a), d: x.handle(s.d), w: s.w, old: usdOf(old[i]!), new: usdOf(s), held: heldOf(s), sh: s.x?.sh || 0 })) };
   }
@@ -557,20 +764,20 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
       const j = S.night(n); if (!j) continue;
       for (const f of j.fighters || []) {
         if (!(Number(f.usd) > 0)) continue;
-        const ev = evBy.get(f.id) || [], o = { ai: ai.get(f.id), reverted };
+        const ev = evBy.get(f.id) || [], o = { ai: ai.get(f.id), reverted, dayOf: bdOf };
         const before = arsenal(ev.map(e => e.v === "farm" ? { ...e, v: "" } : e), n - 1, { ...o, cap: false }).raw, after = arsenal(ev, n - 1, o).raw;
         const x = before > 0 ? Math.round(Math.min(1, after / before) * 1000) / 1000 : 1;
         if (apply) S.setFair(n, f.id, x);
         if (x < 1) out.push({ night: n, id: f.id, x });
       }
     }
-    if (apply) { cache = null; rankMemo.clear(); dropCards(); }   // ranks in the stored pictures may move
+    if (apply) { cache = null; rankMemo.clear(); scoreMemo.clear(); S.dropRanks(); dropCards(); }   // ranks in the stored pictures may move
     return out;
   }
   /** the time from which work counts for the season in progress (the next night's season): the battle before its first night.
    *  Settings > Activity reads it (LOOP e). */
-  const seasonStart = () => battleAt(season(lastNight(now()) + 1, launch()).from - 1);
-  return { seasonStart, route, tick, resolve, restrikeNight, fairRecount, state, home, me, postSummary, sendReports, mailTest, summaryOf, newest, cardFor, og, store: S, armory: A, prefs: PR, armoryAlerts, gift: G, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
+  const seasonStart = () => { const f = season(lastNight(now()) + 1, launch()).from; return f === SWITCH_NIGHT ? (SWITCH_NIGHT - 1) * DAY : f > SWITCH_NIGHT ? lockAt(f - 1) : battleAt(f - 1); };   // work of night f starts at the lock of night f-1 (bdOf)
+  return { seasonStart, standing, orderCheck, route, tick, resolve, restrikeNight, fairRecount, state, home, me, postSummary, sendReports, mailTest, summaryOf, newest, cardFor, og, store: S, armory: A, prefs: PR, armoryAlerts, gift: G, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
     /** operator: opt a member in; since (ms) backdates it so a seed night can include them */
     optIn: (id: string, o: { waive?: boolean; since?: number } = {}) => { S.setWar(id, true, o.since ?? now()); if (o.waive !== undefined) S.setWaive(id, o.waive); cache = null; } };
 }

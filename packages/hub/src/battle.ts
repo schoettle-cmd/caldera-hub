@@ -28,16 +28,19 @@
  *    so later hits do less, but never nothing: there are no caps that zero a shot.
  * 4. Every hit starts a fire. Some spread (by weapon). Fire adds damage for hours on an exponential burn-down (time constant
  *    1 hour: 63% of it in the first hour, out after about 4, embers and thin smoke until morning).
- * 5. Battles run on their own on the overnight tick (02:00 Pacific, 10:00 UTC). Cities always regenerate: 25% of each hit a
+ * 5. Battles run on their own at 20:00 Pacific (04:00 UTC in winter, 03:00 in summer; nights up to 2026-11-24 ran at 10:00 UTC,
+ *    LOOP.md part c). Defenses lock at 19:45 Pacific. Cities always regenerate: 25% of each hit a
  *    day on its own, plus 1% per build point earned after it. Opting out rebuilds instantly. Real land and data are never touched.
  * 6. Fairness: every city is in unless it opts out; a beginner shield (99%) for 30 days after joining and until a member has
  *    7 active days; streak shields (50% at 7 days, 95% at 30); per-capita strength and scoring; never hit by the same rival
  *    two nights running; quiet plots (14 days idle) can't be targeted. Manual fire: aim up to 3 of tonight's shots.
  */
-import { DAY, dayOf, dayKey, aiMult, streakMult, RULES, type GEvent, type SimOut } from "./growth";
+import { DAY, dayOf, dayOf as dayOfUtc, dayKey, aiMult, streakMult, RULES, type GEvent, type SimOut } from "./growth";
 
 // ---------------------------------------------------------------- the rules
 export type Weapon = "shell" | "rocket" | "tactical" | "cruise";
+/** tonight's orders (LOOP.md c.2): All-in attack, Balanced (the default), Turtle */
+export type Order = "atk" | "bal" | "tur";
 export interface WeaponSpec { k: Weapon; name: string; size: string; like: string; /** unit cost, $ */ cost: number; /** warhead, kg of TNT */ tnt: number; /** circular error probable, m, before guidance */ cep: number; /** chance the fire spreads */ fire: number; /** tech level needed, 0..3 */ tech: number }
 export interface BuildClass { k: string; name: string; /** overpressure that wrecks it, kPa */ kpa: number; /** replacement cost, $ per m2 of floor */ sqm: number; /** fire load, 0..1 */ load: number; /** tallest map height (px) in this class */ maxH: number }
 export const WAR = {
@@ -70,7 +73,15 @@ export const WAR = {
   /** guidance by streak days: the CEP multiplier */ guide: [{ streak: 30, x: 0.25, name: "Terminal seeker" }, { streak: 7, x: 0.5, name: "GPS" }, { streak: 0, x: 1, name: "Inertial" }],
   /** a release this recent moves the heaviest size up one */ relDays: 30, /** rivals within reach: 3, plus one per merged PR that day */ reach: 3, reachMax: 5,
   autoRepair: 0.25, repairPerPt: 0.01,
-  beginnerDays: 30, beginnerActive: 7, hourUtc: 10, manualCap: 3, seasonDays: 42, idleDays: 14,
+  /** hourUtc: the battle hour in UTC in winter (20:00 PST); the battle follows Pacific time (battleAt). lockMin: defenses and the
+   *  Armory lock this many minutes before it (19:45 PT) */
+  beginnerDays: 30, beginnerActive: 7, hourUtc: 4, lockMin: 15, manualCap: 3, seasonDays: 42, idleDays: 14,
+  /** the evening turn (LOOP.md c.2): tonight's orders change reach, the shield (points of through%) and the missiles that fire */
+  orders: { atk: { reach: 2, shield: -25, keep: 1 }, bal: { reach: 0, shield: 0, keep: 1 }, tur: { reach: 0, shield: 20, keep: 2 / 3 } } as Record<Order, { reach: number; shield: number; keep: number }>,
+  /** shield placement: the guarded tower +20 points, each other tower -10 */ place: { focus: 20, rest: -10 },
+  /** the most an earned shield shows (through% never under 3), and the most a hit can do (All-in with no shield: 125%) */ shieldCap: 97, throughMax: 125,
+  /** the commander ranks by season score, $ (LOOP.md c.5) */
+  ranks: [["Recruit", 0], ["Gunner", 1e6], ["Sergeant", 5e6], ["Lieutenant", 15e6], ["Captain", 40e6], ["Major", 100e6], ["Colonel", 250e6], ["General", 600e6]] as [string, number][],
   /** nights resolved before 2026-11-14 counted facades: one facade is scored as this many dollars, one old ammo point as usd */ legacyFacade: 5_000_000,
 };
 const LEGACY: Record<string, Weapon> = { orbital: "cruise", beam: "tactical", cannon: "rocket", catapult: "shell" };
@@ -78,10 +89,35 @@ export const weaponOf = (w: string): WeaponSpec => WAR.weapons.find(x => x.k ===
 /** the house rival: when an opted-in city has no fair human match, raiders come in from the sea (they never own land) */
 export const RAIDERS = "~raiders";
 
-/** The night battle for UTC day N happens at N 10:00 UTC (02:00 Pacific) and spends day N-1's arsenal. */
-export const battleAt = (night: number) => night * DAY + WAR.hourUtc * 3600_000;
+/** the first night at 20:00 Pacific (LOOP.md part c, 2026-11-24): 2026-11-25, which runs at 20:00 PST on 11-24 (04:00 UTC 11-25) */
+export const SWITCH_NIGHT = Math.floor(Date.parse("2026-11-25T00:00:00Z") / DAY);
+/** offset of Pacific wall time from UTC at an instant (ms; -8 h or -7 h) */
+export function ptOff(t: number): number {
+  const p = PTF.formatToParts(new Date(t)), g = (k: string) => Number(p.find(x => x.type === k)!.value);
+  return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour") % 24, g("minute"), g("second")) - Math.floor(t / 1000) * 1000;
+}
+const PTF = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const atMemo = new Map<number, number>();
+/** The battle of night N (a UTC day number). Nights up to 2026-11-24 ran at N 10:00 UTC (02:00 Pacific). From 2026-11-25 on it
+ *  is 20:00 Pacific on the evening before (N-1): 04:00 UTC in winter, 03:00 UTC in summer. Night N spends work day N-1 (bdOf). */
+export function battleAt(night: number): number {
+  if (night < SWITCH_NIGHT) return night * DAY + 10 * 3600_000;
+  const hit = atMemo.get(night); if (hit !== undefined) return hit;
+  const wall = (night - 1) * DAY + 20 * 3600_000; let t = wall - ptOff(wall); t = wall - ptOff(t);
+  if (atMemo.size > 4000) atMemo.clear(); atMemo.set(night, t); return t;
+}
+/** when defenses (orders, shield placement, aims) and the Armory lock for night N: 19:45 Pacific; nights before the switch at the battle */
+export const lockAt = (night: number) => night < SWITCH_NIGHT ? battleAt(night) : battleAt(night) - WAR.lockMin * 60_000;
 /** the latest night whose battle time has passed */
-export const lastNight = (now: number) => { const d = dayOf(now); return now >= battleAt(d) ? d : d - 1; };
+export const lastNight = (now: number) => { const d = dayOf(now); return now >= battleAt(d) ? d : now >= battleAt(d - 1) ? d - 1 : d - 2; };
+/** The work day an event at t counts for: night N spends work day N-1. Before 2026-11-24 00:00 UTC, the UTC day (as the nights
+ *  then ran). From then on, the day ends at the lock: work up to 19:45 Pacific fires that night. So the switch night (2026-11-25)
+ *  spends [2026-11-24 00:00 UTC, its lock at 19:45 PST = 03:45 UTC 11-25): no gap and no overlap with the 10:00 UTC night before. */
+const CUT0 = (SWITCH_NIGHT - 1) * DAY;
+export function bdOf(t: number): number {
+  if (t < CUT0) return dayOf(t);
+  const d = dayOf(t); return Math.max(SWITCH_NIGHT - 1, t < lockAt(d) ? d - 1 : d);
+}
 
 // ---------------------------------------------------------------- 1. buildings: construction, size and replacement value
 export interface Tower { /** map height, px */ h: number; /** index into WAR.classes */ c: number; floors: number; /** m3 */ vol: number; /** replacement value, $ */ value: number }
@@ -142,7 +178,9 @@ export const countOf = (shots: Weapon[]) => { const n = { shell: 0, rocket: 0, t
 /** One member's arsenal for one UTC day, from the judged event log (all of the member's events: the release unlock looks back
  *  30 days). `ai`: repo -> AI signal count. `reverted`: short shas. `top`: the tallest repo tower's map height. Commits use the
  *  city's daily caps only when WAR.cap is on (CALDERA_BATTLE_CAP=1; Mike's 11-13 rule is no cap, the farm judge does the work). */
-export function arsenal(events: GEvent[], day: number, o: { ai?: Map<string, number>; streak?: number; lots?: string; reverted?: Set<string>; top?: number; /** the daily commit caps; default WAR.cap */ cap?: boolean } = {}): Arsenal {
+export function arsenal(events: GEvent[], day: number, o: { ai?: Map<string, number>; streak?: number; lots?: string; reverted?: Set<string>; top?: number; /** the daily commit caps; default WAR.cap */ cap?: boolean;
+  /** the day an instant belongs to: the UTC day (default; the leaderboard shifts events to Pacific days) or the battles' work day (bdOf) */ dayOf?: (t: number) => number } = {}): Arsenal {
+  const dayOf = o.dayOf || dayOfUtc;
   const per = new Map<string, { c: number; pr: number; rel: number; ci: number }>(), perRepo = new Map<string, number>();
   let c = 0, pr = 0, rel = 0, ci = 0, rel30 = false, cu = 0;
   for (const e of events) if (!e.v && e.k === "release" && dayOf(e.ts) <= day && dayOf(e.ts) > day - WAR.relDays) { rel30 = true; break; }
@@ -182,6 +220,82 @@ export function shield(o: { streak: number; joinedDays: number; activeDays: numb
 }
 export const isBeginner = (o: { joinedDays: number; activeDays: number; waived?: boolean }) => !o.waived && (o.joinedDays < WAR.beginnerDays || o.activeDays < WAR.beginnerActive);
 
+// ---------------------------------------------------------------- 4b. the evening turn (LOOP.md part c)
+/** through% of a hit on one tower (LOOP.md c.2): clamp(100 - S - place - order, 3, 125). S: the earned shield in points (0, or
+ *  50 to 95 by streak). place: the placement term (0 whole city, +20 the guarded tower, -10 each other tower while one is
+ *  guarded). order: All-in -25, Balanced 0, Turtle +20 (25 before the c.2 release check, 11-24). The beginner dome: 99% for Balanced and Turtle, 74% for All-in, never
+ *  placed. The shown shield is 100 - through%. */
+export function throughOf(S: number, place: number, order: Order, dome: boolean): number {
+  const ord = WAR.orders[order] || WAR.orders.bal, d = Math.round(WAR.dome * 100);
+  if (dome) return order === "atk" ? 100 - (d + ord.shield) : 100 - d;
+  return Math.min(WAR.throughMax, Math.max(100 - WAR.shieldCap, 100 - (S || 0) - (place || 0) - ord.shield));
+}
+/** the placement term for one tower: lot is the tower (0..2, tallest first); place the guarded tower, or -1 for the whole city */
+export const placeTerm = (place: number | null | undefined, lot: number) => place == null || place < 0 ? 0 : lot === place ? WAR.place.focus : WAR.place.rest;
+/** the share of a hit the shield takes off on one tower tonight (negative: hits do more). Balanced over the whole city is the
+ *  earned shield exactly, so a night where nobody gives orders is the night it always was. */
+export function shieldAt(d: { sh: number; beg: boolean; order?: Order; place?: number | null }, lot: number): number {
+  const ord = d.order || "bal", placed = !d.beg && d.sh > 0 && d.place != null && d.place >= 0;
+  if (ord === "bal" && !placed) return Math.min(1, Math.max(0, d.sh));
+  const S = d.beg ? 0 : Math.round(Math.max(0, d.sh) * 100);
+  return Math.round((1 - throughOf(S, placed ? placeTerm(d.place, lot) : 0, ord, d.beg) / 100) * 1e4) / 1e4;
+}
+/** the missiles that fire tonight: all of them, or with Turtle every third one (sorted largest first) stays home, so ceil(2n/3)
+ *  fire. What stays home is not kept for the next day. */
+export function firedOf(a: { shots: Weapon[] }, order: Order = "bal"): Weapon[] {
+  const home = 1 - ((WAR.orders[order] || WAR.orders.bal).keep ?? 1); if (home <= 0) return a.shots.slice();
+  // largest first; spread the missiles that stay home evenly (keep 2/3: every third one)
+  return [...a.shots].sort((x, y) => costOf(y) - costOf(x)).filter((_, i) => Math.floor((i + 1) * home + 1e-9) === Math.floor(i * home + 1e-9));
+}
+/** rivals within reach tonight: the earned reach, plus 2 for All-in attack (it may pass reachMax by 2) */
+export const reachOf = (a: { reach: number }, order: Order = "bal") => (a.reach || WAR.reach) + (WAR.orders[order] || WAR.orders.bal).reach;
+/** A member's rival for tonight (LOOP.md c.2/c.4): the city that dealt the most damage (usdOf) to the member last night; raiders
+ *  and Frontier lands are never a rival. canStrike: false when the member also hit that city last night (nobody is hit by the
+ *  same rival two nights running). null: nothing hit the member. */
+export function rivalOf(id: string, lastShots: Shot[]): { id: string; usd: number; canStrike: boolean } | null {
+  const by = new Map<string, number>();
+  for (const s of lastShots) if (s.d === id && s.a !== id && s.a !== RAIDERS && !s.a.startsWith("uc:") && !s.a.startsWith("~")) by.set(s.a, (by.get(s.a) || 0) + usdOf(s));
+  const top = [...by.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0];
+  if (!top) return null;
+  return { id: top[0], usd: top[1], canStrike: !lastShots.some(s => s.a === id && s.d === top[0] && s.f > 0) };
+}
+/** the commander rank for a season score (LOOP.md c.5): level 1 to 8, the name, the next rank and the dollars still to go */
+export function rankOf(score: number): { level: number; name: string; score: number; at: number; next: string | null; nextAt: number | null; toNext: number | null; pct: number } {
+  const R = WAR.ranks; let i = 0; for (let k = 0; k < R.length; k++) if ((score || 0) >= R[k]![1]) i = k;
+  const nx = R[i + 1] || null, at = R[i]![1];
+  return { level: i + 1, name: R[i]![0], score: Math.max(0, Math.round(score || 0)), at, next: nx ? nx[0] : null, nextAt: nx ? nx[1] : null, toNext: nx ? Math.max(0, nx[1] - (score || 0)) : null,
+    pct: nx ? Math.max(0, Math.min(100, Math.round(100 * ((score || 0) - at) / (nx[1] - at)))) : 100 };
+}
+/** Today's orders (LOOP.md c.3): one Build, one Fight, one Scout. day: the orders' day (lastNight: they start again at 20:00 PT).
+ *  Build: merge a pull request, or one counted commit for a member with no merged PR in 14 days. Fight changes by day (aim,
+ *  orders, shield placement; the placement order only with a streak shield). Scout: the replay, or the season ranking when
+ *  there was no battle last night. */
+export type OrderKey = "build:pr" | "build:commit" | "fight:aim" | "fight:orders" | "fight:place" | "scout:replay" | "scout:season";
+export function ordersFor(o: { day: number; prs14: number; canPlace: boolean; battled: boolean }): { kind: "build" | "fight" | "scout"; key: OrderKey; text: string; points: number }[] {
+  const P = { build: 20, fight: 10, scout: 10 };
+  const f = (["fight:aim", "fight:orders", "fight:place"] as OrderKey[])[((o.day % 3) + 3) % 3]!, fight: OrderKey = f === "fight:place" && !o.canPlace ? "fight:aim" : f;
+  const T: Record<OrderKey, string> = { "build:pr": "Merge a pull request", "build:commit": "Push one counted commit", "fight:aim": "Aim one shot at a rival", "fight:orders": "Choose tonight's orders",
+    "fight:place": "Place your shield", "scout:replay": "Watch last night's replay", "scout:season": "Open the season ranking" };
+  const b: OrderKey = o.prs14 > 0 ? "build:pr" : "build:commit", sc: OrderKey = o.battled ? "scout:replay" : "scout:season";
+  return [{ kind: "build", key: b, text: T[b], points: P.build }, { kind: "fight", key: fight, text: T[fight], points: P.fight }, { kind: "scout", key: sc, text: T[sc], points: P.scout }];
+}
+/** The badges of a member (LOOP.md c.5), in the order they show. nights: the member's stored nights, oldest first (res: the
+ *  result word; out: shots fired). finals: the member's place at the end of each finished season. founding: the Founding Fleet. */
+export function badgesFor(o: { nights: { night: number; res: Result; out: number }[]; finals?: { season: number; rank: number }[]; founding?: boolean }): { k: string; name: string; gold?: 1 }[] {
+  const out: { k: string; name: string; gold?: 1 }[] = [], N = [...o.nights].sort((a, b) => a.night - b.night);
+  if (N.some(n => n.res === "WON")) out.push({ k: "win", name: "First win" });
+  let run = 0, best = 0, prev = -2; for (const n of N) { if (n.out > 0) { run = n.night === prev + 1 ? run + 1 : 1; prev = n.night; best = Math.max(best, run); } }
+  if (best >= 7) out.push({ k: "streak7", name: "7-night streak" });
+  if (N.some(n => n.res === "HELD")) out.push({ k: "held", name: "Shield held" });
+  for (const f of [...(o.finals || [])].sort((a, b) => a.season - b.season)) {
+    if (f.rank === 1) out.push({ k: "s" + f.season + ":1", name: `Season ${f.season} champion` });
+    else if (f.rank <= 3) out.push({ k: "s" + f.season + ":3", name: `Season ${f.season} podium` });
+    else if (f.rank <= 10) out.push({ k: "s" + f.season + ":10", name: `Season ${f.season} top 10` });
+  }
+  if (o.founding) out.push({ k: "founding", name: "Founding Fleet", gold: 1 });
+  return out;
+}
+
 // ---------------------------------------------------------------- 5. the night
 /** A seeded random stream (mulberry32): the same night in, the same dice out. */
 export function rng(seed: string): () => number {
@@ -197,6 +311,7 @@ export interface Fighter {
   side: number; /** points over the last 7 days, for matchmaking */ out7: number;
   /** team size: strength and score are per head, so a big team can't bully a solo builder */ heads: number;
   idle: number | null;
+  /** tonight's orders (default Balanced) and the guarded tower (0..2; -1 or absent: the whole city), LOOP.md c.2 */ order?: Order; place?: number | null;
 }
 /** the working of one shot, kept with it so the page can show the sum: u $ of blast damage, fi the share of the tower the
  *  fire will take (fu in $), sp 1 = the fire spread, m metres off the aim point, cep the CEP it flew with, r the wreck radius
@@ -213,6 +328,7 @@ export interface NightIn {
   /** pairs "a>d" that landed a hit on the previous night (nobody is hit by the same rival two nights running) */ lastPairs?: Set<string>;
   /** defender -> towers' worth taken over the previous 6 nights (civil defence) */ week?: Map<string, number>;
   /** attacker -> targets they aimed at tonight, in order (manual fire, at most 3 shots) */ aims?: Map<string, string[]>;
+  /** attacker -> the rival they strike back at tonight: one more aimed shot (the 4th), only when lastPairs allows it */ strikes?: Map<string, string>;
   /** defender -> lot index -> damage still showing from earlier nights (a wrecked tower has less left to wreck) */ open?: Map<string, Map<number, number>>;
   /** Armory bombs bought for this night (armory.ts). They fly after every normal shot, so a night nobody buys for is unchanged.
    *  target: a fighter id, or null for a random rival of the buyer */
@@ -231,7 +347,7 @@ const r4 = (x: number) => Math.round(x * 1e4) / 1e4, r6 = (x: number) => Math.ro
  *  f = pre x (1 - ab). The fire burns on what landed: fi = f x the building's fire load x (spread 80% or contained 15%).
  *  Dollars: u = f x value (at least $1), fu = fi x value; with a shield, pot = pre x value and held = pot - u. f is never 0. */
 export function strike(o: { raw: number; st: number; cd: number; pc: number; sh: number; load: number; sp: 0 | 1; value: number }) {
-  const ab = Math.min(WAR.dome, Math.max(0, o.sh || 0)), pre = Math.max(WAR.floor, o.raw * o.st * o.cd * o.pc), fire = o.load * (o.sp ? WAR.fire.spread : WAR.fire.small);
+  const ab = Math.min(WAR.dome, Math.max(1 - WAR.throughMax / 100, o.sh || 0)), pre = Math.max(WAR.floor, o.raw * o.st * o.cd * o.pc), fire = o.load * (o.sp ? WAR.fire.spread : WAR.fire.small);
   const f = Math.max(1e-6, r6(pre * (1 - ab))), fi = r6(f * fire), u = Math.max(1, Math.round(f * o.value)), fu = Math.round(fi * o.value);
   const pot = Math.round(pre * o.value);
   return { ab, pre, f, fi, u, fu, pot, held: Math.max(0, pot - u), /** towers' worth coming in before the shield (civil defence) */ incoming: pre * (1 + fire) };
@@ -288,7 +404,7 @@ export function resolveNight(o: NightIn): { shots: Shot[]; raiders: string[]; fi
     const c = targets.filter(t => t.id !== a.id && !o.lastPairs?.has(a.id + ">" + t.id));
     if (!c.length) return [];
     const jitter = new Map(c.map(t => [t.id, rng(`m:${o.night}:${a.id}:${t.id}`)() * 0.5] as [string, number]));
-    return c.sort((x, y) => score(a, x) + jitter.get(x.id)! - (score(a, y) + jitter.get(y.id)!) || (x.id < y.id ? -1 : 1)).slice(0, a.ars.reach || WAR.reach);
+    return c.sort((x, y) => score(a, x) + jitter.get(x.id)! - (score(a, y) + jitter.get(y.id)!) || (x.id < y.id ? -1 : 1)).slice(0, reachOf(a.ars, a.order));
   };
   const fire = (aId: string, pc: number, cepX: number, w: Weapon, d: Fighter | null, aim: 0 | 1) => {
     const wp = weaponOf(w), miss = missOf(wp.cep * cepX, R()), uFire = R(), t = T0 + Math.floor(R() * 40 * 60_000);
@@ -299,7 +415,7 @@ export function resolveNight(o: NightIn): { shots: Shot[]; raiders: string[]; fi
     if (d && m) {
       lotDmg.set(d.id, m);
       const n = Math.max(1, d.towers || 0), cand = [0, 1, 2].filter(i => i < n).sort((x, y) => (m.get(x) || 0) - (m.get(y) || 0) || x - y);
-      lot = cand[Math.floor(R() * cand.length)]!; tower = towerOf(d.tw?.[lot] ?? d.tw?.[d.tw.length - 1] ?? 60); sh = Math.min(1, Math.max(0, d.sh));
+      lot = cand[Math.floor(R() * cand.length)]!; tower = towerOf(d.tw?.[lot] ?? d.tw?.[d.tw.length - 1] ?? 60); sh = shieldAt(d, lot);   // tonight's orders and placement (LOOP.md c.2)
       st = 1 - Math.min(WAR.stand, m.get(lot) || 0);
       cd = 1 / (1 + (taken.get(d.id) || 0) / WAR.soft.night + (o.week?.get(d.id) || 0) / Math.max(1, WAR.soft.week * n));
     }
@@ -315,9 +431,11 @@ export function resolveNight(o: NightIn): { shots: Shot[]; raiders: string[]; fi
   const med = Math.max(500_000, rArs.length ? rArs[Math.floor(rArs.length / 2)]! : 500_000);
   for (const a of F) {
     const pc = 1 / Math.max(1, a.heads), rivals = rivalsOf(a);
-    const aimed = (o.aims?.get(a.id) || []).map(id => byId.get(id)).filter((t): t is Fighter => !!t && t.id !== a.id && targetable(t) && !o.lastPairs?.has(a.id + ">" + t.id)).slice(0, WAR.manualCap);
+    const ok = (t: Fighter | undefined): t is Fighter => !!t && t.id !== a.id && targetable(t) && !o.lastPairs?.has(a.id + ">" + t.id);
+    const aimed = (o.aims?.get(a.id) || []).map(id => byId.get(id)).filter(ok).slice(0, WAR.manualCap);
+    const sb = o.strikes?.get(a.id), sbt = sb ? byId.get(sb) : undefined; if (ok(sbt)) aimed.push(sbt);   // strike back: a 4th aimed shot, one of the city's own missiles
     // city vs city: every shot goes to another city, spread round-robin over the night's rivals (a city never targets itself)
-    a.ars.shots.forEach((w, i) => fire(a.id, pc, a.ars.cepX || 1, w, i < aimed.length ? aimed[i]! : rivals.length ? rivals[(i - aimed.length) % rivals.length]! : null, i < aimed.length ? 1 : 0));
+    firedOf(a.ars, a.order).forEach((w, i) => fire(a.id, pc, a.ars.cepX || 1, w, i < aimed.length ? aimed[i]! : rivals.length ? rivals[(i - aimed.length) % rivals.length]! : null, i < aimed.length ? 1 : 0));
     if (!rivals.length && targetable(a) && armed < 2) {   // a lone armed city with nobody to fight: raiders from the sea (they fire with the night's median budget)
       raided.push(a.id);
       for (const w of shotsFor(med, "rocket")) fire(RAIDERS, 1, 1, w, a, 0);
@@ -614,6 +732,15 @@ export function battleStore(q: Q, newToken: () => string) {
   try { q("ALTER TABLE battle_shots ADD COLUMN x TEXT").run(); } catch { /* already there */ }   // 11-13: the working of each shot (ShotX)
   q(`CREATE TABLE IF NOT EXISTS battle_meta (k TEXT PRIMARY KEY, v TEXT)`).run();
   q(`CREATE TABLE IF NOT EXISTS battle_fair (night INTEGER, profile TEXT, x REAL, PRIMARY KEY (night, profile))`).run();   // the farm recount (11-24): share of a past night's budget that real work earned
+  // the evening turn (LOOP.md c.10): aims as a list (the same rival can take up to 3 shots), tonight's orders and strike back per
+  // member per night, the guarded tower per member (it stays until the member changes it), the summary card seen, the rank list
+  q(`CREATE TABLE IF NOT EXISTS battle_aimq (night INTEGER, attacker TEXT, k INTEGER, target TEXT, ts INTEGER, PRIMARY KEY (night, attacker, k))`).run();
+  if (!(q("SELECT 1 FROM battle_meta WHERE k='aimq'").get())) { q("INSERT OR IGNORE INTO battle_aimq SELECT night, attacker, rowid, target, ts FROM battle_aims").run(); q("INSERT OR REPLACE INTO battle_meta VALUES ('aimq','1')").run(); }
+  q(`CREATE TABLE IF NOT EXISTS battle_turn (night INTEGER, profile TEXT, ord TEXT, ord_at INTEGER, strike TEXT, at INTEGER, PRIMARY KEY (night, profile))`).run();
+  try { q("ALTER TABLE battle_opt ADD COLUMN place INTEGER").run(); } catch { /* already there */ }
+  try { q("ALTER TABLE battle_opt ADD COLUMN place_at INTEGER").run(); } catch { /* already there */ }
+  q(`CREATE TABLE IF NOT EXISTS battle_seen (profile TEXT, night INTEGER, at INTEGER, PRIMARY KEY (profile, night))`).run();
+  q(`CREATE TABLE IF NOT EXISTS battle_ranks (night INTEGER, profile TEXT, rank INTEGER, score REAL, PRIMARY KEY (night, profile))`).run();
   const map = (r: any): OptRow => ({ p: r.profile, war: r.war ? 1 : 0, out: r.out ? 1 : 0, since: r.since || 0, waive: r.waive ? 1 : 0, report: (["daily", "weekly"].includes(r.report) ? r.report : "off") as ReportFreq, token: r.token, sent: r.sent || null, chose: r.chose ? 1 : 0, first: r.first || null });
   const opt = (p: string): OptRow | null => { const r = q("SELECT * FROM battle_opt WHERE profile=?").get(p); return r ? map(r) : null; };
   const ensure = (p: string): OptRow => { if (!opt(p)) q("INSERT OR IGNORE INTO battle_opt (profile, war, since, waive, report, token, sent, at, out) VALUES (?,?,?,?,?,?,?,?,?)").run(p, 1, 0, 0, "off", newToken(), null, Date.now(), 0); return opt(p)!; };
@@ -627,10 +754,31 @@ export function battleStore(q: Q, newToken: () => string) {
     markFirst: (p: string, day: string) => q("UPDATE battle_opt SET first=? WHERE profile=? AND first IS NULL").run(day, p),
     byToken: (t: string): OptRow | null => { const r = q("SELECT * FROM battle_opt WHERE token=?").get(t); return r ? map(r) : null; },
     markSent: (p: string, day: string) => q("UPDATE battle_opt SET sent=? WHERE profile=?").run(day, p),
-    aims: (night: number): Map<string, string[]> => { const m = new Map<string, string[]>(); for (const r of q("SELECT * FROM battle_aims WHERE night=? ORDER BY ts").all(night) as any[]) { if (!m.has(r.attacker)) m.set(r.attacker, []); m.get(r.attacker)!.push(r.target); } return m; },
-    aimsOf: (night: number, p: string): string[] => (q("SELECT target FROM battle_aims WHERE night=? AND attacker=? ORDER BY ts").all(night, p) as any[]).map(r => r.target),
-    aim: (night: number, p: string, target: string, at: number) => q("INSERT OR IGNORE INTO battle_aims VALUES (?,?,?,?)").run(night, p, target, at),
-    unaim: (night: number, p: string, target: string) => q("DELETE FROM battle_aims WHERE night=? AND attacker=? AND target=?").run(night, p, target),
+    aims: (night: number): Map<string, string[]> => { const m = new Map<string, string[]>(); for (const r of q("SELECT * FROM battle_aimq WHERE night=? ORDER BY ts, k").all(night) as any[]) { if (!m.has(r.attacker)) m.set(r.attacker, []); m.get(r.attacker)!.push(r.target); } return m; },
+    aimsOf: (night: number, p: string): string[] => (q("SELECT target FROM battle_aimq WHERE night=? AND attacker=? ORDER BY ts, k").all(night, p) as any[]).map(r => r.target),
+    /** one more shot at a target (a list: the same rival may take several) */
+    aim: (night: number, p: string, target: string, at: number) => { const k = Number((q("SELECT COALESCE(MAX(k),0) k FROM battle_aimq WHERE night=? AND attacker=?").get(night, p) as any).k) + 1; q("INSERT INTO battle_aimq VALUES (?,?,?,?,?)").run(night, p, k, target, at); },
+    /** one shot less at a target (the newest); all: every shot at it */
+    unaim: (night: number, p: string, target: string, all = false) => all ? q("DELETE FROM battle_aimq WHERE night=? AND attacker=? AND target=?").run(night, p, target)
+      : q("DELETE FROM battle_aimq WHERE night=? AND attacker=? AND k=(SELECT MAX(k) FROM battle_aimq WHERE night=? AND attacker=? AND target=?)").run(night, p, night, p, target),
+    /** tonight's orders and strike back (LOOP.md c.2) of one member for night n; absent: Balanced, no strike back */
+    turn: (night: number, p: string): { ord: Order; ordAt: number | null; strike: string | null; at: number | null } => { const r = q("SELECT * FROM battle_turn WHERE night=? AND profile=?").get(night, p) as any;
+      return { ord: (["atk", "bal", "tur"].includes(r?.ord) ? r.ord : "bal") as Order, ordAt: r?.ord_at ?? null, strike: r?.strike || null, at: r?.at ?? null }; },
+    turns: (night: number): Map<string, { ord: Order; strike: string | null }> => new Map((q("SELECT * FROM battle_turn WHERE night=?").all(night) as any[]).map(r => [r.profile, { ord: (["atk", "bal", "tur"].includes(r.ord) ? r.ord : "bal") as Order, strike: r.strike || null }] as [string, { ord: Order; strike: string | null }])),
+    setTurn: (night: number, p: string, o: { ord?: Order; strike?: string | null }, at: number) => {
+      q("INSERT OR IGNORE INTO battle_turn (night, profile, ord, ord_at, strike, at) VALUES (?,?,?,?,?,?)").run(night, p, "bal", null, null, at);
+      if (o.ord) q("UPDATE battle_turn SET ord=?, ord_at=?, at=? WHERE night=? AND profile=?").run(o.ord, at, at, night, p);
+      if (o.strike !== undefined) q("UPDATE battle_turn SET strike=?, at=? WHERE night=? AND profile=?").run(o.strike, at, night, p);
+    },
+    /** the guarded tower (0..2) or -1 for the whole city; it stays until the member changes it */
+    place: (p: string): { place: number; at: number | null } => { const r = q("SELECT place, place_at FROM battle_opt WHERE profile=?").get(p) as any; return { place: r?.place == null ? -1 : Number(r.place), at: r?.place_at ?? null }; },
+    setPlace: (p: string, place: number, at: number) => { ensure(p); q("UPDATE battle_opt SET place=?, place_at=? WHERE profile=?").run(place < 0 ? null : place, at, p); },
+    seen: (p: string, night: number) => !!q("SELECT 1 FROM battle_seen WHERE profile=? AND night=?").get(p, night),
+    setSeen: (p: string, night: number, at: number) => q("INSERT OR IGNORE INTO battle_seen VALUES (?,?,?)").run(p, night, at),
+    /** the season rank list stored after a night (prevRank, "up 3"); null: not stored */
+    ranks: (night: number): Map<string, number> | null => { const r = q("SELECT profile, rank FROM battle_ranks WHERE night=?").all(night) as any[]; return r.length ? new Map(r.map(x => [x.profile, Number(x.rank)] as [string, number])) : null; },
+    setRanks: (night: number, rows: [string, number, number][]) => { q("DELETE FROM battle_ranks WHERE night=?").run(night); for (const [p, rank, score] of rows) q("INSERT INTO battle_ranks VALUES (?,?,?,?)").run(night, p, rank, score); },
+    dropRanks: (from = -1) => q("DELETE FROM battle_ranks WHERE night>=?").run(from),
     night: (n: number): any | null => { const r = q("SELECT json FROM battle_nights WHERE night=?").get(n); try { return r ? JSON.parse(r.json) : null; } catch { return null; } },
     hasNight: (n: number) => !!q("SELECT 1 FROM battle_nights WHERE night=?").get(n),
     saveNight: (n: number, meta: unknown, shots: Shot[], at: number) => {
@@ -647,8 +795,9 @@ export function battleStore(q: Q, newToken: () => string) {
     setMeta: (k: string, v: string) => q("INSERT OR REPLACE INTO battle_meta VALUES (?,?)").run(k, v),
     fair: (): Map<string, number> => new Map((q("SELECT night, profile, x FROM battle_fair").all() as any[]).map(r => [r.night + "|" + r.profile, Number(r.x)] as [string, number])),
     setFair: (night: number, p: string, x: number) => q("INSERT OR REPLACE INTO battle_fair VALUES (?,?,?)").run(night, p, x),
-    erase: (p: string) => { q("DELETE FROM battle_opt WHERE profile=?").run(p); q("DELETE FROM battle_aims WHERE attacker=? OR target=?").run(p, p); q("UPDATE battle_shots SET a='~gone' WHERE a=?").run(p); q("DELETE FROM battle_shots WHERE d=?").run(p); },
-    prune: (beforeNight: number) => { q("DELETE FROM battle_shots WHERE night < ?").run(beforeNight); q("DELETE FROM battle_nights WHERE night < ?").run(beforeNight); q("DELETE FROM battle_aims WHERE night < ?").run(beforeNight); },
+    erase: (p: string) => { q("DELETE FROM battle_opt WHERE profile=?").run(p); q("DELETE FROM battle_aims WHERE attacker=? OR target=?").run(p, p); q("DELETE FROM battle_aimq WHERE attacker=? OR target=?").run(p, p);
+      q("DELETE FROM battle_turn WHERE profile=? OR strike=?").run(p, p); q("DELETE FROM battle_seen WHERE profile=?").run(p); q("DELETE FROM battle_ranks WHERE profile=?").run(p); q("UPDATE battle_shots SET a='~gone' WHERE a=?").run(p); q("DELETE FROM battle_shots WHERE d=?").run(p); },
+    prune: (beforeNight: number) => { q("DELETE FROM battle_shots WHERE night < ?").run(beforeNight); q("DELETE FROM battle_nights WHERE night < ?").run(beforeNight); q("DELETE FROM battle_aims WHERE night < ?").run(beforeNight); q("DELETE FROM battle_aimq WHERE night < ?").run(beforeNight); q("DELETE FROM battle_turn WHERE night < ?").run(beforeNight); q("DELETE FROM battle_seen WHERE night < ?").run(beforeNight); q("DELETE FROM battle_ranks WHERE night < ?").run(beforeNight); },
   };
 }
 export type BattleStore = ReturnType<typeof battleStore>;

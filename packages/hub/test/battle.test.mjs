@@ -284,7 +284,7 @@ async function hubWith(handles, o = {}) {
 /** a month of steady daily work for each member, straight into the growth log, so plots have built lots to fight over */
 function work(h, ids) {
   const today = Math.floor(Date.now() / DAY), ins = h.db.prepare("INSERT OR IGNORE INTO growth_events VALUES (?,?,?,?,?,?,?,?,?)");
-  for (const [handle, id] of Object.entries(ids)) for (let d = today - 40; d <= today; d++) for (let k = 0; k < 20; k++) { const t = d * DAY + 3600_000 + k * 60_000; ins.run(`c:${handle}${d}x${k}`, id.id, "commit", `${handle}/app`, t, t, 1, "", null); }
+  for (const [handle, id] of Object.entries(ids)) for (let d = today - 40; d <= today; d++) for (let k = 0; k < 20; k++) { const t = d * DAY + 12 * 3600_000 + k * 60_000; /* 12:00 UTC: inside work day d before and after the battle moved to 20:00 PT */ ins.run(`c:${handle}${d}x${k}`, id.id, "commit", `${handle}/app`, t, t, 1, "", null); }
   h.admin.growth.recompute();
 }
 
@@ -312,17 +312,19 @@ test("live: Battle is one more view (Now stays the default); every city is in un
     assert.equal((await as("pat", "/v1/world/battle/opt", { war: false })).body.war, 0, "@pat leaves");
     s = await (await fetch(base + "/v1/world/battle")).json();
     assert.deepEqual(Object.keys(s.members).sort(), ["@rae", "@sam"], "a city that left is a peaceful zone; everyone else fights");
-    // the map's Armory yard: nx is the arsenal that fires at `next` while that is not today's (00:00 to 10:00 UTC), else absent
-    const tod = Math.floor(Date.now() / DAY), sum = o => Object.values(o || {}).reduce((t, v) => t + v, 0);
-    if (Date.now() < B.battleAt(tod)) assert.ok(s.next === B.battleAt(tod) && sum(s.members["@rae"].nx) > 0, "yesterday's arsenal fires at 10:00: " + JSON.stringify(s.members["@rae"]));
-    else assert.ok(!("nx" in s.members["@rae"]) && s.next === B.battleAt(tod + 1), "after the battle today's arsenal (n) is next");
+    // the map's Armory yard: nx is the arsenal that fires at `next` while that is not the work day's (from the lock at 19:45 PT to
+    // the battle at 20:00 PT), else absent
+    const ln = B.lastNight(Date.now()), sum = o => Object.values(o || {}).reduce((t, v) => t + v, 0), locked = Date.now() >= B.lockAt(ln + 1);
+    assert.equal(s.next, B.battleAt(ln + 1));
+    if (B.bdOf(Date.now()) !== ln) assert.ok(sum(s.members["@rae"].nx) > 0, "the arsenal that fires next: " + JSON.stringify(s.members["@rae"]));
+    else assert.ok(!("nx" in s.members["@rae"]), "the work day's arsenal (n) is next");
     assert.ok(sum(s.members["@rae"].n) > 0, "today's arsenal");
     const me = (await as("rae", "/v1/world/battle/opt", {})).body;
     assert.ok(me.arsenal && me.arsenal.ammo > 0 && me.arsenal.c === 20, "tonight's arsenal from today's real commits: " + JSON.stringify(me.arsenal));
     assert.deepEqual(me.rivals.map(r => r.h), ["@sam"]);
     assert.equal((await as("rae", "/v1/world/battle/aim", { target: "@pat" })).status, 400, "a peaceful zone can't be aimed at");
-    for (let i = 0; i < 3; i++) assert.equal((await as("rae", "/v1/world/battle/aim", { target: "@sam" })).status, 200);
-    assert.equal((await as("rae", "/v1/world/battle/aim", { target: "@sam" })).status, 200, "aiming the same rival again is idempotent");
+    for (let i = 0; i < 3; i++) assert.equal((await as("rae", "/v1/world/battle/aim", { target: "@sam" })).status, locked ? 409 : 200, "up to 3 shots at one rival");
+    assert.equal((await as("rae", "/v1/world/battle/aim", { target: "@sam" })).status, 409, "a 4th aim is refused (3 aimed, or locked)");
 
     // last night's battle (opt-ins backdated so they count for it)
     const B2 = h.admin.battle, n = B.lastNight(Date.now());
