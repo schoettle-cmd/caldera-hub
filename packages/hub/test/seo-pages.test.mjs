@@ -30,3 +30,17 @@ test("each dated page is linked from at least one other page", () => {
   for (const p of pages.filter(x => x.updated))
     assert.ok(pages.some(o => o.slug !== p.slug && o.related.includes(p.slug)), `${p.slug} has no inbound related link`);
 });
+
+test("2026-11-24 pages are built, in the sitemap and in llms.txt", async () => {
+  const fs = await import("node:fs");
+  const site = new URL("../../site/", import.meta.url);
+  const sitemap = fs.readFileSync(new URL("sitemap.xml", site), "utf8"), llms = fs.readFileSync(new URL("llms.txt", site), "utf8");
+  for (const slug of ["share-obsidian-note-as-web-page", "track-codex-token-usage", "what-is-a-living-profile"]) {
+    const p = pages.find(x => x.slug === slug);
+    assert.ok(p && p.published === "2026-11-24", `${slug} missing`);
+    const html = fs.readFileSync(new URL(`${slug}.html`, site), "utf8");
+    assert.ok(html.includes(`<link rel="canonical" href="https://caldera.social/${slug}">`), `${slug} canonical`);
+    assert.ok(sitemap.includes(`<loc>https://caldera.social/${slug}</loc>`), `${slug} not in sitemap`);
+    assert.ok(llms.includes(`(https://caldera.social/${slug})`), `${slug} not in llms.txt`);
+  }
+});

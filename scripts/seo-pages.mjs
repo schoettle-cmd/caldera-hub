@@ -56,7 +56,7 @@ export const pages = [
       ["Does Caldera need Obsidian?", "No. Sign up with GitHub and you get a page and a city with nothing to install. Obsidian adds a living profile, a journal and AI usage, and a GitHub sign-up can move into a vault any time."],
       ["Is Caldera an official Obsidian or GitHub product?", "No. Caldera is an independent, open-source project made by mjonesone, LLC."],
     ],
-    related: ["github-profile-city", "obsidian-public-profile", "obsidian-social-network"],
+    related: ["github-profile-city", "obsidian-public-profile", "obsidian-social-network", "what-is-a-living-profile"],
   },
   {
     slug: "obsidian-public-profile",
@@ -152,7 +152,7 @@ export const pages = [
       ["Does Caldera publish my whole vault?", "No. It publishes counts, sections you turn on, and only notes marked caldera: public (title and first paragraph)."],
       ["Is there a hosting cost?", "Profiles on caldera.social are free. Self-hosting the open-source hub is also possible."],
     ],
-    related: ["obsidian-public-profile", "what-is-caldera", "share-obsidian-notes-privately", "caldera-vs-obsidian-publish", "obsidian-publish-cost"],
+    related: ["obsidian-public-profile", "what-is-caldera", "share-obsidian-notes-privately", "caldera-vs-obsidian-publish", "obsidian-publish-cost", "share-obsidian-note-as-web-page"],
   },
   {
     slug: "obsidian-ai-agent-setup",
@@ -214,7 +214,7 @@ export const pages = [
       ["Does it read my prompts?", "No. Only usage fields (model, token counts, timestamps) are totaled."],
       ["Which tools are supported?", "Claude Code and Codex out of the box; any tool that keeps local usage logs can be added by your agent."],
     ],
-    related: ["obsidian-ai-agent-setup", "obsidian-activity-tracker", "what-is-caldera"],
+    related: ["obsidian-ai-agent-setup", "obsidian-activity-tracker", "what-is-caldera", "track-codex-token-usage"],
   },
   {
     slug: "obsidian-activity-tracker",
@@ -392,5 +392,135 @@ export const pages = [
       ["Is Caldera free?", "Yes. The plugin, your page and sharing with friends are free and open source."],
     ],
     related: ["share-obsidian-notes-privately", "share-obsidian-vault-with-friends", "obsidian-social-network", "caldera-vs-obsidian-publish"],
+  },
+  // 2026-11-24 SEO/GEO set (Growth queue): Caldera facts re-checked against the live caldera.social guide, homepage and
+  // Learn pages, and the plugin source; Obsidian Publish price re-read on obsidian.md/pricing on 2026-11-24 (unchanged).
+  {
+    slug: "share-obsidian-note-as-web-page",
+    updated: "2026-11-24", published: "2026-11-24",
+    title: "How to share one Obsidian note as a web page",
+    description: "To put one full Obsidian note online, use a publishing tool. Caldera, free and open source, lists a note's first paragraph or sends the note privately.",
+    h1: "How do I share one Obsidian note as a web page?",
+    nav: "Share one Obsidian note as a web page",
+    answer: "To share one Obsidian note as its own web page, use a publishing tool: Obsidian Publish (paid, $8 per site per month billed annually or $10 billed monthly, as listed on obsidian.md in November 2026) or a free static-site option such as Quartz. Caldera, a free, open-source Obsidian plugin, does not turn a full note into a page. It lists the note's title and first paragraph on your public profile, or sends the whole note privately to one friend.",
+    sections: [
+      { h2: "Which option fits one note?", html: `<div class="table-wrap"><table class="data">
+<thead><tr><th>Option</th><th>What readers see</th><th>Cost</th><th>Setup</th></tr></thead>
+<tbody>
+<tr><td>Obsidian Publish</td><td>The full note as a page on a website, public or password-protected</td><td>$8 per site per month billed annually, $10 billed monthly</td><td>Built into Obsidian; pick the notes to publish</td></tr>
+<tr><td>Quartz</td><td>The full note as a page on a static site you host</td><td>Free, MIT license</td><td>Command line build plus a static host</td></tr>
+<tr><td>Digital-garden style plugins</td><td>Selected full notes as pages</td><td>Free (hosting tier dependent)</td><td>Plugin plus a Netlify or Vercel account</td></tr>
+<tr><td>Caldera, public note</td><td>The note's title and first paragraph, listed on your profile</td><td>Free, open source</td><td>Add one property to the note</td></tr>
+<tr><td>Caldera, share with a friend</td><td>The full note, in one friend's own vault (not a web page)</td><td>Free, open source</td><td>Follow each other, then one command</td></tr>
+</tbody></table></div>
+<p class="fine">Obsidian Publish price as listed on obsidian.md/pricing, checked November 24, 2026. Check there before you buy: prices can change.</p>
+<p>If the full text must be readable in a browser by anyone with the link, Caldera is not the tool for that note. Pick Publish for no build step, or Quartz if you are happy to run a build and host the site yourself.</p>` },
+      { h2: "How do I put a note on my Caldera page?", html: `<ol>
+<li>Install Caldera from Obsidian's community plugins, or paste the setup prompt from <a href="/#install">caldera.social/#install</a> into Claude Code, Codex or Cursor.</li>
+<li>Open the note and add <code>caldera: public</code> to its properties (frontmatter).</li>
+<li>Run <b>Publish my profile</b> from the command palette, or wait for the next automatic publish (every 6 hours by default). Your page at caldera.social/@yourhandle then lists the note with its title and first paragraph.</li>
+<li>To take it down, remove the property and publish again.</li>
+</ol>
+<p>Write the first paragraph so it stands on its own: it is the part people read. For the rest of what your page can show, see <a href="/obsidian-public-profile">how to make a public profile from your vault</a>.</p>` },
+      { h2: "Can I send the whole note to one person instead?", html: `<p>Yes, if that person also uses Obsidian. Follow each other on Caldera and you are friends. Open the note and run <b>Share this note with a friend</b> from the command palette. The note is encrypted on your device with your friend's key, the server stores only ciphertext, and it arrives in their vault under <code>Caldera/Inbox/</code> as a normal Markdown note. It is a copy, like an email, not a live shared document. Step by step: <a href="/share-obsidian-notes-privately">how to share Obsidian notes privately</a>.</p>` },
+      { h2: "What stays private?", html: `<p>Caldera reads your vault on your device and never uploads it. Only counts, the profile sections you switch on, notes you mark <code>caldera: public</code> and journal fields you write are published. Nothing else leaves your vault unless you switch a section on or share a note with a named friend.</p>` },
+      { h2: "When is a paid publishing tool worth it?", html: `<p>Pay for Obsidian Publish when you want many full notes online as a website with search, a graph view and your own domain, and no build step. If you want a page about you that lists a few notes and updates itself, Caldera does that for free. You can also use both: publish the notes, then add the site to the <code>links</code> line in <code>Caldera/profile.md</code>. Full comparison: <a href="/caldera-vs-obsidian-publish">Caldera vs Obsidian Publish</a> and <a href="/obsidian-publish-alternatives">free alternatives to Obsidian Publish</a>.</p>` },
+    ],
+    faq: [
+      ["Can Caldera turn one Obsidian note into its own web page?", "No. Caldera shows the title and first paragraph of a note you mark caldera: public on your profile at caldera.social/@yourhandle. To put the full note online as its own page, use a publishing tool such as Obsidian Publish or a free static-site generator like Quartz."],
+      ["Is there a free way to put one Obsidian note online?", "Yes. Quartz is a free, MIT-licensed static-site generator, and digital-garden style community plugins publish selected notes to hosts like Netlify or Vercel. Both need a build or a host account. Obsidian Publish is the paid, built-in option."],
+      ["How do I send one full note to one person without a public link?", "With Caldera, follow each other so you are friends, open the note and run Share this note with a friend. The note is encrypted on your device and arrives in your friend's vault under Caldera/Inbox as a normal Markdown note."],
+      ["How do I take a note off my Caldera page?", "Remove caldera: public from the note's properties, then run Publish my profile, or wait for the next automatic publish (every 6 hours by default)."],
+    ],
+    related: ["obsidian-publish-alternatives", "share-obsidian-notes-privately", "obsidian-public-profile", "caldera-vs-obsidian-publish"],
+  },
+  {
+    slug: "track-codex-token-usage",
+    updated: "2026-11-24", published: "2026-11-24",
+    title: "How to track your Codex token usage by day and model",
+    description: "Codex keeps local usage logs. Caldera, a free open-source Obsidian plugin, charts your Codex tokens by day and model. Counts only, never prompts or costs.",
+    h1: "How do I see how many tokens I use in Codex?",
+    nav: "Track Codex token usage",
+    answer: "Codex saves a usage log on your computer for every session, in ~/.codex/sessions, with token counts per turn and the model used. Caldera, a free, open-source Obsidian plugin, reads those logs on the computer where you run Obsidian and charts your Codex tokens per day and by model on your profile. It publishes counts only, never prompts, file names or costs.",
+    sections: [
+      { h2: "What is in the Codex logs, and what does Caldera show?", html: `<div class="table-wrap"><table class="data">
+<thead><tr><th>Data</th><th>In the local Codex logs</th><th>On your Caldera page</th></tr></thead>
+<tbody>
+<tr><td>Tokens</td><td>Per turn, in <code>token_count</code> events</td><td>Total tokens and a daily chart</td></tr>
+<tr><td>Model</td><td>From <code>turn_context</code></td><td>Your share by model and by provider</td></tr>
+<tr><td>Timestamps</td><td>On each event</td><td>Used to count tokens per day</td></tr>
+<tr><td>Prompts and responses</td><td>In the session logs, but not in the usage fields Caldera reads</td><td>Never published</td></tr>
+<tr><td>File names and code</td><td>Not in the usage fields Caldera reads</td><td>Never published</td></tr>
+<tr><td>Costs</td><td>Not in the usage fields Caldera reads</td><td>Never shown</td></tr>
+</tbody></table></div>
+<p class="fine">Log paths and fields as described in the <a href="/guide">Caldera guide</a>, checked November 24, 2026. Codex can change its log format; if the AI usage section is empty, check that ~/.codex/sessions exists on that computer.</p>` },
+      { h2: "Where does Codex keep its usage logs?", html: `<p>Codex writes one JSONL file per session under <code>~/.codex/sessions/</code>. Each turn adds a <code>token_count</code> event with that turn's usage, and the model is recorded in <code>turn_context</code>. Because the logs are local files, you can total them without API access. Claude Code keeps similar logs in <code>~/.claude/projects/</code>, so both can sit on one chart.</p>` },
+      { h2: "How do I chart my Codex tokens with Caldera?", html: `<ol>
+<li>Install Obsidian (free at obsidian.md) on the computer where you run Codex.</li>
+<li>Install Caldera from Obsidian's community plugins, or paste the setup prompt from <a href="/#install">caldera.social/#install</a> into Codex itself and let it install the plugin.</li>
+<li>Type your name and a handle in the Welcome window. Your page goes live at caldera.social/@yourhandle.</li>
+<li>The AI usage section fills in by itself on that computer: total tokens, a daily chart, and shares by model and provider. You choose which sections show in <code>Caldera/profile.md</code>, so you can hide it any time.</li>
+</ol>
+<p>A GitHub sign-up alone gives you a page and a city, but token usage from local logs needs the Obsidian plugin.</p>` },
+      { h2: "Can I add other computers or tools?", html: `<p>Yes. The plugin reads logs only on the computer it runs on. For a second machine, or for your own products' API usage, have your AI agent write an <code>ai</code> block (counts by model and provider) into <code>Caldera/activity.json</code> in your vault on a schedule. Any tool that keeps local usage logs can be added the same way. The prompt for this is in the <a href="/guide">Caldera guide</a>, and <a href="/obsidian-ai-agent-setup">using Claude Code, Codex or Cursor with Obsidian</a> covers the daily routine.</p>` },
+      { h2: "Why are my totals so large?", html: `<p>Agent sessions re-read cached context again and again, so totals are often mostly cache reads. Charting by model shows how much each model actually works for you. For the same view across tools, see <a href="/track-ai-token-usage">track AI token usage by day and by model</a>.</p>` },
+      { h2: "What does this not cover?", html: `<p>Caldera charts usage from local logs. It does not read your OpenAI account, plan limits, billing or sign-in tokens; check OpenAI's own documentation for those. The live agent drones on your GitHub city work through Claude Code hooks, not Codex, as of November 2026 (see <a href="/claude-code-activity-tracker">track your Claude Code activity</a>).</p>` },
+    ],
+    faq: [
+      ["Where does Codex keep token usage on my computer?", "In its session logs at ~/.codex/sessions/**/*.jsonl. token_count events carry the usage for each turn, and the model comes from turn_context."],
+      ["Does Caldera need my OpenAI account or an API key?", "No. The Caldera plugin reads the Codex logs on the computer where you run Obsidian and totals only usage fields: model, token counts and timestamps."],
+      ["Does Caldera show what Codex costs me?", "No. Only token counts and model names are published. Money amounts are left out on purpose."],
+      ["Can I combine Codex with Claude Code and other computers?", "Yes. The plugin reads Claude Code and Codex logs on the same computer by itself. For other computers or your own products' API usage, have your AI agent write an ai block with counts by model and provider into Caldera/activity.json."],
+      ["Is it free?", "Yes. The plugin, your page and the AI usage section are free and open source."],
+    ],
+    related: ["track-ai-token-usage", "show-ai-token-usage", "claude-code-activity-tracker", "obsidian-ai-agent-setup"],
+  },
+  {
+    slug: "what-is-a-living-profile",
+    updated: "2026-11-24", published: "2026-11-24",
+    title: "What is a living profile? A page that updates itself",
+    description: "A living profile is a public page that updates itself from your work. Caldera builds one free from your Obsidian vault and your GitHub.",
+    h1: "What is a living profile?",
+    nav: "What is a living profile",
+    answer: "A living profile is a public page about you that updates itself from the work you already do, instead of a bio you rewrite by hand. On Caldera, the free, open-source social network for GitHub and Obsidian, it is built on your own device from your Obsidian vault and republished on its own every few hours and about a minute after you edit Caldera/profile.md, while your GitHub city rebuilds every 6 hours.",
+    sections: [
+      { h2: "How is it different from a normal profile page?", html: `<div class="table-wrap"><table class="data">
+<thead><tr><th></th><th>Static profile (about page, bio)</th><th>Caldera living profile</th></tr></thead>
+<tbody>
+<tr><td>Who updates it</td><td>You, by hand</td><td>It rebuilds itself from your vault; the GitHub city rebuilds every 6 hours</td></tr>
+<tr><td>What it shows</td><td>What you last wrote about yourself</td><td>Journal, activity, projects, topics, timeline, links, AI usage, your repos as a city</td></tr>
+<tr><td>Where the content comes from</td><td>A form or an editor</td><td>Notes and daily notes in your vault, <code>Caldera/profile.md</code>, your GitHub</td></tr>
+<tr><td>Privacy</td><td>Whatever you type is public</td><td>Private by default; you choose which sections show</td></tr>
+<tr><td>People</td><td>Usually none</td><td>Follows, friends, messages, groups, a People directory</td></tr>
+<tr><td>Cost</td><td>Varies</td><td>Free, open source (MIT plugin, AGPL hub)</td></tr>
+</tbody></table></div>` },
+      { h2: "What does a Caldera living profile show?", html: `<ul>
+<li><b>Daily journal.</b> A flippable journal fed by <code>caldera_headline</code>, <code>caldera_focus</code>, <code>caldera_wins</code> and <code>caldera_themes</code> in your daily notes. An AI routine can write one entry per workday.</li>
+<li><b>Activity.</b> A 26-week heatmap, a daily score, streaks and a growth chart, counted by the plugin from your notes.</li>
+<li><b>Now, projects and timeline.</b> Written in <code>Caldera/profile.md</code>, with live links.</li>
+<li><b>Topics.</b> Only tags you allow-list are shown, so private names never appear.</li>
+<li><b>AI usage.</b> Tokens by model and provider from local Claude Code and Codex logs, counts only.</li>
+<li><b>Code.</b> Your GitHub repos as a living <a href="/github-city">GitHub city</a>.</li>
+<li><b>Notes you choose.</b> Any note marked <code>caldera: public</code>, with its title and first paragraph.</li>
+<li><b>Your own sections.</b> One Markdown note per section in <code>Caldera/modules/</code> (see <a href="/obsidian-profile-modules">custom profile sections</a>).</li>
+</ul>` },
+      { h2: "How does it stay up to date?", html: `<p>The Caldera plugin builds the page on your device from your vault and republishes it automatically. Save a change to <code>Caldera/profile.md</code> and the page updates about a minute later. Daily notes feed the journal, your notes feed the activity heatmap, and your GitHub feeds the city. If you use an AI agent, one setup prompt has it write one journal entry per workday and keep your activity counts current, and it asks you before anything goes public.</p>` },
+      { h2: "What stays private?", html: `<p>The plugin reads your vault locally and never uploads it. Only counts, the sections you switch on, notes you mark <code>caldera: public</code> and journal fields you write are published. Your identity is a key in your vault, not a password account. A private view, which only you can see, adds visits, goals and patterns, pushed encrypted from Obsidian. You can also stay out of the People directory, so your page works only for people with the link.</p>` },
+      { h2: "How do I make one?", html: `<ol>
+<li>Sign up with GitHub for a page and a city with nothing to install, or go straight to Obsidian.</li>
+<li>Install Caldera from Obsidian's community plugins, or paste the setup prompt from <a href="/#install">caldera.social/#install</a> into Claude Code, Codex or Cursor.</li>
+<li>Type your name and a handle in the Welcome window. Your page goes live at caldera.social/@yourhandle.</li>
+<li>Edit <code>Caldera/profile.md</code> for your headline, photo, links, projects and which sections show.</li>
+</ol>
+<p>The full walk-through is <a href="/obsidian-public-profile">how to make a public profile from your Obsidian vault</a>. For what Caldera is and what is free, see <a href="/what-is-caldera">What is Caldera?</a></p>` },
+    ],
+    faq: [
+      ["What is a living profile?", "A public page about you that updates itself from the work you already do, such as your notes, journal and code, instead of a bio you rewrite by hand. Caldera builds one from your Obsidian vault and your GitHub."],
+      ["Does a living profile publish my notes?", "No. Caldera publishes counts, the sections you switch on, journal fields you write and only notes you mark caldera: public, showing their title and first paragraph. The plugin reads your vault on your device and never uploads it."],
+      ["Do I need Obsidian?", "No. Sign up with GitHub and you get a page and a GitHub city with nothing to install. Obsidian adds the parts built from your vault: a daily journal, activity, AI usage and the notes you choose."],
+      ["Can I use my own domain?", "Not yet. Profiles live at caldera.social/@yourhandle. You can export your profile as a static site and host it anywhere, or run your own Caldera hub."],
+      ["Is it free?", "Yes. Your page, your city, the plugin and friends are free and open source."],
+    ],
+    related: ["obsidian-public-profile", "what-is-caldera", "obsidian-profile-modules", "github-city"],
   },
 ];

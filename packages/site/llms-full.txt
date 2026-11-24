@@ -998,3 +998,100 @@ Q: Can Caldera's server read the notes I share?
 A: No. Notes are encrypted on your device with your friend's public key, and the hub stores only ciphertext.
 Q: Is Caldera free?
 A: Yes. The plugin, your page and sharing with friends are free and open source.
+
+## How do I share one Obsidian note as a web page?
+URL: https://caldera.social/share-obsidian-note-as-web-page
+
+To share one Obsidian note as its own web page, use a publishing tool: Obsidian Publish (paid, $8 per site per month billed annually or $10 billed monthly, as listed on obsidian.md in November 2026) or a free static-site option such as Quartz. Caldera, a free, open-source Obsidian plugin, does not turn a full note into a page. It lists the note's title and first paragraph on your public profile, or sends the whole note privately to one friend.
+
+### Which option fits one note?
+Option What readers see Cost Setup Obsidian Publish The full note as a page on a website, public or password-protected $8 per site per month billed annually, $10 billed monthly Built into Obsidian; pick the notes to publish Quartz The full note as a page on a static site you host Free, MIT license Command line build plus a static host Digital-garden style plugins Selected full notes as pages Free (hosting tier dependent) Plugin plus a Netlify or Vercel account Caldera, public note The note's title and first paragraph, listed on your profile Free, open source Add one property to the note Caldera, share with a friend The full note, in one friend's own vault (not a web page) Free, open source Follow each other, then one command Obsidian Publish price as listed on obsidian.md/pricing, checked November 24, 2026. Check there before you buy: prices can change. If the full text must be readable in a browser by anyone with the link, Caldera is not the tool for that note. Pick Publish for no build step, or Quartz if you are happy to run a build and host the site yourself.
+
+### How do I put a note on my Caldera page?
+Install Caldera from Obsidian's community plugins, or paste the setup prompt from caldera.social/#install into Claude Code, Codex or Cursor. Open the note and add caldera: public to its properties (frontmatter). Run Publish my profile from the command palette, or wait for the next automatic publish (every 6 hours by default). Your page at caldera.social/@yourhandle then lists the note with its title and first paragraph. To take it down, remove the property and publish again. Write the first paragraph so it stands on its own: it is the part people read. For the rest of what your page can show, see how to make a public profile from your vault .
+
+### Can I send the whole note to one person instead?
+Yes, if that person also uses Obsidian. Follow each other on Caldera and you are friends. Open the note and run Share this note with a friend from the command palette. The note is encrypted on your device with your friend's key, the server stores only ciphertext, and it arrives in their vault under Caldera/Inbox/ as a normal Markdown note. It is a copy, like an email, not a live shared document. Step by step: how to share Obsidian notes privately .
+
+### What stays private?
+Caldera reads your vault on your device and never uploads it. Only counts, the profile sections you switch on, notes you mark caldera: public and journal fields you write are published. Nothing else leaves your vault unless you switch a section on or share a note with a named friend.
+
+### When is a paid publishing tool worth it?
+Pay for Obsidian Publish when you want many full notes online as a website with search, a graph view and your own domain, and no build step. If you want a page about you that lists a few notes and updates itself, Caldera does that for free. You can also use both: publish the notes, then add the site to the links line in Caldera/profile.md . Full comparison: Caldera vs Obsidian Publish and free alternatives to Obsidian Publish .
+
+### Questions
+Q: Can Caldera turn one Obsidian note into its own web page?
+A: No. Caldera shows the title and first paragraph of a note you mark caldera: public on your profile at caldera.social/@yourhandle. To put the full note online as its own page, use a publishing tool such as Obsidian Publish or a free static-site generator like Quartz.
+Q: Is there a free way to put one Obsidian note online?
+A: Yes. Quartz is a free, MIT-licensed static-site generator, and digital-garden style community plugins publish selected notes to hosts like Netlify or Vercel. Both need a build or a host account. Obsidian Publish is the paid, built-in option.
+Q: How do I send one full note to one person without a public link?
+A: With Caldera, follow each other so you are friends, open the note and run Share this note with a friend. The note is encrypted on your device and arrives in your friend's vault under Caldera/Inbox as a normal Markdown note.
+Q: How do I take a note off my Caldera page?
+A: Remove caldera: public from the note's properties, then run Publish my profile, or wait for the next automatic publish (every 6 hours by default).
+
+## How do I see how many tokens I use in Codex?
+URL: https://caldera.social/track-codex-token-usage
+
+Codex saves a usage log on your computer for every session, in ~/.codex/sessions, with token counts per turn and the model used. Caldera, a free, open-source Obsidian plugin, reads those logs on the computer where you run Obsidian and charts your Codex tokens per day and by model on your profile. It publishes counts only, never prompts, file names or costs.
+
+### What is in the Codex logs, and what does Caldera show?
+Data In the local Codex logs On your Caldera page Tokens Per turn, in token_count events Total tokens and a daily chart Model From turn_context Your share by model and by provider Timestamps On each event Used to count tokens per day Prompts and responses In the session logs, but not in the usage fields Caldera reads Never published File names and code Not in the usage fields Caldera reads Never published Costs Not in the usage fields Caldera reads Never shown Log paths and fields as described in the Caldera guide , checked November 24, 2026. Codex can change its log format; if the AI usage section is empty, check that ~/.codex/sessions exists on that computer.
+
+### Where does Codex keep its usage logs?
+Codex writes one JSONL file per session under ~/.codex/sessions/ . Each turn adds a token_count event with that turn's usage, and the model is recorded in turn_context . Because the logs are local files, you can total them without API access. Claude Code keeps similar logs in ~/.claude/projects/ , so both can sit on one chart.
+
+### How do I chart my Codex tokens with Caldera?
+Install Obsidian (free at obsidian.md) on the computer where you run Codex. Install Caldera from Obsidian's community plugins, or paste the setup prompt from caldera.social/#install into Codex itself and let it install the plugin. Type your name and a handle in the Welcome window. Your page goes live at caldera.social/@yourhandle. The AI usage section fills in by itself on that computer: total tokens, a daily chart, and shares by model and provider. You choose which sections show in Caldera/profile.md , so you can hide it any time. A GitHub sign-up alone gives you a page and a city, but token usage from local logs needs the Obsidian plugin.
+
+### Can I add other computers or tools?
+Yes. The plugin reads logs only on the computer it runs on. For a second machine, or for your own products' API usage, have your AI agent write an ai block (counts by model and provider) into Caldera/activity.json in your vault on a schedule. Any tool that keeps local usage logs can be added the same way. The prompt for this is in the Caldera guide , and using Claude Code, Codex or Cursor with Obsidian covers the daily routine.
+
+### Why are my totals so large?
+Agent sessions re-read cached context again and again, so totals are often mostly cache reads. Charting by model shows how much each model actually works for you. For the same view across tools, see track AI token usage by day and by model .
+
+### What does this not cover?
+Caldera charts usage from local logs. It does not read your OpenAI account, plan limits, billing or sign-in tokens; check OpenAI's own documentation for those. The live agent drones on your GitHub city work through Claude Code hooks, not Codex, as of November 2026 (see track your Claude Code activity ).
+
+### Questions
+Q: Where does Codex keep token usage on my computer?
+A: In its session logs at ~/.codex/sessions/**/*.jsonl. token_count events carry the usage for each turn, and the model comes from turn_context.
+Q: Does Caldera need my OpenAI account or an API key?
+A: No. The Caldera plugin reads the Codex logs on the computer where you run Obsidian and totals only usage fields: model, token counts and timestamps.
+Q: Does Caldera show what Codex costs me?
+A: No. Only token counts and model names are published. Money amounts are left out on purpose.
+Q: Can I combine Codex with Claude Code and other computers?
+A: Yes. The plugin reads Claude Code and Codex logs on the same computer by itself. For other computers or your own products' API usage, have your AI agent write an ai block with counts by model and provider into Caldera/activity.json.
+Q: Is it free?
+A: Yes. The plugin, your page and the AI usage section are free and open source.
+
+## What is a living profile?
+URL: https://caldera.social/what-is-a-living-profile
+
+A living profile is a public page about you that updates itself from the work you already do, instead of a bio you rewrite by hand. On Caldera, the free, open-source social network for GitHub and Obsidian, it is built on your own device from your Obsidian vault and republished on its own every few hours and about a minute after you edit Caldera/profile.md, while your GitHub city rebuilds every 6 hours.
+
+### How is it different from a normal profile page?
+Static profile (about page, bio) Caldera living profile Who updates it You, by hand It rebuilds itself from your vault; the GitHub city rebuilds every 6 hours What it shows What you last wrote about yourself Journal, activity, projects, topics, timeline, links, AI usage, your repos as a city Where the content comes from A form or an editor Notes and daily notes in your vault, Caldera/profile.md , your GitHub Privacy Whatever you type is public Private by default; you choose which sections show People Usually none Follows, friends, messages, groups, a People directory Cost Varies Free, open source (MIT plugin, AGPL hub)
+
+### What does a Caldera living profile show?
+Daily journal. A flippable journal fed by caldera_headline , caldera_focus , caldera_wins and caldera_themes in your daily notes. An AI routine can write one entry per workday. Activity. A 26-week heatmap, a daily score, streaks and a growth chart, counted by the plugin from your notes. Now, projects and timeline. Written in Caldera/profile.md , with live links. Topics. Only tags you allow-list are shown, so private names never appear. AI usage. Tokens by model and provider from local Claude Code and Codex logs, counts only. Code. Your GitHub repos as a living GitHub city . Notes you choose. Any note marked caldera: public , with its title and first paragraph. Your own sections. One Markdown note per section in Caldera/modules/ (see custom profile sections ).
+
+### How does it stay up to date?
+The Caldera plugin builds the page on your device from your vault and republishes it automatically. Save a change to Caldera/profile.md and the page updates about a minute later. Daily notes feed the journal, your notes feed the activity heatmap, and your GitHub feeds the city. If you use an AI agent, one setup prompt has it write one journal entry per workday and keep your activity counts current, and it asks you before anything goes public.
+
+### What stays private?
+The plugin reads your vault locally and never uploads it. Only counts, the sections you switch on, notes you mark caldera: public and journal fields you write are published. Your identity is a key in your vault, not a password account. A private view, which only you can see, adds visits, goals and patterns, pushed encrypted from Obsidian. You can also stay out of the People directory, so your page works only for people with the link.
+
+### How do I make one?
+Sign up with GitHub for a page and a city with nothing to install, or go straight to Obsidian. Install Caldera from Obsidian's community plugins, or paste the setup prompt from caldera.social/#install into Claude Code, Codex or Cursor. Type your name and a handle in the Welcome window. Your page goes live at caldera.social/@yourhandle. Edit Caldera/profile.md for your headline, photo, links, projects and which sections show. The full walk-through is how to make a public profile from your Obsidian vault . For what Caldera is and what is free, see What is Caldera?
+
+### Questions
+Q: What is a living profile?
+A: A public page about you that updates itself from the work you already do, such as your notes, journal and code, instead of a bio you rewrite by hand. Caldera builds one from your Obsidian vault and your GitHub.
+Q: Does a living profile publish my notes?
+A: No. Caldera publishes counts, the sections you switch on, journal fields you write and only notes you mark caldera: public, showing their title and first paragraph. The plugin reads your vault on your device and never uploads it.
+Q: Do I need Obsidian?
+A: No. Sign up with GitHub and you get a page and a GitHub city with nothing to install. Obsidian adds the parts built from your vault: a daily journal, activity, AI usage and the notes you choose.
+Q: Can I use my own domain?
+A: Not yet. Profiles live at caldera.social/@yourhandle. You can export your profile as a static site and host it anywhere, or run your own Caldera hub.
+Q: Is it free?
+A: Yes. Your page, your city, the plugin and friends are free and open source.
