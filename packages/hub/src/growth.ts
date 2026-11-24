@@ -435,6 +435,13 @@ export function growthStore(q: Q) {
     },
     /** admin.js farm-report: commits voided as farm per member and repo (counts only) */
     farmCounts: (since: number): { p: string; repo: string; n: number }[] => (q("SELECT profile p, repo, COUNT(*) n FROM growth_events WHERE kind='commit' AND void='farm' AND ts >= ? GROUP BY profile, repo ORDER BY n DESC").all(since) as any[]).map(r => ({ p: r.p, repo: r.repo, n: r.n })),
+    /** Settings > Activity (LOOP e): one member's counted work since `since` (void '' only), and the commits voided as farm
+     *  per repo, largest first (the same count as farmCounts / admin.js farm-report). Counts only. */
+    activity: (p: string, since: number): { commits: number; prs: number; releases: number; ci: number; voided: { repo: string; n: number }[] } => {
+      const k = new Map((q("SELECT kind, SUM(COALESCE(n, 1)) n FROM growth_events WHERE profile=? AND void='' AND ts >= ? AND kind IN ('commit','private','pr','release','ci_green') GROUP BY kind").all(p, since) as any[]).map(r => [r.kind as string, Math.round(Number(r.n) || 0)]));
+      const voided = (q("SELECT repo, COUNT(*) n FROM growth_events WHERE profile=? AND kind='commit' AND void='farm' AND ts >= ? GROUP BY repo ORDER BY n DESC, repo").all(p, since) as any[]).map(r => ({ repo: String(r.repo || ""), n: Number(r.n) || 0 }));
+      return { commits: (k.get("commit") || 0) + (k.get("private") || 0), prs: k.get("pr") || 0, releases: k.get("release") || 0, ci: k.get("ci_green") || 0, voided };
+    },
     erase: (id: string) => { for (const t of ["growth_events", "growth_seed", "growth_snap", "growth_poll", "growth_ai"]) q(`DELETE FROM ${t} WHERE profile=?`).run(id); },
   };
 }

@@ -45,6 +45,19 @@ export const SETTINGS_CSS = `<style>
 @keyframes connp{50%{opacity:.25}}@media (prefers-reduced-motion:reduce){.conn-wait i{animation:none}}
 @media (max-width:520px){.conn-body{padding-left:16px}.conn-act{font-size:12.5px}}
 .danger-zone{border-color:rgba(240,113,106,.45)!important}
+.act-h{margin:0 0 10px;font:500 12px var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted,#8A8A93)}
+.act-n{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0}
+.act-n div{padding:10px 12px;border:1px solid var(--line,#2A2A2E);border-radius:10px;background:var(--bg,#1C1C1F)}
+.act-n dt{font-size:12.5px;color:var(--text-muted,#8A8A93);line-height:1.3}
+.act-n dd{margin:2px 0 0;font:600 20px/1.2 var(--font-mono,'IBM Plex Mono',monospace);color:var(--text-strong,#F2F2F5)}
+.act-note{display:grid;grid-template-columns:8px minmax(0,1fr);gap:0 10px;margin:14px 0 0;padding:12px 0 0;border-top:1px solid var(--line,#2A2A2E)}
+.act-note>i{width:8px;height:8px;margin-top:9px;border-radius:50%;background:var(--text-muted,#8A8A93)}
+.act-note p{margin:0;font-size:14.5px;color:var(--text,#DADADF)}
+.act-note p+p{margin-top:6px}
+.act-note code{font:500 13.5px var(--font-mono,'IBM Plex Mono',monospace);color:var(--text-strong,#F2F2F5);overflow-wrap:anywhere}
+.act-foot{margin:12px 0 0;font-size:13.5px;color:var(--text-muted,#8A8A93)}
+@media (max-width:700px){.act-n{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px) and (min-width:440px){.me .act-card{padding:14px}.act-n dd{font-size:18px}.act-note p{font-size:13.5px}}
 ${FLEET_SETTINGS_CSS}
 </style>`;
 
@@ -121,4 +134,25 @@ export function connDots(href: string, c: { github: boolean; obsidian: boolean }
   const d = (on: boolean) => `<i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on ? "#3FB97F" : "#5A5A66"}"></i>`;
   return `<a class="cb-conn" href="${esc(href)}" title="${esc(t)}" aria-label="${esc(t + ". Open settings")}" style="display:inline-flex;align-items:center;gap:6px;padding:0 6px;color:#B8B8C2;font-size:12px;white-space:nowrap">`
     + `<span class="cb-cl">GitHub</span>${d(c.github)}<span class="cb-cl" style="margin-left:4px">Obsidian</span>${d(c.obsidian)}</a>`;
+}
+
+/** Settings > Activity (LOOP e, spec 1e): what counted this season, and (only when some did not) one plain line per repo
+ *  whose repeated automated commits were left out. Owner only: the hub renders it on the owner's Settings page and nowhere else. */
+export interface ActivityData { commits: number; prs: number; releases: number; ci: number; voided: { repo: string; n: number }[] }
+const nf = (n: number) => Math.max(0, Math.round(Number(n) || 0)).toLocaleString("en-US");
+export function activityLine(n: number, repo: string): string {
+  return n === 1
+    ? `<p>1 commit from <code>${esc(repo)}</code> did not count this season. It was a repeated automated commit. Real work always counts.</p>`
+    : `<p>${nf(n)} commits from <code>${esc(repo)}</code> did not count this season. They were repeated automated commits. Real work always counts.</p>`;
+}
+export function activityCard(d: ActivityData | null | undefined): string {
+  const a: ActivityData = d || { commits: 0, prs: 0, releases: 0, ci: 0, voided: [] };
+  const v = (a.voided || []).filter(r => r && r.n > 0), shown = v.slice(0, 3), more = v.length - shown.length;
+  const empty = !(a.commits > 0 || a.prs > 0 || a.releases > 0 || a.ci > 0);
+  const cell = (t: string, n: number) => `<div><dt>${t}</dt><dd>${nf(n)}</dd></div>`;
+  return `<section class="card act-card" aria-labelledby="activity"><p class="act-h">Counted this season</p>`
+    + `<dl class="act-n">${cell("Commits", a.commits)}${cell("Merged pull requests", a.prs)}${cell("Releases", a.releases)}${cell("Green CI runs", a.ci)}</dl>`
+    + (empty ? `<p class="act-foot">No counted work yet this season. Work you push to a connected repo shows here.</p>` : "")
+    + (shown.length ? `<div class="act-note"><i aria-hidden="true"></i><div>${shown.map(r => activityLine(r.n, r.repo)).join("")}${more > 0 ? `<p>The same is true for ${more === 1 ? "1 more repo" : `${nf(more)} more repos`}.</p>` : ""}</div></div>` : "")
+    + `<p class="act-foot"><a href="/guide#f-counted">How work is counted</a></p></section>`;
 }
