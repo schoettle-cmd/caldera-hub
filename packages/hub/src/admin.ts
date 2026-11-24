@@ -20,6 +20,7 @@
  *   ... growth-drops                    today's daily drop manifest
  *   ... battle-state | battle-run [--force] [YYYY-MM-DD] | battle-dry [YYYY-MM-DD] | battle-restrike [YYYY-MM-DD] [--save] | battle-optin @handle [--backdate] [--waive] | battle-optout @handle | battle-report [--dry] [--force] [@handle] | battle-summary [--dry]
  *   ... battle-mail-test <handle>      that member's battle mail for the newest night, written to files (html, text, png); never sent
+ *   ... battle-mail-report [days]     the battle mail per night (default 14 days): sent, opened, open %, clicked, click %, unsub, unsub % (counts only)
  *   ... leaderboard [day|week|month|all]            the Leaderboard's rows (top 25)
  *   ... leaderboard-post [--dry] [--force] [YYYY-MM-DD]   yesterday's (or that Pacific day's) top 10 to the feed, once per day; --dry composes only; --force posts under 3 shippers
  *   ... land-run [--dry] [handle]   the World's Expansion view: fetch merged PRs and stars gained now, store tonight's land
@@ -86,6 +87,7 @@ try {
     const who = argv.find((x, i) => i > 0 && x.startsWith("@"))?.slice(1), list = a.growthMembers?.() || [], mm = who ? list.find((x: any) => x.handle === who) : null;
     if (who && !mm) { out({ error: "no listed member @" + who }); process.exit(1); }
     if (cmd === "battle-state") { out(b.state()); process.exit(0); }
+    if (cmd === "battle-mail-report") { out(b.track.report(Number(argv[1]) || 14)); process.exit(0); }   // counts only, no addresses (battletrack.ts)
     // LOOP.md part a: the hub has no test/ops address (agents@) in its code, so the test mail is written to files, never sent
     if (cmd === "battle-mail-test") {
       const h = clean(argv[1] || ""), mt = list.find((x: any) => String(x.handle).toLowerCase() === h);

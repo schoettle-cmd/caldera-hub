@@ -20,6 +20,7 @@ import { WAR, RAIDERS, SWITCH_NIGHT, battleAt, lockAt, bdOf, lastNight, arsenal,
 import { battleCardSvg, battleStorySvg, battleCardAlt, fetchAvatar, avatarUri, type CardNight, type CardMe } from "./battlecard";
 import type { GrowthMember } from "./growthhub";
 import { giftMail } from "./giftmail";
+import { battleTrack } from "./battletrack";
 import { homeNight, type HomeBattle } from "./homebattle";
 import { ARMORY, bombOf, armoryNow, armoryStore, armoryPrefs, alertDue, alertText, armoryEmail, checkWord, cleanTz, clockIn, openAlertAt, remindAt, type BombKind } from "./armory";
 
@@ -63,6 +64,7 @@ export function battleHub(c: BattleHubCtx) {
   if (!S.meta("launch")) S.setMeta("launch", String(lastNight(now())));
   const launch = () => Number(S.meta("launch")) || lastNight(now());
   let cache: { at: number; v: any } | null = null;
+  const BT = battleTrack({ q: c.q, hub: c.hub, now: () => now() });   // battle mail opens / clicks / unsubscribes (battletrack.ts)
   const A = armoryStore(c.q), PR = armoryPrefs(c.q, () => crypto.randomBytes(18).toString("base64url"));
   const idem = new Map<string, { at: number; v: any }>();   // Buy taps by idempotency key (10 minutes)
   // the nightly battle picture (battlecard.ts), rendered one time per night and city and stored (who "" = the generic picture)
@@ -583,9 +585,10 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
       if (!o.force && (freq === "daily" ? !k.night || k.quiet : !k.week?.fought)) { out.push({ h: m.handle, skip: "nothing to report" }); continue; }
       if (o.dry || !c.emailOn()) { out.push({ h: m.handle, dry: true, subject: mail.subject, text: mail.text }); continue; }
       try { await cardFor(n, k.quiet ? null : m.id); } catch (e: any) { console.error("[battle] card", e?.message); }   // the picture exists before the mail does
-      const un = unsubUrl(opt.token);
-      const ok = await c.send({ to, subject: mail.subject, html: mail.html, text: mail.text, src: "battle-report", kind: "daily", headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }).catch((e: any) => { console.error("[battle] send", e?.message); return false; });
-      if (ok !== false) { S.markSent(m.id, day); S.markFirst(m.id, day); out.push({ h: m.handle, sent: true, subject: mail.subject }); } else out.push({ h: m.handle, blocked: true });
+      const un = unsubUrl(opt.token), tr = BT.wrap(mail.html, [un]);   // open pixel + click redirects (not the unsubscribe link)
+      const ok = await c.send({ to, subject: mail.subject, html: tr.html, text: mail.text, src: "battle-report", kind: "daily", headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }).catch((e: any) => { console.error("[battle] send", e?.message); return false; });
+      if (ok !== false) { try { BT.record({ token: tr.token, night: day, profile: m.id, freq, links: tr.links }); } catch (e: any) { console.error("[battle] track", e?.message); }
+        S.markSent(m.id, day); S.markFirst(m.id, day); out.push({ h: m.handle, sent: true, subject: mail.subject }); } else out.push({ h: m.handle, blocked: true });
     }
     return { sent: out.filter(y => y.sent).length, out };
   }
@@ -608,13 +611,13 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
 
   // ---------------------------------------------------------------- routes
   async function route(req: http.IncomingMessage, res: http.ServerResponse, p: string, url: URL): Promise<boolean> {
-    if (p.startsWith("/email/")) return G.route(req, res, p, url);
+    if (p.startsWith("/email/")) return BT.route(req, res, p, url) || G.route(req, res, p, url);
     if (req.method === "GET" && p === "/v1/world/battle") { res.setHeader("cache-control", "public, max-age=60"); c.json(res, 200, state()); return true; }
     if (p === "/u/battle" && (req.method === "GET" || req.method === "POST")) {
       const t = (url.searchParams.get("t") || "").replace(/[^\w-]/g, "");
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
       if (req.method === "GET") { res.end(c.page("Stop battle reports", `<form method="post" action="/u/battle?t=${t}"><p>Stop sending Caldera battle reports to this address. Your city stays in the battles; you can leave them from the World's Battle view.</p><button type="submit" style="font:600 15px/1 sans-serif;padding:12px 18px;border-radius:999px;border:0;background:#6E4FE0;color:#fff;cursor:pointer">Unsubscribe</button></form>`)); return true; }
-      const row = t ? S.byToken(t) : null; if (row) S.setReport(row.p, "off");   // idempotent; also the RFC 8058 one-click POST
+      const row = t ? S.byToken(t) : null; if (row) { S.setReport(row.p, "off"); BT.unsub(row.p); }   // idempotent; also the RFC 8058 one-click POST
       res.end(c.page("You're unsubscribed", "<p>No more battle reports. You can turn them back on any time from the World's Battle view.</p>")); return true;
     }
     if (p === "/u/armory" && (req.method === "GET" || req.method === "POST")) {
@@ -705,7 +708,7 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
     if (p === "/v1/world/battle/report") {
       const f = String(b.freq || "") as ReportFreq; if (!["daily", "weekly", "off"].includes(f)) { c.json(res, 400, { error: "freq must be daily, weekly or off" }); return true; }
       if (f !== "off" && !c.emailOf(id)) { c.json(res, 409, { error: "confirm an email first", url: "/settings" }); return true; }
-      S.setReport(id, f); c.json(res, 200, me(id)); return true;
+      S.setReport(id, f); if (f === "off") BT.unsub(id); c.json(res, 200, me(id)); return true;
     }
     return false;
   }
@@ -777,7 +780,7 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
   /** the time from which work counts for the season in progress (the next night's season): the battle before its first night.
    *  Settings > Activity reads it (LOOP e). */
   const seasonStart = () => { const f = season(lastNight(now()) + 1, launch()).from; return f === SWITCH_NIGHT ? (SWITCH_NIGHT - 1) * DAY : f > SWITCH_NIGHT ? lockAt(f - 1) : battleAt(f - 1); };   // work of night f starts at the lock of night f-1 (bdOf)
-  return { seasonStart, standing, orderCheck, route, tick, resolve, restrikeNight, fairRecount, state, home, me, postSummary, sendReports, mailTest, summaryOf, newest, cardFor, og, store: S, armory: A, prefs: PR, armoryAlerts, gift: G, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
+  return { seasonStart, standing, orderCheck, route, tick, resolve, restrikeNight, fairRecount, state, home, me, postSummary, sendReports, mailTest, summaryOf, newest, cardFor, og, store: S, armory: A, prefs: PR, armoryAlerts, gift: G, settingsHtml, landGone, leave, track: BT, erase: (id: string) => { S.erase(id); BT.erase(id); A.erase(id); PR.erase(id); cache = null; },
     /** operator: opt a member in; since (ms) backdates it so a seed night can include them */
     optIn: (id: string, o: { waive?: boolean; since?: number } = {}) => { S.setWar(id, true, o.since ?? now()); if (o.waive !== undefined) S.setWaive(id, o.waive); cache = null; } };
 }
