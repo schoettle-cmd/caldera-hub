@@ -48,6 +48,7 @@ import { closenessOrder, buildWorld, foldLive, agentRank, worldPage, type World,
 import { buildLand, landJob, landStore, type LandIn, type LandWorld } from "./land";
 import { growthHub, type GrowthMember } from "./growthhub";
 import { battleHub } from "./battlehub";
+import { WAR } from "./battle";
 import { frontier } from "./frontier";
 import { FRONTIER_SEED } from "./frontierseed";
 import { leaderboard as leaderboardHub } from "./leaderboard";
@@ -1731,6 +1732,7 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   if (opts.email?.schedule) FEATURE.schedule();
   // ---------------------------------------------------------------- the World's battles (battle.ts, battlehub.ts): opt-in, idle, overnight, on the growth tick
   // Kill switch CALDERA_BATTLE=0 (no Battle view, no nights). The battle-report email sends only with CALDERA_BATTLE_EMAIL=1.
+  WAR.cap = process.env.CALDERA_BATTLE_CAP === "1";   // spec 11-24 1b/1c, off until Mike's yes
   const BATTLE = !GROWTH || opts.battle === false || process.env.CALDERA_BATTLE === "0" ? null : battleHub({ q, hub: opts.publicUrl || "https://caldera.social", postal: POSTAL,
     growth: GROWTH, members: growthMembers, memberOf: r => memberOf(r), sameOrigin: r => sameOrigin(r), readBody: r => readBody(r), json: (r, s, b) => json(r, s, b), page: (t, h) => mail.page(t, h),
     emailOf: id => {
@@ -1771,6 +1773,34 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
     secure: /^https:/.test(opts.publicUrl || ""), memberOf: r => memberOf(r), sameOrigin: r => sameOrigin(r), profile, byHandle, hidden: (pr: any) => !!modOf(pr.handle, pr.id),
     page: (t, h) => mail.page(t, h), tooMany: (k, m) => tooMany(k, m), count: (e, pl) => TIE.count(e, pl), own: id => TIE.own(id),
     view: (res, st, t, inner, js, extra) => signinPage(res, st, t, inner, js, extra), avatar: id => avatarOf(id) });
+  // the farm judge (Mike 11-24, spec 2026-11-24-caldera-battle-loop section 1): re-judge the last `days` days. Dry run by default;
+  // counts only, per member: counted commits before, voided as farm, and the share. apply also writes the season-score shares.
+  (admin as any).farmRecount = async (o: { days?: number; apply?: boolean } = {}) => {
+    if (!GROWTH) return { ok: false, error: "growth off" };
+    const days = Math.max(1, Math.min(90, o.days || 42)), since = Date.now() - days * DAY, G = GROWTH.store, P = GROWTH.poller as any;
+    const hOf = (id: string) => String((q("SELECT handle FROM profiles WHERE id=?").get(id) as any)?.handle || id.slice(0, 12));
+    const polled = (q("SELECT profile, login FROM growth_poll WHERE login IS NOT NULL AND login != ''").all() as any[]);
+    const per: Record<string, { counted: number; voided: number; share: number }> = {};
+    for (const r of polled) {
+      const before = (q("SELECT COUNT(*) n FROM growth_events WHERE profile=? AND kind='commit' AND ts >= ? AND (void='' OR void='farm')").get(r.profile, since) as any).n;
+      if (!before) continue;
+      let todo: { repo: string; day: number }[] = [];
+      try { todo = await P.retitle({ id: r.profile, login: r.login }, since); } catch (e: any) { console.error("[farm] retitle", hOf(r.profile), e?.message); }
+      let newly = 0; for (const t of todo) newly += G.refarm(r.profile, t.repo, t.day, !o.apply).voided;
+      const now0 = (q("SELECT COUNT(*) n FROM growth_events WHERE profile=? AND kind='commit' AND void='farm' AND ts >= ?").get(r.profile, since) as any).n;
+      const voided = o.apply ? now0 : now0 + newly;   // a dry run: what is voided already plus what this run would void
+      per[hOf(r.profile)] = { counted: before, voided, share: Math.round(voided / before * 1000) / 10 };
+    }
+    let fair: { night: number; id: string; x: number }[] = [];
+    if (BATTLE) fair = BATTLE.fairRecount(Math.floor(since / DAY), !!o.apply);
+    if (o.apply) GROWTH.recompute();
+    return { ok: true, apply: !!o.apply, days, members: per, nights: fair.map(f => ({ night: f.night, h: hOf(f.id), x: f.x })) };
+  };
+  (admin as any).farmReport = (days = 42) => {
+    if (!GROWTH) return [];
+    const hOf = (id: string) => String((q("SELECT handle FROM profiles WHERE id=?").get(id) as any)?.handle || id.slice(0, 12));
+    return GROWTH.store.farmCounts(Date.now() - Math.max(1, days) * DAY).map(r => ({ h: hOf(r.p), repo: r.repo, voided: r.n }));
+  };
   (admin as any).orpheusPull = () => ORPH.pull();   // admin.js orpheus-pull
   (admin as any).orpheusList = () => ORPH.fleetList();   // admin.js orpheus-list
   if (opts.orpheusJob) ORPH.schedule();

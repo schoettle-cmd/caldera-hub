@@ -11,6 +11,7 @@
  *   ... gh-remove | gh-restore <login>  take a non-member's caldera.social/gh/<login> preview down (removal request) or back
  *   ... stuck-claim [--send] [backup.sqlite ...]  unconfirmed sign-ups: counts, or email each a claim link once
  *   ... tie-stats [days]           Caldera x Orpheus tie: tie_show / tie_click per day and place
+ *   ... farm-recount [days] [--apply] | farm-report [days]   the farm judge (Mike 11-24): re-judge commits, counts only
  *   ... orpheus-pull | orpheus-list   Orpheus handle link: pull the fleet feed now (needs CALDERA_ORPHEUS_TIE_KEY) / the linked members
  *   ... reconnect-stats            counts only: members whose GitHub sign-in died, and how many have an address to email
  *   ... agent-list | agent-hide|agent-unhide|agent-delete <post-id>   agent posts, reported first
@@ -54,6 +55,8 @@ try {
     out(await (hub as any).stuckClaim({ send, paths, skipFrom: "2026-10-28", skipTo: "2026-10-30" })); process.exit(0);
   }
   if (cmd === "reconnect-stats") { out(hub.reconnect.stats()); process.exit(0); }
+  if (cmd === "farm-recount") { out(await a.farmRecount({ days: Number(argv.find(x => /^\d+$/.test(x))) || 42, apply: argv.includes("--apply") })); process.exit(0); }   // spec 11-24 1d: dry run unless --apply; counts only
+  if (cmd === "farm-report") { out(a.farmReport(Number(argv[1]) || 42)); process.exit(0); }   // commits voided as farm per member and repo
   if (cmd === "orpheus-pull") { out(await a.orpheusPull()); process.exit(0); }   // the daily Orpheus fleet feed, now
   if (cmd === "orpheus-list") { out(a.orpheusList()); process.exit(0); }   // linked members, newest first
   if (cmd === "tie-stats") { out(a.tieStats(Number(argv[1]) || 30)); process.exit(0); }   // Caldera x Orpheus tie: {tie, tie_at} per LA day

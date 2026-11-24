@@ -83,6 +83,47 @@ export function judgeCommit(c: GhCommit, login: string, repo: { fork?: boolean; 
   if (repo.fork && repo.created && Number.isFinite(t) && t < repo.created) return { v: "fork" };
   return { v: "" };
 }
+// ---------------------------------------------------------------- the farm judge (Mike 11-24, spec 2026-11-24-caldera-battle-loop section 1)
+/** a commit title with the digits and dates taken out: "Leaderboard snapshot 11-14" and "Leaderboard snapshot 11-15" match */
+export function titleTemplate(msg: string): string {
+  return String(msg || "").split("\n")[0]!.toLowerCase().replace(/\d{4}-\d{2}-\d{2}(t[\d:.]+z?)?/g, " ").replace(/[0-9]+/g, " ").replace(/[^a-z]+/g, " ").trim().slice(0, 80);
+}
+/** the stored key of a title template (short, no title text kept) */
+export const ttKey = (msg: string) => { const t = titleTemplate(msg); let a = 2166136261, b = 5381; for (let i = 0; i < t.length; i++) { const ch = t.charCodeAt(i); a = Math.imul(a ^ ch, 16777619); b = (Math.imul(b, 33) ^ ch) | 0; } return (a >>> 0).toString(36) + (b >>> 0).toString(36); };
+/** 1 when a commit changed 4 lines or fewer in exactly 1 file; undefined when GitHub did not say */
+export function smallOf(d: { stats?: { total?: number }; files?: unknown[] } | null | undefined): 0 | 1 | undefined {
+  if (!d || !Array.isArray(d.files) || !d.stats) return undefined;
+  return d.files.length === 1 && (Number(d.stats.total) || 0) <= 4 ? 1 : 0;
+}
+export const FARM = { min: 5, burst: 6, sample: 3 };
+export interface FarmItem { id: string; ts: number; tt?: string; sm?: 0 | 1 }
+/** One repo, one day: the commits that are farm. (1) 5 or more with the same title template, each small (4 lines or fewer in
+ *  1 file; checked on a sample of up to 3, all known ones small): all but the first. (2) A burst: the same committer second and
+ *  the same template, from the 6th on. Real bursts (a rebase, a day's push) have different titles and stay counted. */
+export function farmIds(items: FarmItem[]): Set<string> {
+  const out = new Set<string>(), by = new Map<string, FarmItem[]>(), burst = new Map<string, FarmItem[]>();
+  const ord = (a: FarmItem, b: FarmItem) => a.ts - b.ts || (a.id < b.id ? -1 : 1);
+  for (const i of items) {
+    if (i.tt === undefined) continue;
+    (by.get(i.tt) || by.set(i.tt, []).get(i.tt)!).push(i);
+    const k = Math.floor(i.ts / 1000) + "|" + i.tt; (burst.get(k) || burst.set(k, []).get(k)!).push(i);
+  }
+  for (const g of by.values()) {
+    if (g.length < FARM.min) continue;
+    const known = g.filter(i => i.sm !== undefined); if (!known.length || known.some(i => i.sm !== 1)) continue;
+    g.sort(ord).slice(1).forEach(i => out.add(i.id));
+  }
+  for (const g of burst.values()) if (g.length >= FARM.burst) g.sort(ord).slice(FARM.burst - 1).forEach(i => out.add(i.id));
+  return out;
+}
+/** the template groups of one repo-day that need a size check: 5+ commits and no known size yet (ids to sample, oldest first) */
+export function farmNeeds(items: FarmItem[]): string[] {
+  const by = new Map<string, FarmItem[]>(); for (const i of items) if (i.tt !== undefined) (by.get(i.tt) || by.set(i.tt, []).get(i.tt)!).push(i);
+  const out: string[] = [];
+  for (const g of by.values()) if (g.length >= FARM.min && !g.some(i => i.sm !== undefined)) out.push(...g.sort((a, b) => a.ts - b.ts).slice(0, FARM.sample).map(i => i.id));
+  return out;
+}
+
 /** PR points: merged by another account, or after CI passed = 6; self-merged on a solo repo = 2 */
 export function prPoints(o: { author: string; mergedBy?: string | null; ciPassed?: boolean }): number {
   const other = !!o.mergedBy && o.mergedBy.toLowerCase() !== o.author.toLowerCase() && !BOT.test(o.mergedBy);
@@ -124,7 +165,7 @@ export function eligibleTier(t: TierIn): number {
 }
 
 // ---------------------------------------------------------------- the simulation
-export interface GEvent { id: string; p: string; k: Kind | string; repo: string; ts: number; seen: number; n: number; v: string; x?: { rv?: string; self?: 0 | 1 } }
+export interface GEvent { id: string; p: string; k: Kind | string; repo: string; ts: number; seen: number; n: number; v: string; x?: { rv?: string; self?: 0 | 1; /** farm judge: the title template key */ tt?: string; /** 1 = 4 lines or fewer in 1 file, 0 = bigger, absent = unknown */ sm?: 0 | 1 } }
 export interface Seed { p: string; day: number; side: number; lots: string; since?: number }
 export interface DayStat { d: number; pts: number; c: number; pr: number; rel: number; st: number; z: number; top: number; up: number; ring: number; ai: number; nc: number }
 export interface Snap { side: number; lots: string; bank: number; streak: number; tier: number; idle: number | null }
@@ -350,6 +391,9 @@ export function growthStore(q: Q) {
     const r = q("INSERT OR IGNORE INTO growth_events VALUES (?,?,?,?,?,?,?,?,?)").run(e.id, e.p, e.k, e.repo.slice(0, 140), Math.round(e.ts), Math.round(e.seen), e.n, e.v || "", e.x ? JSON.stringify(e.x) : null);
     return Number(r?.changes || 0) > 0;
   };
+  const commitsIn = (p: string, repo: string, from: number, to: number): { id: string; ts: number; v: string; x: any }[] => (q("SELECT id, ts, void, x FROM growth_events WHERE profile=? AND repo=? AND kind='commit' AND ts >= ? AND ts < ?").all(p, repo, from, to) as any[]).map(r => ({ id: r.id, ts: r.ts, v: r.void || "", x: r.x ? JSON.parse(r.x) : {} }));
+  const setX = (id: string, x: Record<string, unknown>) => q("UPDATE growth_events SET x=? WHERE id=?").run(JSON.stringify(x), id);
+  const setVoid = (id: string, v: string) => q("UPDATE growth_events SET void=? WHERE id=?").run(v, id);
   return {
     add,
     has: (id: string) => !!q("SELECT 1 FROM growth_events WHERE id=?").get(id),
@@ -375,6 +419,21 @@ export function growthStore(q: Q) {
     prune: (beforeDay: number) => { q("DELETE FROM growth_snap WHERE day < ?").run(beforeDay); q("DELETE FROM growth_events WHERE seen < ? AND kind IN ('post','comment','note','agent','private')").run(beforeDay * DAY); },
     drops: (day: string): Manifest | null => { const r = q("SELECT json FROM growth_drops WHERE day=?").get(day) as any; try { return r ? JSON.parse(r.json) : null; } catch { return null; } },
     saveDrops: (m: Manifest) => q("INSERT OR REPLACE INTO growth_drops VALUES (?,?,?)").run(m.day, JSON.stringify(m), Date.now()),
+    /** the farm judge's rows: one member's commits on one repo in [from, to) by commit time */
+    commitsIn, setX, setVoid,
+    get: (id: string): GEvent | null => { const r = q("SELECT * FROM growth_events WHERE id=?").get(id) as any; return r ? { id: r.id, p: r.profile, k: r.kind, repo: r.repo || "", ts: r.ts, seen: r.seen, n: r.n, v: r.void || "", ...(r.x ? { x: JSON.parse(r.x) } : {}) } : null; },
+    /** re-judge one member's repo-day for farm: "" <-> "farm" only (other voids stay). dry: count, write nothing */
+    refarm: (p: string, repo: string, day: number, dry = false): { farm: number; voided: number; restored: number } => {
+      const rows = commitsIn(p, repo, day * DAY, (day + 1) * DAY), f = farmIds(rows.map(r => ({ id: r.id, ts: r.ts, tt: r.x?.tt, sm: r.x?.sm })));
+      let voided = 0, restored = 0;
+      for (const r of rows) {
+        if (r.v === "" && f.has(r.id)) { voided++; if (!dry) setVoid(r.id, "farm"); }
+        else if (r.v === "farm" && !f.has(r.id)) { restored++; if (!dry) setVoid(r.id, ""); }
+      }
+      return { farm: f.size, voided, restored };
+    },
+    /** admin.js farm-report: commits voided as farm per member and repo (counts only) */
+    farmCounts: (since: number): { p: string; repo: string; n: number }[] => (q("SELECT profile p, repo, COUNT(*) n FROM growth_events WHERE kind='commit' AND void='farm' AND ts >= ? GROUP BY profile, repo ORDER BY n DESC").all(since) as any[]).map(r => ({ p: r.p, repo: r.repo, n: r.n })),
     erase: (id: string) => { for (const t of ["growth_events", "growth_seed", "growth_snap", "growth_poll", "growth_ai"]) q(`DELETE FROM ${t} WHERE profile=?`).run(id); },
   };
 }
@@ -401,26 +460,72 @@ export function githubPoller(c: PollCtx) {
     return r.body.filter((x: any) => !x.private).map((x: any) => ({ full: String(x.full_name), fork: !!x.fork, created: Date.parse(x.created_at) || 0, pushed: Date.parse(x.pushed_at) || 0, stars: Number(x.stargazers_count) || 0, archived: !!x.archived, topics: Array.isArray(x.topics) ? x.topics.slice(0, 20) : [] }));
   }
   /** commits by the member on one repo since a time; live polls check each new commit's line count (the backfill reads trees) */
-  async function commits(p: string, login: string, token: string | null, repo: string, meta: RepoMeta | undefined, since: number, backfill: boolean, budget: { stats: number }) {
-    let added = 0, head: string | null = null;
+  async function commits(p: string, login: string, token: string | null, repo: string, meta: RepoMeta | undefined, since: number, backfill: boolean, budget: { stats: number; farm?: number }) {
+    let added = 0, head: string | null = null; const days = new Set<number>();
     for (let page = 1; page <= (backfill ? 4 : 1); page++) {
       const r = await gh(token, `/repos/${repo}/commits?author=${encodeURIComponent(login)}&since=${new Date(since).toISOString()}&per_page=100&page=${page}`); await wait();
       if (r.status !== 200 || !Array.isArray(r.body) || !r.body.length) break;
       const trees = new Map<string, string>(); for (const x of r.body as GhCommit[]) if (x.sha && x.commit?.tree?.sha) trees.set(x.sha, x.commit.tree.sha);
       for (const x of r.body as GhCommit[]) {
         if (!x?.sha) continue; head = head || x.sha;
+        const ts = Date.parse(x.commit?.committer?.date || x.commit?.author?.date || "") || now(); days.add(dayOf(Math.min(ts, now())));
         const id = "c:" + x.sha; if (c.S.has(id)) continue;
-        let j = judgeCommit(x, login, { fork: meta?.fork, created: meta?.created }, trees);
+        let j = judgeCommit(x, login, { fork: meta?.fork, created: meta?.created }, trees), sm: 0 | 1 | undefined;
         if (!j.v && !backfill && budget.stats > 0 && !trees.has(x.parents?.[0]?.sha || "")) {   // is it empty? one call, at most 40 a member a poll
           budget.stats--; const d = await gh(token, `/repos/${repo}/commits/${x.sha}`); await wait();
-          if (d.status === 200 && d.body) { const j2 = judgeCommit({ ...x, stats: d.body.stats, files: d.body.files }, login, { fork: meta?.fork, created: meta?.created }, trees); if (j2.v) j = j2; }
+          if (d.status === 200 && d.body) { const j2 = judgeCommit({ ...x, stats: d.body.stats, files: d.body.files }, login, { fork: meta?.fork, created: meta?.created }, trees); if (j2.v) j = j2; sm = smallOf(d.body); }
         }
-        const ts = Date.parse(x.commit?.committer?.date || x.commit?.author?.date || "") || now();
-        if (c.S.add({ id, p, k: "commit", repo: repo.toLowerCase(), ts: Math.min(ts, now()), seen: backfill ? Math.min(ts, now()) : now(), n: 1, v: j.v, ...(j.reverts ? { x: { rv: j.reverts } } : {}) })) added++;
+        const xx = { ...(j.reverts ? { rv: j.reverts } : {}), tt: ttKey(x.commit?.message || ""), ...(sm !== undefined ? { sm } : {}) };
+        if (c.S.add({ id, p, k: "commit", repo: repo.toLowerCase(), ts: Math.min(ts, now()), seen: backfill ? Math.min(ts, now()) : now(), n: 1, v: j.v, x: xx })) added++;
       }
       if (r.body.length < 100) break;
     }
+    await farmCheck(p, token, repo, days, budget);
     return { added, head };
+  }
+  /** the farm judge for the days a poll touched: size-check a sample of each suspect group, then re-judge the repo-day */
+  async function farmCheck(p: string, token: string | null, repo: string, days: Set<number>, budget: { farm?: number }) {
+    const rk = repo.toLowerCase();
+    for (const d of days) {
+      const rows = c.S.commitsIn(p, rk, d * DAY, (d + 1) * DAY);
+      for (const id of farmNeeds(rows.map(r => ({ id: r.id, ts: r.ts, tt: r.x?.tt, sm: r.x?.sm })))) {
+        if ((budget.farm ?? 20) <= 0) break; budget.farm = (budget.farm ?? 20) - 1;
+        const g = await gh(token, `/repos/${repo}/commits/${id.slice(2)}`); await wait();
+        const sm = g.status === 200 ? smallOf(g.body) : undefined, row = rows.find(r => r.id === id);
+        if (sm !== undefined && row) c.S.setX(id, { ...row.x, sm });
+      }
+      c.S.refarm(p, rk, d);
+    }
+  }
+  /** the farm recount (admin.js farm-recount): read the titles of one member's stored commits of the last `days` days from
+   *  GitHub, size-check the suspect groups, and return the repo-days to re-judge. Writes the title key and size only. */
+  async function retitle(m: { id: string; login: string }, since: number): Promise<{ repo: string; day: number }[]> {
+    const token = await c.token(m.id).catch(() => null), out: { repo: string; day: number }[] = [];
+    const repos = [...new Set(c.S.events(since - 30 * DAY).filter(e => e.p === m.id && e.k === "commit" && e.ts >= since).map(e => e.repo))];
+    for (const repo of repos) {
+      const days = new Set<number>();
+      for (let page = 1; page <= 40; page++) {
+        const r = await gh(token, `/repos/${repo}/commits?author=${encodeURIComponent(m.login)}&since=${new Date(since).toISOString()}&per_page=100&page=${page}`); await wait();
+        if (r.status !== 200 || !Array.isArray(r.body) || !r.body.length) break;
+        for (const x of r.body as GhCommit[]) {
+          if (!x?.sha) continue; const id = "c:" + x.sha;
+          const ts = Date.parse(x.commit?.committer?.date || x.commit?.author?.date || ""); if (Number.isFinite(ts)) days.add(dayOf(ts));
+          const ev = c.S.get(id); if (ev && ev.p === m.id && !ev.x?.tt) c.S.setX(id, { ...(ev.x || {}), tt: ttKey(x.commit?.message || "") });
+        }
+        if (r.body.length < 100) break;
+      }
+      const b = { farm: 2000 };
+      for (const d of days) {
+        const rows = c.S.commitsIn(m.id, repo, d * DAY, (d + 1) * DAY);
+        for (const id of farmNeeds(rows.map(r => ({ id: r.id, ts: r.ts, tt: r.x?.tt, sm: r.x?.sm })))) {
+          if (b.farm-- <= 0) break;
+          const g = await gh(token, `/repos/${repo}/commits/${id.slice(2)}`); await wait();
+          const sm = g.status === 200 ? smallOf(g.body) : undefined, row = rows.find(r => r.id === id); if (sm !== undefined && row) c.S.setX(id, { ...row.x, sm });
+        }
+        out.push({ repo, day: d });
+      }
+    }
+    return out;
   }
   async function ci(p: string, token: string | null, repo: string, sha: string) {
     const r = await gh(token, `/repos/${repo}/commits/${sha}/check-runs?per_page=30`); await wait();
@@ -501,7 +606,7 @@ export function githubPoller(c: PollCtx) {
     let list: RepoMeta[] = []; try { list = JSON.parse(cur.repos || "[]"); } catch { list = []; }
     if (nightly || !list.length) { list = await repos(m.login, token); await wait(); }
     const meta = new Map(list.map(r => [r.full.toLowerCase(), r] as [string, RepoMeta]));
-    const budget = { stats: 40 };
+    const budget = { stats: 40, farm: backfill ? 60 : 20 };
     let etag = cur.etag || "", evLast = Number(cur.ev_last) || 0;
     if (backfill) {
       const since = at - 90 * DAY;
@@ -537,7 +642,7 @@ export function githubPoller(c: PollCtx) {
     c.S.savePoll(m.id, { login: m.login, etag, ev_last: evLast, nightly: nightly ? today : cur.nightly, backfilled: 1, repos: JSON.stringify(list.slice(0, 100)), at });
     return { added: c.S.count(m.id) - before };
   }
-  return { poll, repos };
+  return { poll, repos, retitle };
 }
 
 /** The GitHub App webhook, when configured (data/github-webhook.json {secret}): the same events, as they happen. */
@@ -550,7 +655,7 @@ export function webhookEvents(kind: string, body: any, profileOfLogin: (login: s
       const msg = String(c.message || ""), rv = /^Revert ".*"/.test(msg) ? /This reverts commit ([0-9a-f]{7,40})/.exec(msg) : null;
       const changed = (c.added?.length || 0) + (c.removed?.length || 0) + (c.modified?.length || 0);
       const v = BOT.test(login) ? "bot" : rv ? "revert" : !c.distinct ? "dup" : changed === 0 ? "empty" : body.repository?.fork && Date.parse(c.timestamp) < Date.parse(body.repository?.created_at) ? "fork" : "";
-      out.push({ id: "c:" + c.id, p, k: "commit", repo, ts: Math.min(Date.parse(c.timestamp) || at, at), seen: at, n: 1, v, ...(rv ? { x: { rv: rv[1] } } : {}) });
+      out.push({ id: "c:" + c.id, p, k: "commit", repo, ts: Math.min(Date.parse(c.timestamp) || at, at), seen: at, n: 1, v, x: { ...(rv ? { rv: rv[1] } : {}), tt: ttKey(msg), ...(changed > 1 ? { sm: 0 as const } : {}) } });
     }
   } else if (kind === "pull_request" && body.action === "closed" && body.pull_request?.merged) {
     const pr = body.pull_request, login = String(pr.user?.login || ""), p = profileOfLogin(login);

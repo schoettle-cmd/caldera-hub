@@ -41,6 +41,8 @@ export type Weapon = "shell" | "rocket" | "tactical" | "cruise";
 export interface WeaponSpec { k: Weapon; name: string; size: string; like: string; /** unit cost, $ */ cost: number; /** warhead, kg of TNT */ tnt: number; /** circular error probable, m, before guidance */ cep: number; /** chance the fire spreads */ fire: number; /** tech level needed, 0..3 */ tech: number }
 export interface BuildClass { k: string; name: string; /** overpressure that wrecks it, kPa */ kpa: number; /** replacement cost, $ per m2 of floor */ sqm: number; /** fire load, 0..1 */ load: number; /** tallest map height (px) in this class */ maxH: number }
 export const WAR = {
+  /** the battle arsenal on the city's daily commit caps (spec 11-24 1b/1c): off by default (Mike 11-13: no cap); CALDERA_BATTLE_CAP=1 */
+  cap: false as boolean,
   /** dollars of munitions per point of judged work: a commit is 1 point */ usd: 50_000,
   w: { pr: 3, pr_self: 1, release: 8, ci_green: 2 }, privateW: RULES.privateW,
   /** heaviest first */
@@ -138,10 +140,11 @@ export const costOf = (w: Weapon | string) => weaponOf(w).cost;
 export const countOf = (shots: Weapon[]) => { const n = { shell: 0, rocket: 0, tactical: 0, cruise: 0 } as Record<Weapon, number>; for (const s of shots) n[s]++; return n; };
 
 /** One member's arsenal for one UTC day, from the judged event log (all of the member's events: the release unlock looks back
- *  30 days). `ai`: repo -> AI signal count. `reverted`: short shas. `top`: the tallest repo tower's map height. No ceiling. */
-export function arsenal(events: GEvent[], day: number, o: { ai?: Map<string, number>; streak?: number; lots?: string; reverted?: Set<string>; top?: number } = {}): Arsenal {
-  const per = new Map<string, { c: number; pr: number; rel: number; ci: number }>();
-  let c = 0, pr = 0, rel = 0, ci = 0, rel30 = false;
+ *  30 days). `ai`: repo -> AI signal count. `reverted`: short shas. `top`: the tallest repo tower's map height. Commits use the
+ *  city's daily caps only when WAR.cap is on (CALDERA_BATTLE_CAP=1; Mike's 11-13 rule is no cap, the farm judge does the work). */
+export function arsenal(events: GEvent[], day: number, o: { ai?: Map<string, number>; streak?: number; lots?: string; reverted?: Set<string>; top?: number; /** the daily commit caps; default WAR.cap */ cap?: boolean } = {}): Arsenal {
+  const per = new Map<string, { c: number; pr: number; rel: number; ci: number }>(), perRepo = new Map<string, number>();
+  let c = 0, pr = 0, rel = 0, ci = 0, rel30 = false, cu = 0;
   for (const e of events) if (!e.v && e.k === "release" && dayOf(e.ts) <= day && dayOf(e.ts) > day - WAR.relDays) { rel30 = true; break; }
   const list = events.filter(e => !e.v && dayOf(e.ts) === day && dayOf(e.seen) <= day + 1).sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1));
   for (const e of list) {
@@ -149,7 +152,12 @@ export function arsenal(events: GEvent[], day: number, o: { ai?: Map<string, num
     if (e.k === "commit" || e.k === "private") {
       if (e.k === "commit" && o.reverted?.has(e.id.replace(/^c:/, "").slice(0, 7))) continue;   // a revert cancels the commit it reverts
       const u = Math.max(0, Number(e.n) || 0); if (u <= 0) continue;
-      r.c += u * (e.k === "private" ? WAR.privateW : 1); c += u;
+      let eff = u;
+      if (o.cap ?? WAR.cap) {   // the city's daily caps (spec 2026-11-24 section 1b/1c): 40 a repo, then a fifth; 40 a day in all, public and private. OFF until Mike's yes (his 11-13 rule: no commit cap)
+        const seen = perRepo.get(e.repo) || 0, full = Math.max(0, Math.min(u, RULES.repoSoft - seen)); perRepo.set(e.repo, seen + u);
+        eff = Math.min(full + (u - full) * RULES.repoSoftW, Math.max(0, RULES.commitCap - cu)); cu += eff;
+      }
+      r.c += eff * (e.k === "private" ? WAR.privateW : 1); c += u;
     } else if (e.k === "pr") { r.pr += e.x?.self ? WAR.w.pr_self : WAR.w.pr; pr++; }   // a self-merged PR on a solo repo counts a third
     else if (e.k === "release") { r.rel += WAR.w.release; rel++; }
     else if (e.k === "ci_green") { r.ci += WAR.w.ci_green; ci++; }
@@ -351,10 +359,10 @@ export const fmtUsd = (n: number) => { const a = Math.abs(n); return a >= 1e9 ? 
 /** the blast dollars a shield took off a shot: held (11-15 on), or all of pot on a blocked shot from before */
 export const heldOf = (s: Shot) => s.x ? s.x.held ?? (s.blocked ? s.x.pot || 0 : 0) : s.blocked ? s.ammo / 10 * WAR.legacyFacade : 0;
 /** dollars of damage dealt (blast and fire), plus half of what your shield held off, per head */
-export function scoreOf(shots: Shot[], heads: (id: string) => number): Map<string, number> {
+export function scoreOf(shots: (Shot & { night?: number })[], heads: (id: string) => number, fair: (night: number, id: string) => number = () => 1): Map<string, number> {
   const s = new Map<string, number>();
   for (const x of shots) {
-    if (x.a !== RAIDERS) s.set(x.a, (s.get(x.a) || 0) + usdOf(x) / Math.max(1, heads(x.a)));
+    if (x.a !== RAIDERS) s.set(x.a, (s.get(x.a) || 0) + usdOf(x) * (x.night === undefined ? 1 : fair(x.night, x.a)) / Math.max(1, heads(x.a)));   // fair: the farm recount's share of that night's budget
     const h = x.d !== RAIDERS ? heldOf(x) : 0; if (h > 0) s.set(x.d, (s.get(x.d) || 0) + 0.5 * h / Math.max(1, heads(x.d)));
   }
   for (const [k, v] of s) s.set(k, Math.round(v));
@@ -487,6 +495,7 @@ export function battleStore(q: Q, newToken: () => string) {
   q(`CREATE INDEX IF NOT EXISTS battle_shots_d ON battle_shots (d, night)`).run();
   try { q("ALTER TABLE battle_shots ADD COLUMN x TEXT").run(); } catch { /* already there */ }   // 11-13: the working of each shot (ShotX)
   q(`CREATE TABLE IF NOT EXISTS battle_meta (k TEXT PRIMARY KEY, v TEXT)`).run();
+  q(`CREATE TABLE IF NOT EXISTS battle_fair (night INTEGER, profile TEXT, x REAL, PRIMARY KEY (night, profile))`).run();   // the farm recount (11-24): share of a past night's budget that real work earned
   const map = (r: any): OptRow => ({ p: r.profile, war: r.war ? 1 : 0, out: r.out ? 1 : 0, since: r.since || 0, waive: r.waive ? 1 : 0, report: (["daily", "weekly"].includes(r.report) ? r.report : "off") as ReportFreq, token: r.token, sent: r.sent || null });
   const opt = (p: string): OptRow | null => { const r = q("SELECT * FROM battle_opt WHERE profile=?").get(p); return r ? map(r) : null; };
   const ensure = (p: string): OptRow => { if (!opt(p)) q("INSERT OR IGNORE INTO battle_opt (profile, war, since, waive, report, token, sent, at, out) VALUES (?,?,?,?,?,?,?,?,?)").run(p, 1, 0, 0, "off", newToken(), null, Date.now(), 0); return opt(p)!; };
@@ -517,6 +526,8 @@ export function battleStore(q: Q, newToken: () => string) {
     shots: (from: number, to = from): (Shot & { night: number })[] => (q("SELECT * FROM battle_shots WHERE night >= ? AND night <= ? ORDER BY night, k").all(from, to) as any[]).map(r => ({ ...shotRow(r), night: r.night })),
     meta: (k: string): string | null => (q("SELECT v FROM battle_meta WHERE k=?").get(k) as any)?.v ?? null,
     setMeta: (k: string, v: string) => q("INSERT OR REPLACE INTO battle_meta VALUES (?,?)").run(k, v),
+    fair: (): Map<string, number> => new Map((q("SELECT night, profile, x FROM battle_fair").all() as any[]).map(r => [r.night + "|" + r.profile, Number(r.x)] as [string, number])),
+    setFair: (night: number, p: string, x: number) => q("INSERT OR REPLACE INTO battle_fair VALUES (?,?,?)").run(night, p, x),
     erase: (p: string) => { q("DELETE FROM battle_opt WHERE profile=?").run(p); q("DELETE FROM battle_aims WHERE attacker=? OR target=?").run(p, p); q("UPDATE battle_shots SET a='~gone' WHERE a=?").run(p); q("DELETE FROM battle_shots WHERE d=?").run(p); },
     prune: (beforeNight: number) => { q("DELETE FROM battle_shots WHERE night < ?").run(beforeNight); q("DELETE FROM battle_nights WHERE night < ?").run(beforeNight); q("DELETE FROM battle_aims WHERE night < ?").run(beforeNight); },
   };

@@ -23,7 +23,8 @@ type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any
 export interface BattleMail { to: string; subject: string; html: string; text: string; headers?: Record<string, string>; src?: string; kind?: string }
 export interface BattleHubCtx {
   q: Q; hub: string; postal: string;
-  growth: { sim: () => { sims: Map<string, SimOut>; events: GEvent[]; ai: Map<string, Map<string, number>> }; onTick: (fn: () => void | Promise<void>) => void };
+  growth: { sim: () => { sims: Map<string, SimOut>; events: GEvent[]; ai: Map<string, Map<string, number>> }; onTick: (fn: () => void | Promise<void>) => void;
+    /** the farm recount reads the event log and AI map directly */ store?: { events: (since?: number) => GEvent[]; ai: () => Map<string, Map<string, number>> } };
   members: () => GrowthMember[];
   memberOf: (req: http.IncomingMessage) => string | null; sameOrigin: (req: http.IncomingMessage) => boolean; readBody: (req: http.IncomingMessage) => Promise<any>;
   json: (res: http.ServerResponse, status: number, body: unknown) => void;
@@ -160,7 +161,7 @@ export function battleHub(c: BattleHubCtx) {
     const hid = A.hiddenIds([...S.shots(n), ...S.shots(n - 1)].map(s => s.x?.bid).filter((v): v is number => v != null));
     const xOut = (s: any) => s.x && s.x.bid != null && hid.has(s.x.bid) ? { ...s.x, word: (bombOf(s.x.bk)?.name || "").toUpperCase(), hid: 1 } : s.x || null;   // a hidden word shows as the bomb's name (armory-design B8)
     const row = (s: any) => [x.handle(s.a), x.handle(s.d), s.w, s.f, s.t, s.lot, s.blocked, s.aim, xOut(s)], shots = S.shots(n).map(row), prevShots = S.shots(n - 1).filter(s => s.night === n - 1).map(row);
-    const se = season(n, launch()), sc = scoreOf(S.shots(se.from, n), heads), night = S.shots(n);
+    const se = season(n, launch()), fr = S.fair(), sc = scoreOf(S.shots(se.from, n), heads, (nn, id) => fr.get(nn + "|" + id) ?? 1), night = S.shots(n);
     // the rules, as numbers, for the page's "How damage works" sheet (one source: battle.ts WAR)
     const rules = { usd: WAR.usd, w: WAR.w, weapons: WAR.weapons, classes: WAR.classes.map(k => ({ k: k.k, name: k.name, kpa: k.kpa, sqm: k.sqm, load: k.load, z: Math.round(scaledDistance(k.kpa) * 100) / 100 })), fire: WAR.fire, guide: WAR.guide, soft: WAR.soft,
       light: WAR.light, floor: WAR.floor, dome: WAR.dome, half: WAR.half, footprint: WAR.footprint, floorM: WAR.floorM, relDays: WAR.relDays, reach: WAR.reach, reachMax: WAR.reachMax, autoRepair: WAR.autoRepair, repairPerPt: WAR.repairPerPt };
@@ -401,7 +402,29 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
   }
   /** a member who just claimed a Frontier land is not put in the battles (frontier-design H5) */
   const leave = (id: string) => { S.setWar(id, false, now()); cache = null; };
-  return { route, tick, resolve, restrikeNight, state, me, postSummary, sendReports, store: S, armory: A, prefs: PR, armoryAlerts, gift: G, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
+  /** The farm recount (Mike 11-24, spec section 1d): for each stored night from `from`, the share of each fighter's budget that
+   *  real work earned (the re-judged, capped count over the old count). The season score weights that night's damage by it;
+   *  shots and replays stay as they were. apply = write the shares. Counts and shares only. */
+  function fairRecount(from: number, apply: boolean): { night: number; id: string; x: number }[] {
+    if (!c.growth.store) return [];
+    const events = c.growth.store.events((from - 32) * DAY), ai = c.growth.store.ai(), reverted = new Set<string>(), evBy = new Map<string, GEvent[]>();
+    for (const e of events) { if (e.x?.rv) reverted.add(e.x.rv.slice(0, 7)); if (!evBy.has(e.p)) evBy.set(e.p, []); evBy.get(e.p)!.push(e); }
+    const out: { night: number; id: string; x: number }[] = [], last = lastNight(now());
+    for (let n = from; n <= last; n++) {
+      const j = S.night(n); if (!j) continue;
+      for (const f of j.fighters || []) {
+        if (!(Number(f.usd) > 0)) continue;
+        const ev = evBy.get(f.id) || [], o = { ai: ai.get(f.id), reverted };
+        const before = arsenal(ev.map(e => e.v === "farm" ? { ...e, v: "" } : e), n - 1, { ...o, cap: false }).raw, after = arsenal(ev, n - 1, o).raw;
+        const x = before > 0 ? Math.round(Math.min(1, after / before) * 1000) / 1000 : 1;
+        if (apply) S.setFair(n, f.id, x);
+        if (x < 1) out.push({ night: n, id: f.id, x });
+      }
+    }
+    if (apply) cache = null;
+    return out;
+  }
+  return { route, tick, resolve, restrikeNight, fairRecount, state, me, postSummary, sendReports, store: S, armory: A, prefs: PR, armoryAlerts, gift: G, settingsHtml, landGone, leave, erase: (id: string) => { S.erase(id); A.erase(id); PR.erase(id); cache = null; },
     /** operator: opt a member in; since (ms) backdates it so a seed night can include them */
     optIn: (id: string, o: { waive?: boolean; since?: number } = {}) => { S.setWar(id, true, o.since ?? now()); if (o.waive !== undefined) S.setWaive(id, o.waive); cache = null; } };
 }
