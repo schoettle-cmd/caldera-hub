@@ -525,6 +525,7 @@ export function githubPoller(c: PollCtx) {
         if (g.status !== 200 || !g.body?.commit) continue;
         const sm = smallOf(g.body); c.S.setX(ev.id, { ...(ev.x || {}), tt: ttKey(g.body.commit.message || ""), ...(sm !== undefined ? { sm, sl: FARM.lines } : {}) }); days.add(dayOf(ev.ts));
       }
+      for (const ev of c.S.events(since - 30 * DAY)) if (ev.p === m.id && ev.k === "commit" && ev.repo === repo && ev.ts >= since) days.add(dayOf(ev.ts));   // every stored day, also ones GitHub no longer lists
       const b = { farm: 2000 };
       for (const d of days) {
         const rows = c.S.commitsIn(m.id, repo, d * DAY, (d + 1) * DAY);
