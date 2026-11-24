@@ -29,7 +29,7 @@ test("D4 CSS: phone header is one 44px row; the switch sits top left with the st
   assert.match(css, /html\.w-battle \.w-main \.c-stage:has\(\.w-mode\) \.b-chip\{left:10px;top:auto\}/, "phone: the chip stays at the bottom");
   assert.match(css, /\.c-tools>\.w-time\{display:none\}/, "hidden until the renderer moves it into Layers");
   assert.match(css, /html\.w-replay \.w-mode,html\.w-replay \.w-main \.g-today\{display:none\}/, "the theater shows only the replay");
-  assert.match(W.CARD_CLEAR_JS, /'\.b-chip,\.w-mode,\.c-tools,/, "the city card opens under the switch");
+  assert.match(W.CARD_CLEAR_JS, /'\.b-chip,\.w-mode,\.w-of-chip,\.c-tools,/, "the city card opens under the switch");
 });
 
 // a small fake page for growthClient(): buttons with attributes and click handlers

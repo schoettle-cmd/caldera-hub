@@ -28,7 +28,7 @@ export const orphLevel = (f: { founding: boolean } | null | undefined): 0 | 1 | 
 export const FLEET_TOKENS = `:root{--of-ink:#C9B8FF;--of-line:#5B4A99;--of-fill:rgba(139,108,246,.12);--of-gold:#F0BF5A;--of-gold-line:#8A6A1F;--of-gold-fill:rgba(240,191,90,.12)}
 :root[data-theme="light"]{--of-ink:#5A38D6;--of-line:#B9A6F5;--of-fill:rgba(109,74,232,.07);--of-gold:#7A5200;--of-gold-line:#D4A84A;--of-gold-fill:#FFF4D6}`;
 export const FLEET_CSS = FLEET_TOKENS + `
-.w-main,.lb-panel,.lb-foot{--of-ink:#C9B8FF;--of-line:#5B4A99;--of-fill:rgba(139,108,246,.12);--of-gold:#F0BF5A;--of-gold-line:#8A6A1F;--of-gold-fill:rgba(240,191,90,.12)}
+.w-main,.lb-panel{--of-ink:#C9B8FF;--of-line:#5B4A99;--of-fill:rgba(139,108,246,.12);--of-gold:#F0BF5A;--of-gold-line:#8A6A1F;--of-gold-fill:rgba(240,191,90,.12)}
 .of-b{position:relative;display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;flex:none;height:22px;padding:0 8px 0 6px;border:1px solid var(--of-line);border-radius:999px;background:var(--of-fill);color:var(--of-ink);font:600 11.5px/1 var(--font-body,'IBM Plex Sans',Arial,sans-serif);letter-spacing:0;text-transform:none;white-space:nowrap;vertical-align:middle}
 .of-b svg{width:12px;height:12px}.of-b.gold{border-color:var(--of-gold-line);background:var(--of-gold-fill);color:var(--of-gold)}
 .of-row{display:flex;align-items:center;gap:10px;min-width:0;height:44px}
@@ -52,7 +52,11 @@ export const FLEET_WORLD_CSS = `.w-main .of-row{margin:-2px 0 6px}
 .w-of-chip{position:absolute;left:12px;top:52px;z-index:7;display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;height:32px;padding:0 6px 0 9px;border:0;border-radius:10px;background:#F4F2FF;color:#1A1330;font:600 12.5px/1 'IBM Plex Sans',sans-serif;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.45)}
 .w-of-chip::before{content:"";position:absolute;left:0;right:0;top:-6px;bottom:-6px}.w-of-chip b{display:grid;place-items:center;width:22px;height:22px;border-radius:6px;background:rgba(26,19,48,.1);font:400 16px/1 Arial,sans-serif}
 .w-of-chip:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
-.w-main .c-stage:has(.w-of-chip) .w-topics{top:92px}html.w-replay .w-of-chip{display:none}
+.w-main .c-stage:has(.w-of-chip) .w-topics{top:92px}
+.w-main .c-stage:has(.w-of-chip) .c-card:not(.is-sheet){top:92px;max-height:calc(100% - 142px)}
+@media (min-width:601px){.w-main .c-stage:has(.w-of-chip) .g-today,html.w-battle:not(.w-replay) .w-main .c-stage:has(.w-of-chip) .g-today{top:92px}}
+@media (max-width:899px){.w-main .c-stage:has(.w-of-chip) .c-card:not(.is-sheet){top:88px}}
+@media (max-width:599px){.w-main .c-stage:has(.w-of-chip)>[role=status]:not(.g-today):not(.c-card){top:88px!important}}html.w-replay .w-of-chip{display:none}
 .c-card .k-orph{display:inline-flex;align-items:center;gap:6px;min-height:40px;color:#C9B8FF;font-weight:600;text-decoration:none}.c-card .k-orph.gold{color:#F0BF5A}
 @media (max-width:899px){.w-of-chip{left:8px;top:48px}}
 @media (max-width:699px){.w-main:has(.of-row) .c-stage:not(.c-full){height:calc(100svh - 234px)}html.w-battle .w-main:has(.of-row) .c-stage:not(.c-full){height:calc(100svh - 272px)}.c-more>#t-orph{min-height:44px}}`;
@@ -91,7 +95,7 @@ export function fleetCard(f: Fleet & { syncedAt?: string | null }, now = Date.no
   if (!first && now - synced > STALE_MS) return "";
   const n = (v: number) => first ? "-" : Number(v || 0).toLocaleString("en-US");
   const updated = first ? "First counts within a day" : "Updated " + new Date(synced).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Los_Angeles" });
-  const cell = (v: string, label: string) => `<div style="flex:1 1 132px;min-width:0;padding:0 8px 12px"><b style="display:block;font:600 26px/1.15 var(--font-mono,'IBM Plex Mono',monospace);color:var(--text-strong,#F2F2F5);font-variant-numeric:tabular-nums">${esc(v)}</b><span style="font-size:12.5px;color:var(--text-muted,#8A8A93)">${label}</span></div>`;
+  const cell = (v: string, label: string) => `<div style="flex:1 1 132px;min-width:0;padding:0 8px 12px"><b style="display:block;font:400 26px/1.15 var(--font-mono,'IBM Plex Mono',monospace);color:var(--text-strong,#F2F2F5);font-variant-numeric:tabular-nums">${esc(v)}</b><span style="font-size:12.5px;color:var(--text-muted,#8A8A93)">${label}</span></div>`;
   return `<section id="cb-fleet" data-tie="fleet" aria-label="Agent fleet" style="box-sizing:border-box;max-width:var(--content-width,760px);margin:20px 0 4px;padding:16px 18px 0;border:1px solid var(--line,#2A2A2E);border-radius:14px;background:var(--bg-raised,#232327);font:400 13.5px/1.45 var(--font-body,'IBM Plex Sans',Arial,sans-serif);color:var(--text,#DADADF);text-align:left">`
     + `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px"><span style="display:inline-flex;align-items:center;gap:7px;font:500 11.5px/1 var(--font-mono,'IBM Plex Mono',monospace);letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted,#8A8A93)">${mark(14)}Agent fleet</span><span style="margin-left:auto;font-size:12px;color:var(--text-muted,#8A8A93)">${esc(updated)}</span></div>`
     + `<div style="display:flex;flex-wrap:wrap;margin:14px -8px 0">${cell(n(f.agentsWeek), "agents run this week")}${cell(n(f.accounts), "accounts")}${cell(n(f.sessionsWeek), "sessions")}${cell(first ? "-" : busyDay(f.busiestDay), "busiest day")}</div>`
@@ -165,7 +169,7 @@ export function linkPage(st: LinkState, v: LinkView): { title: string; html: str
 }
 /** Confirm -> Linking on submit: the button disables and the line moves until the answer comes (the form posts normally) */
 export const LINK_JS = `(function(){var f=document.getElementById('lk-form');if(!f)return;f.addEventListener('submit',function(){var p=document.querySelector('.lk-pair');if(p)p.setAttribute('data-s','linking');
-var b=f.querySelector('button[type=submit]');if(b){b.disabled=true;b.innerHTML='Linking&hellip;'}f.setAttribute('aria-busy','true');var g=f.querySelector('.ghost');if(g)g.hidden=true;
+var b=f.querySelector('button[type=submit]');if(b){b.disabled=true;b.innerHTML='Linking&hellip;'}f.setAttribute('aria-busy','true');var g=f.querySelector('.ghost');if(g)g.style.display='none';
 var n=document.getElementById('lk-note');if(n){n.textContent='This takes a few seconds.';n.setAttribute('role','status')}var w=document.getElementById('lk-who');if(w)w.hidden=true})})();`;
 
 // ---------------------------------------------------------------- 6. Settings row
