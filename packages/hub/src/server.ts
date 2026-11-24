@@ -2435,7 +2435,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
         } catch { /* never break a page */ }
         try {   // "Last night's battle" under the hero (LOOP.md b, homebattle.ts): the same block in every arm of hometest.ts
           const pn = (() => { try { return new URL(req.url || "/", "http://hub").pathname; } catch { return ""; } })();
-          if ((pn === "/" || pn === "/index.html") && out.includes("<!--home-battle-->")) out = homeBattle(out, BATTLE ? BATTLE.home() : null, memberOf(req));
+          if ((pn === "/" || pn === "/index.html") && out.includes("<!--home-battle-->")) out = homeBattle(out, BATTLE ? BATTLE.home() : null, memberOf(req), { promo: () => POINTS ? POINTS.promoCard("home", pointsViewer(req)) || null : null });
         } catch (e: any) { console.error("home battle", e?.message); out = out.replace("<!--home-battle-->", ""); }
         try { const gk = gateKindFor(req); if (gk && res.statusCode < 300 && !(held && held[0] >= 300)) out = out.replace(/<\/body>(?![\s\S]*<\/body>)/i, () => gateScript({ hub: PUB(), kind: gk }) + "</body>"); } catch { /* never break a page */ }
         chunk = out;
