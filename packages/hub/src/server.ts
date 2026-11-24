@@ -21,6 +21,7 @@ export { fallbacks as publicExt, type Ext } from "./ext";
 export { effectiveTags, canonical, readmeSignal, depsOf } from "./tagkit";
 import { building } from "./building";
 import { cityArt, cardSvg, postCardSvg, toPng, groupPage, ogTags } from "./cards";
+import { cardFonts } from "./battlecard";
 import { feed, sentenceText, postTags } from "./feed";
 import { newsToday } from "./news";
 import { gifts } from "./gifts";
@@ -1746,7 +1747,12 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
     alertPost: o => { try { alerts.post(o); } catch (e: any) { console.error("[armory] alert", e?.message); } }, unsubAll: id => mail.unsubUrlOf(id), armoryEmailOn: () => process.env.CALDERA_ARMORY_EMAIL === "1",
     lands: () => FR ? FR.store.live().map(l => ({ login: l.login, repos: l.city })) : [],
     systemPost: (k, t, l) => SYS.systemPost(k, t, l), sysPosted: k => SYS.posted(k)?.post_id || null, png: (svg, w) => toPng(svg, w),
-    avatar: id => { const pr = profile(id); const a = pr?.handle ? body(pr).photos?.avatar : null; return a ? `/@${pr.handle}/${String(a).replace(/^\.?\//, "")}` : null; } });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
+    avatar: id => { const pr = profile(id); const a = pr?.handle ? body(pr).photos?.avatar : null; return a ? `/@${pr.handle}/${String(a).replace(/^\.?\//, "")}` : null; },
+    // the battle picture (battlecard.ts): the same public avatar file, read here (no fetch); the TTFs of packages/hub/fonts
+    avatarBytes: id => { const pr = profile(id); const a = pr?.handle ? body(pr).photos?.avatar : null; if (!a) return null;
+      const dir = path.join(opts.dataDir, "profiles", pr.handle), f = path.resolve(dir, String(a).replace(/^\.?\//, ""));
+      if (!f.startsWith(path.resolve(dir) + path.sep)) return null; try { const st = fs.statSync(f); return st.isFile() && st.size <= 1_500_000 ? fs.readFileSync(f) : null; } catch { return null; } },
+    cardPng: svg => toPng(svg, 1200, { fontFiles: cardFonts() }) });   // the daily battle summary on the feed (sysposts.ts, defined below; called from the tick, long after start)
 
   const autoOff = (pr: any) => { const b = body(pr); return b.autoConnectGithub === false || b.autoConnectRepos === false; };
   const circleHooks: { joined?: (id: string) => void; signedIn?: (id: string) => void } = {};
@@ -2633,9 +2639,14 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (req.method === "GET" && (p === "/world" || p === "/world/")) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache",
           "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" });
-        return res.end(worldPage(worldNow(), { frontier: FR ? (() => { try { return { districts: FR.districts(), meta: FR.meta(), fs: FR.claimedSlots() }; } catch (e: any) { console.error("frontier", e?.message); return null; } })() : null, hub: opts.publicUrl || "https://caldera.social", nav: worldNav(), tools: TOOLS ? TOOLS.mapData() : [], growth: GROWTH ? (() => { try { return GROWTH.state("day"); } catch (e: any) { console.error("growth state", e?.message); return null; } })() : null,
+        const wp = worldPage(worldNow(), { frontier: FR ? (() => { try { return { districts: FR.districts(), meta: FR.meta(), fs: FR.claimedSlots() }; } catch (e: any) { console.error("frontier", e?.message); return null; } })() : null, hub: opts.publicUrl || "https://caldera.social", nav: worldNav(), tools: TOOLS ? TOOLS.mapData() : [], growth: GROWTH ? (() => { try { return GROWTH.state("day"); } catch (e: any) { console.error("growth state", e?.message); return null; } })() : null,
           battle: BATTLE ? (() => { try { return BATTLE.state(); } catch (e: any) { console.error("battle state", e?.message); return null; } })() : null,
-          fleet: fleetPublic(), viewer: (me => me ? profile(me)?.handle || null : null)(memberOf(req)) }));
+          fleet: fleetPublic(), viewer: (me => me ? profile(me)?.handle || null : null)(memberOf(req)) });
+        // the replay link's share picture (LOOP.md a.6): /world?view=battle&replay=1 (&city=handle) shows last night's battle picture
+        let og: { image: string; alt: string } | null = null;
+        if (BATTLE && url.searchParams.get("view") === "battle" && url.searchParams.get("replay") === "1") { try { og = BATTLE.og(url.searchParams.get("city")); } catch (e: any) { console.error("battle og", e?.message); } }
+        const ea = (t: string) => t.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]!));
+        return res.end(og ? wp.replace(/<meta property="og:image" content="[^"]*">/, `<meta property="og:image" content="${ea(og.image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${ea(og.alt)}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${ea(og.image)}"><meta name="twitter:image:alt" content="${ea(og.alt)}">`) : wp);
       }
       if (req.method === "GET" && /^\/gh\/[A-Za-z0-9-]+\/?$/.test(p)) FUNNEL.track(req, "preview");
       if (req.method === "GET" && /^\/gh\/[A-Za-z0-9-]+\/career$/.test(p)) FUNNEL.track(req, "career");

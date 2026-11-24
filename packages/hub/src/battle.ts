@@ -416,40 +416,153 @@ export function battleSubject(r: Report): string {
   if (r.taken > 0 && r.heldUsd > r.takenUsd) return `Your city today: hit by ${who}, your shield cut it to ${fmtUsd(r.takenUsd)}`;
   return r.taken > 0 ? `Your city today: hit by ${who}, cranes rebuild tonight` : `Your city today: ${who} stopped by your shield`;
 }
-/** Plain, short, ASCII, in the day's vocabulary (stacked at noon, the 20:00 salvo, towers hit, cranes overnight), one link
- *  to the replay (plus the controls). Peaceful zones get the build lines only. */
-export function battleEmail(r: Report, w: WorldLines, o: { name: string; hub: string; unsub: string; postal: string; weekly?: boolean }): { subject: string; text: string; html: string } {
-  const first = (o.name || r.h).replace(/^@/, "").trim().split(/\s+/)[0] || r.h, hub = o.hub.replace(/\/$/, ""), n1 = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
-  const L: string[] = [`Hey ${first},`, "", "YOUR CITY"];
-  if (r.peace) { L.push(`Peaceful zone: no missiles in or out.`, r.built ? `${n1(r.built, "lot")} built yesterday.` : "No new lots yesterday."); }
-  else {
-    L.push(r.fired ? `Stacked at noon: ${n1(r.fired, "missile")} bought with a ${fmtUsd(r.usd)} budget (yesterday's code).` : "Nothing stacked at noon: no code counted yesterday.");
-    if (r.fired) L.push(`Salvo at 20:00: ${r.fired} fired, ${r.landed} landed${r.on.length ? " on " + r.on.slice(0, 3).join(", ") : ""}${r.dealtUsd > 0 ? `, ${fmtUsd(r.dealtUsd)} of damage` : ""}.`);
-    if (!r.raids.length) L.push("No missiles came your way.");
-    else L.push(r.taken > 0 ? `Hits on your towers: ${fmtUsd(r.takenUsd)} of damage from ${r.raids.map(x => x.from).join(", ")}${r.tiers ? ` (${n1(r.tiers, "tower")} hit${r.fires ? `, ${r.fires} caught fire` : ""})` : ""}.${r.heldUsd > 0 ? ` Your shield took ${fmtUsd(r.heldUsd)} off.` : ""} Cranes rebuild overnight, whole by noon.` : `Your shield held: ${r.raids.map(x => x.from).join(", ")} fired at you, nothing landed.`);
-    const bs = r.bombs || [];
-    if (bs.length) L.push(`Custom bombs on you: ${bs.length}. ${bs.slice(0, 5).map(b => `${bq(b)} from ${b.from}`).join(", ")}${bs.length > 5 ? `, and ${bs.length - 5} more` : ""}.`);
-    if (r.mine) L.push(`Your bombs: ${r.mine.n} flew, ${r.mine.hit ? `${r.mine.hit} hit.${r.mine.top ? ` ${bq(r.mine.top)} hit ${r.mine.top.on}.` : ""}` : "none hit: shields held."}`);
-    if (bs.length || r.mine) L.push(`Armory for the next battle: ${hub}/world?view=battle#armory`);
-    L.push(`Shield ${Math.round(r.shield * 100)}%${r.streak ? ` (${r.streak}-day streak)` : ""}.`);
-    if (r.mvp) L.push(`MVP: ${r.mvp.repo}, ${n1(r.mvp.bricks, "brick")} laid.`);
-  }
-  L.push(`Watch the replay: ${hub}/world?view=battle&replay=1`, "", "TODAY IN THE WORLD");
-  const list = (xs: [string, number][], f: (n: number) => string) => xs.map(([h, n]) => `${h} ${f(n)}`).join(", ");
-  if (w.stacked && w.stacked.length) L.push(`Most ammo stacked: ${list(w.stacked, n => n1(n, "missile"))}`);
-  if (w.built.length) L.push(`Built the most: ${list(w.built, n => n1(n, "lot"))}`);
-  if (!r.peace) {
-    if (w.hit.length) L.push(`Towers hit the hardest: ${list(w.hit, n => `(${fmtUsd(n)})`)}`);
-    if (w.attackers.length) L.push(`Most hits landed: ${list(w.attackers, n => n1(n, "hit"))}`);
-    if (w.rivalry) L.push(`Rivalry of the day: ${w.rivalry[0]} vs ${w.rivalry[1]}${w.rivalry[2] > 1 ? `, ${w.rivalry[2]} days running` : ""}`);
-    L.push("Cranes rebuild every tower overnight; by noon the world stands as it did.");
-  }
-  L.push(`Season ${w.season.n}, week ${w.season.week}. Leaderboard: ${hub}/leaderboard`, `Daily / Weekly / Off: ${hub}/world?view=battle#reports`, `Unsubscribe: ${o.unsub}`, "", o.postal);
-  const text = L.join("\n").replace(/[^\x09\x0a\x0d\x20-\x7e]/g, "");
-  const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
-  const html = `<!doctype html><html><body style="margin:0;padding:20px 14px;background:#fff;color:#24222B;font:15px/1.55 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif"><div style="max-width:560px;margin:0 auto;white-space:pre-wrap">${esc(text).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#6E4FE0">$1</a>')}</div></body></html>`;
-  return { subject: battleSubject(r).replace(/[^\x20-\x7e]/g, ""), text, html };
+// ---------------------------------------------------------------- 9b. one night, one result word (LOOP.md section 0)
+/** A member's night in one word, used by the mail, the picture, the cards and the points. The first that is true:
+ *  FELL (the city is the night's fallenOf), WON (dealt > taken), HELD (shots came in and the shield held >= taken),
+ *  LOST (any other night with shots in or out), QUIET (no shots in and none out). Dollars are usdOf / heldOf. */
+export type Result = "FELL" | "WON" | "HELD" | "LOST" | "QUIET";
+export function resultFrom(o: { fell: boolean; dealt: number; taken: number; held: number; shotsIn: number; shotsOut: number }): Result {
+  if (!o.shotsIn && !o.shotsOut) return "QUIET";
+  if (o.fell) return "FELL";
+  if (o.dealt > o.taken) return "WON";
+  if (o.shotsIn > 0 && o.held >= o.taken) return "HELD";
+  return "LOST";
 }
+/** one city's night from the night's shots: its result word and its dollars */
+export function nightOf(id: string, shots: Shot[]): { res: Result; dealt: number; took: number; held: number; shotsIn: number; shotsOut: number } {
+  let dealt = 0, took = 0, held = 0, shotsIn = 0, shotsOut = 0;
+  for (const s of shots) { if (s.a === id) { shotsOut++; dealt += usdOf(s); } if (s.d === id) { shotsIn++; took += usdOf(s); held += heldOf(s); } }
+  const res = resultFrom({ fell: (shotsIn > 0 || shotsOut > 0) && fallenOf(shots) === id, dealt, taken: took, held, shotsIn, shotsOut });
+  return { res, dealt, took, held, shotsIn, shotsOut };
+}
+/** the result word of one city for the night (pure; LOOP.md section 0) */
+export const resultOf = (id: string, shots: Shot[]): Result => nightOf(id, shots).res;
+
+/** The night in numbers, one source for the "Last night" card, the mail, the picture and the homepage block (LOOP.md section 0
+ *  data rule): cities that fought, missiles that hit, total damage; the top 3 attackers by damage dealt (the first is the winner
+ *  of the night) and the 3 cities hit hardest by damage taken. Raiders from the sea are left out of both lists, unless nobody
+ *  else fired: then they are the only attacker. Ids, not handles. null on a night with no shots. */
+export interface NightSum { night: string; cities: number; hits: number; usd: number; held: number; fallen: string | null; winner: string | null;
+  tops: { id: string; usd: number; fired: number; landed: number }[]; hard: { id: string; usd: number; hits: number; held: number; down: boolean }[] }
+export function nightSummary(shots: Shot[], o: { night: string; cities: number }): NightSum | null {
+  if (!shots.length) return null;
+  const att = new Map<string, { usd: number; fired: number; landed: number }>(), def = new Map<string, { usd: number; hits: number; held: number }>();
+  for (const s of shots) {
+    const a = att.get(s.a) || { usd: 0, fired: 0, landed: 0 }; a.usd += usdOf(s); a.fired++; if (s.f > 0) a.landed++; att.set(s.a, a);
+    const d = def.get(s.d) || { usd: 0, hits: 0, held: 0 }; d.usd += usdOf(s); if (s.f > 0) d.hits++; d.held += heldOf(s); def.set(s.d, d);
+  }
+  const cmp = (x: [string, { usd: number }], y: [string, { usd: number }]) => y[1].usd - x[1].usd || (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0);
+  const people = [...att.entries()].filter(([k]) => k !== RAIDERS), fallen = fallenOf(shots);
+  const tops = (people.length ? people : [...att.entries()]).sort((x, y) => cmp(x, y) || y[1].landed - x[1].landed).slice(0, 3).map(([id, v]) => ({ id, usd: v.usd, fired: v.fired, landed: v.landed }));
+  const hard = [...def.entries()].filter(([k, v]) => k !== RAIDERS && v.usd > 0).sort(cmp).slice(0, 3).map(([id, v]) => ({ id, usd: v.usd, hits: v.hits, held: v.held, down: id === fallen }));
+  return { night: o.night, cities: o.cities, hits: shots.filter(s => s.f > 0).length, usd: shots.reduce((t, s) => t + usdOf(s), 0), held: shots.reduce((t, s) => t + heldOf(s), 0), fallen, winner: tops[0]?.id ?? null, tops, hard };
+}
+
+// ---------------------------------------------------------------- 9c. the battle email (LOOP.md part a; spec 11-24 section 2)
+const RES_WORD: Record<Result, string> = { WON: "won", HELD: "held", LOST: "lost", FELL: "fell", QUIET: "was quiet" };
+/** "Last night: @{winner} won, your city {won too|held|lost|fell}"; the member is the winner: "Last night: your city won the
+ *  battle"; weekly: "Last week: {n} battles, your city won {w}". ASCII. */
+export function loopSubject(o: { res: Result; winner: string | null; mine: boolean; weekly?: { n: number; w: number } | null }): string {
+  if (o.weekly) return `Last week: ${o.weekly.n} battle${o.weekly.n === 1 ? "" : "s"}, your city won ${o.weekly.w}`;
+  if (o.mine) return "Last night: your city won the battle";
+  const word = o.res === "WON" ? (o.winner ? "won too" : "won") : RES_WORD[o.res];
+  return (o.winner ? `Last night: ${o.winner} won, your city ${word}` : `Last night: your city ${word}`).replace(/[^\x20-\x7e]/g, "");
+}
+export interface MailOpts {
+  name: string; hub: string; unsub: string; postal: string; weekly?: boolean;
+  /** this member got no battle mail before: the first-mail line */ first?: boolean;
+  /** the 1200x630 picture's URL (battlecard.ts), and its alt text */ card?: string | null; alt?: string;
+  /** one promoted card (part d), or null: no card and no empty box */ promo?: { title: string; line: string; handle: string; url: string; report: string } | null;
+  /** the season's final top 3 (the mail after the last battle of a season), or null */ podium?: { h: string; usd: number }[] | null;
+  /** season rank after the night, and its move since the night before (+ up, - down) */ rank?: number | null; move?: number;
+  /** the result word and the night's winner ("@h"; mine = the member is the winner) for the subject */ res?: Result; winner?: string | null; mine?: boolean;
+  /** weekly: battles in the week, nights the city won, lots built, dollars dealt and taken */ week?: { n: number; w: number; lots: number; dealt: number; took: number } | null;
+  /** the day of the night, for the wordmark row ("Nov 24") */ date?: string;
+}
+/** The battle mail: the picture and the two buttons first (Replay is easy to find), then the report as today, the podium at a
+ *  season end, one promoted card, the footer. HTML: tables and inline styles only, light only. Text: the order of today. */
+export function battleEmail(r: Report, w: WorldLines, o: MailOpts): { subject: string; text: string; html: string; preheader: string } {
+  const first = (o.name || r.h).replace(/^@/, "").trim().split(/\s+/)[0] || r.h, hub = o.hub.replace(/\/$/, ""), n1 = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const replay = `${hub}/world?view=battle&replay=1`, tonight = `${hub}/world?view=battle#tonight`, prefs = `${hub}/world?view=battle#reports`;
+  const res = o.res || "LOST", mv = o.move || 0;
+  const rankLine = o.rank ? `Season rank ${o.rank}${mv > 0 ? `, up ${mv}` : mv < 0 ? `, down ${-mv}` : ", no change"}.` : null;
+  const weekLine = o.weekly && o.week ? `This week: ${n1(o.week.n, "battle")}, your city won ${o.week.w}. ${n1(o.week.lots, "lot")} built, ${fmtUsd(o.week.dealt)} of damage dealt, ${fmtUsd(o.week.took)} taken (all rebuilt on its own).` : null;
+  // YOUR CITY
+  const C: string[] = [];
+  if (r.peace) { C.push(`Peaceful zone: no missiles in or out.`, r.built ? `${n1(r.built, "lot")} built yesterday.` : "No new lots yesterday."); }
+  else {
+    C.push(r.fired ? `Armed by 19:45 PT: ${n1(r.fired, "missile")} bought with a ${fmtUsd(r.usd)} budget (the day's work).` : "Nothing armed by 19:45 PT: no work counted that day.");
+    if (r.fired) C.push(`Salvo at 20:00 PT: ${r.fired} fired, ${r.landed} landed${r.on.length ? " on " + r.on.slice(0, 3).join(", ") : ""}${r.dealtUsd > 0 ? `, ${fmtUsd(r.dealtUsd)} of damage` : ""}.`);
+    if (!r.raids.length) C.push("No missiles came your way.");
+    else C.push(r.taken > 0 ? `Hits on your towers: ${fmtUsd(r.takenUsd)} of damage from ${r.raids.map(x => x.from).join(", ")}${r.tiers ? ` (${n1(r.tiers, "tower")} hit${r.fires ? `, ${r.fires} caught fire` : ""})` : ""}.${r.heldUsd > 0 ? ` Your shield took ${fmtUsd(r.heldUsd)} off.` : ""}${res === "FELL" ? " Your city fell." : ""} Cranes rebuild overnight, whole by noon.` : `Your shield held: ${r.raids.map(x => x.from).join(", ")} fired at you, nothing landed.`);
+    const bs = r.bombs || [];
+    if (bs.length) C.push(`Custom bombs on you: ${bs.length}. ${bs.slice(0, 5).map(b => `${bq(b)} from ${b.from}`).join(", ")}${bs.length > 5 ? `, and ${bs.length - 5} more` : ""}.`);
+    if (r.mine) C.push(`Your bombs: ${r.mine.n} flew, ${r.mine.hit ? `${r.mine.hit} hit.${r.mine.top ? ` ${bq(r.mine.top)} hit ${r.mine.top.on}.` : ""}` : "none hit: shields held."}`);
+    if (bs.length || r.mine) C.push(`Armory for the next battle: ${hub}/world?view=battle#armory`);
+    C.push(`Shield ${Math.round(r.shield * 100)}%${r.streak ? ` (${r.streak}-day streak)` : ""}.`);
+    if (rankLine) C.push(rankLine);
+    if (r.mvp) C.push(`MVP: ${r.mvp.repo}, ${n1(r.mvp.bricks, "brick")} laid.`);
+  }
+  // TODAY IN THE WORLD
+  const W: string[] = [], list = (xs: [string, number][], f: (n: number) => string) => xs.map(([h, n]) => `${h} ${f(n)}`).join(", ");
+  if (w.stacked && w.stacked.length) W.push(`Most ammo stacked: ${list(w.stacked, n => n1(n, "missile"))}`);
+  if (w.built.length) W.push(`Built the most: ${list(w.built, n => n1(n, "lot"))}`);
+  if (!r.peace) {
+    if (w.hit.length) W.push(`Towers hit the hardest: ${list(w.hit, n => `(${fmtUsd(n)})`)}`);
+    if (w.attackers.length) W.push(`Most hits landed: ${list(w.attackers, n => n1(n, "hit"))}`);
+    if (w.rivalry) W.push(`Rivalry of the day: ${w.rivalry[0]} vs ${w.rivalry[1]}${w.rivalry[2] > 1 ? `, ${w.rivalry[2]} days running` : ""}`);
+    W.push("Cranes rebuild every tower overnight; by noon the world stands as it did.");
+  }
+  const pod = o.podium && o.podium.length ? o.podium.slice(0, 3) : null, sn = w.season.n;
+  const podEnd = `The three winners keep a Season ${sn} badge. Season ${sn + 1} starts tonight at 20:00 PT.`;
+  // text: the order of today
+  const T: string[] = [];
+  if (o.first) T.push(`You get this after each nightly battle. Weekly or off: ${prefs}`, "");
+  T.push(`Hey ${first},`, "");
+  if (weekLine) T.push(weekLine, "");
+  T.push("YOUR CITY", ...C, `Watch the replay: ${replay}`, `Set tonight's defenses: ${tonight}`, "", "TODAY IN THE WORLD", ...W);
+  if (pod) T.push("", `SEASON ${sn} FINAL`, ...pod.map((p, i) => `${i + 1} ${p.h} ${fmtUsd(p.usd)}`), `${podEnd} Full ranking: ${hub}/leaderboard`);
+  if (o.promo) T.push("", "BUILT BY THE FLEET", `${o.promo.title}: ${o.promo.url}`, o.promo.line, `Promoted by @${o.promo.handle.replace(/^@/, "")} with Caldera Points. Report: ${o.promo.report}`);
+  T.push("", `Season ${sn}, week ${w.season.week}. Leaderboard: ${hub}/leaderboard`, `You get this because your city is in the Caldera battle. Daily, weekly or off: ${prefs}`, `Unsubscribe: ${o.unsub}`, "", o.postal);
+  const text = T.join("\n").replace(/[^\x09\x0a\x0d\x20-\x7e]/g, "");
+  const subject = (o.weekly && o.week ? loopSubject({ res, winner: null, mine: false, weekly: o.week }) : o.res ? loopSubject({ res, winner: o.winner ?? null, mine: !!o.mine }) : battleSubject(r)).replace(/[^\x20-\x7e]/g, "");
+  const preheader = `Dealt ${fmtUsd(r.dealtUsd)}, took ${fmtUsd(r.takenUsd)}, shield held ${fmtUsd(r.heldUsd)}.${o.rank ? ` Season rank ${o.rank}.` : ""} Next battle tonight at 20:00 PT.`;
+  // html (LOOP.md a.1 order; mailHtml() of the mockup)
+  const esc = (s: string) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+  const FONT = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif", A = (u: string, t: string, col = "#6E4FE0") => `<a href="${esc(u)}" style="color:${col}">${t}</a>`;
+  const linkify = (s: string) => esc(s).replace(/(https?:\/\/[^\s<]+)/g, m => `<a href="${m}" style="color:#6E4FE0">${m}</a>`);
+  const P = (t: string) => `<p style="margin:0 0 10px">${t}</p>`, H = (t: string) => `<p style="margin:22px 0 8px;font:700 12px/1.3 ${FONT};letter-spacing:1.2px;color:#6B6878">${t}</p>`;
+  const btn = (u: string, t: string, solid: boolean) => `<a href="${esc(u)}" style="display:inline-block;margin:0 8px 8px 0;padding:13px 22px;border-radius:999px;border:1px solid ${solid ? "#6D4AE8" : "#CFCBDD"};background:${solid ? "#6D4AE8" : "#ffffff"};color:${solid ? "#ffffff" : "#24222B"};font:600 15px/1.2 ${FONT};text-decoration:none">${t}</a>`;
+  const td = "padding:7px 0;border-top:1px solid #EEECF4", PODC = ["#B07A0E", "#6B6878", "#9C5A2E"];
+  const podHtml = pod ? `${H(`SEASON ${sn} FINAL`)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
+${pod.map((p, i) => `<tr><td width="34" style="${td};font:700 18px/1 ${FONT};color:${PODC[i]}">${i + 1}</td><td style="${td};font-weight:600">${esc(p.h)}</td><td align="right" style="${td};font-weight:600">${esc(fmtUsd(p.usd))}</td></tr>`).join("")}</table>
+${P(`<span style="color:#6B6878;font-size:13.5px">${esc(podEnd)} ${A(hub + "/leaderboard", "Full ranking")}</span>`)}` : "";
+  const pr = o.promo, adHtml = pr ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border:1px solid #E4E2EC;border-radius:10px"><tr><td style="padding:14px 16px">
+<p style="margin:0 0 6px;font:700 11px/1.3 ${FONT};letter-spacing:1.2px;color:#6B6878">BUILT BY THE FLEET</p>
+<p style="margin:0 0 2px;font:600 16px/1.35 ${FONT}"><a href="${esc(pr.url)}" style="color:#24222B;text-decoration:none">${esc(pr.title)}</a></p>
+<p style="margin:0 0 8px;color:#4A4758">${esc(pr.line)}</p>
+<p style="margin:0;font-size:12.5px;color:#6B6878">Promoted by @${esc(pr.handle.replace(/^@/, ""))} with Caldera Points. ${A(pr.url, "View project")} &nbsp; ${A(pr.report, "Report", "#6B6878")}</p></td></tr></table>` : "";
+  const firstHtml = o.first ? `<p style="margin:0 0 14px;font-size:13px;color:#6B6878">You get this after each nightly battle. ${A(prefs, "Weekly or off")}.</p>` : "";
+  const img = o.card ? `<a href="${esc(replay)}" style="display:block;background:#0B0D13;border-radius:10px;color:#F4F6FA;font-size:14px;text-decoration:none"><img src="${esc(o.card)}" width="560" height="294" alt="${esc(o.alt || "Caldera battle, last night.")}" style="display:block;width:100%;height:auto;border:0;border-radius:10px;color:#F4F6FA;background:#0B0D13;font:14px/1.4 sans-serif"></a>` : "";
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"><title>${esc(subject)}</title></head>
+<body style="margin:0;padding:20px 14px;background:#ffffff;color:#24222B;font:15px/1.55 ${FONT}">
+<div style="display:none;max-height:0;overflow:hidden">${esc(preheader)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px"><tr><td style="text-align:left">
+${firstHtml}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px"><tr><td style="font:700 18px/1.2 Georgia,'Times New Roman',serif;color:#24222B">Caldera</td><td align="right" style="font-size:13px;color:#6B6878">Nightly battle, ${esc(o.date || dateLong(r.night))}</td></tr></table>
+${img}
+<div style="padding:16px 0 4px">${btn(replay, "Watch the replay", true)}${btn(tonight, "Set tonight's defenses", false)}</div>
+${P(`Hey ${esc(first)},`)}${weekLine ? P(esc(weekLine)) : ""}
+${H("YOUR CITY")}${C.map(l => P(linkify(l))).join("")}
+${H("TODAY IN THE WORLD")}${W.map(l => P(linkify(l))).join("")}
+${podHtml}${adHtml}
+<p style="margin:26px 0 0;padding:14px 0 0;border-top:1px solid #EEECF4;font-size:12.5px;line-height:1.7;color:#6B6878">Season ${sn}, week ${w.season.week}. ${A(hub + "/leaderboard", "Leaderboard")}<br>You get this because your city is in the Caldera battle. ${A(prefs, "Daily, weekly or off")} &nbsp; ${A(o.unsub, "Unsubscribe")}<br>${esc(o.postal)}</p>
+</td></tr></table></td></tr></table></body></html>`;
+  return { subject, text, html, preheader };
+}
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2026-11-24" -> "Nov 24" */
+export const dateLong = (key: string) => { const d = new Date(String(key) + "T12:00:00Z"); return isNaN(+d) ? String(key ?? "") : `${MON[d.getUTCMonth()]} ${d.getUTCDate()}`; };
 /** The daily feed post, in Caldera's own voice (no sign-off): who stacked the most, the salvo, the towers hit, the cranes,
  *  the replay and the leaderboard. null when there was no battle that day. */
 /** Who the daily summary names, from the same numbers it prints: the top 3 by ammo stacked, the top 4 cities hit. */
@@ -485,18 +598,23 @@ export function worldLines(shots: Shot[], o: { handle: (id: string) => string; b
 // ---------------------------------------------------------------- storage
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
 export type ReportFreq = "off" | "daily" | "weekly";
-export interface OptRow { p: string; war: 0 | 1; /** 1 = chose to leave the battles (every city is in unless it opts out) */ out: 0 | 1; since: number; waive: 0 | 1; report: ReportFreq; token: string; sent: string | null }
+export interface OptRow { p: string; war: 0 | 1; /** 1 = chose to leave the battles (every city is in unless it opts out) */ out: 0 | 1; since: number; waive: 0 | 1; report: ReportFreq; token: string; sent: string | null;
+  /** 1 = the member chose a frequency (or unsubscribed); 0 = never chose, so the mail is daily (spec 11-24 section 2) */ chose: 0 | 1; /** the night key of the first battle mail sent, or null (the first-mail line) */ first: string | null }
+/** The frequency that applies (spec 11-24 section 2): a member who never chose gets the daily mail; weekly and off choices stay. */
+export const freqOf = (o: Pick<OptRow, "report" | "chose"> | null | undefined): ReportFreq => !o ? "daily" : o.chose || o.report !== "off" ? o.report : "daily";
 export function battleStore(q: Q, newToken: () => string) {
   q(`CREATE TABLE IF NOT EXISTS battle_opt (profile TEXT PRIMARY KEY, war INTEGER, since INTEGER, waive INTEGER, report TEXT, token TEXT UNIQUE, sent TEXT, at INTEGER)`).run();
   q(`CREATE TABLE IF NOT EXISTS battle_aims (night INTEGER, attacker TEXT, target TEXT, ts INTEGER, PRIMARY KEY (night, attacker, target))`).run();
   q(`CREATE TABLE IF NOT EXISTS battle_nights (night INTEGER PRIMARY KEY, at INTEGER, json TEXT)`).run();
   try { q("ALTER TABLE battle_opt ADD COLUMN out INTEGER").run(); } catch { /* already there */ }   // Mike 11-08: every city is a combatant; out = chose to leave
+  try { q("ALTER TABLE battle_opt ADD COLUMN chose INTEGER").run(); } catch { /* already there */ }   // 11-24: a member who never chose gets the daily mail
+  try { q("ALTER TABLE battle_opt ADD COLUMN first TEXT").run(); } catch { /* already there */ }   // 11-24: the night of the first battle mail (LOOP.md a.2 first-mail line)
   q(`CREATE TABLE IF NOT EXISTS battle_shots (night INTEGER, k INTEGER, a TEXT, d TEXT, w TEXT, ammo REAL, roll INTEGER, f REAL, lot INTEGER, t INTEGER, aim INTEGER, blocked INTEGER, PRIMARY KEY (night, k))`).run();
   q(`CREATE INDEX IF NOT EXISTS battle_shots_d ON battle_shots (d, night)`).run();
   try { q("ALTER TABLE battle_shots ADD COLUMN x TEXT").run(); } catch { /* already there */ }   // 11-13: the working of each shot (ShotX)
   q(`CREATE TABLE IF NOT EXISTS battle_meta (k TEXT PRIMARY KEY, v TEXT)`).run();
   q(`CREATE TABLE IF NOT EXISTS battle_fair (night INTEGER, profile TEXT, x REAL, PRIMARY KEY (night, profile))`).run();   // the farm recount (11-24): share of a past night's budget that real work earned
-  const map = (r: any): OptRow => ({ p: r.profile, war: r.war ? 1 : 0, out: r.out ? 1 : 0, since: r.since || 0, waive: r.waive ? 1 : 0, report: (["daily", "weekly"].includes(r.report) ? r.report : "off") as ReportFreq, token: r.token, sent: r.sent || null });
+  const map = (r: any): OptRow => ({ p: r.profile, war: r.war ? 1 : 0, out: r.out ? 1 : 0, since: r.since || 0, waive: r.waive ? 1 : 0, report: (["daily", "weekly"].includes(r.report) ? r.report : "off") as ReportFreq, token: r.token, sent: r.sent || null, chose: r.chose ? 1 : 0, first: r.first || null });
   const opt = (p: string): OptRow | null => { const r = q("SELECT * FROM battle_opt WHERE profile=?").get(p); return r ? map(r) : null; };
   const ensure = (p: string): OptRow => { if (!opt(p)) q("INSERT OR IGNORE INTO battle_opt (profile, war, since, waive, report, token, sent, at, out) VALUES (?,?,?,?,?,?,?,?,?)").run(p, 1, 0, 0, "off", newToken(), null, Date.now(), 0); return opt(p)!; };
   const shotRow = (r: any): Shot => ({ k: r.k, a: r.a, d: r.d, w: r.w, ammo: r.ammo, roll: r.roll, f: r.f, lot: r.lot, t: r.t, aim: r.aim ? 1 : 0, blocked: r.blocked ? 1 : 0, x: (() => { try { return r.x ? JSON.parse(r.x) : null; } catch { return null; } })() });
@@ -505,7 +623,8 @@ export function battleStore(q: Q, newToken: () => string) {
     opts: (): OptRow[] => (q("SELECT * FROM battle_opt").all() as any[]).map(map),
     setWar: (p: string, on: boolean, at: number) => { ensure(p); q("UPDATE battle_opt SET war=?, since=?, at=?, out=? WHERE profile=?").run(on ? 1 : 0, on ? at : 0, at, on ? 0 : 1, p); },
     setWaive: (p: string, on: boolean) => { ensure(p); q("UPDATE battle_opt SET waive=? WHERE profile=?").run(on ? 1 : 0, p); },
-    setReport: (p: string, f: ReportFreq) => { ensure(p); q("UPDATE battle_opt SET report=? WHERE profile=?").run(f, p); },
+    setReport: (p: string, f: ReportFreq) => { ensure(p); q("UPDATE battle_opt SET report=?, chose=1 WHERE profile=?").run(f, p); },
+    markFirst: (p: string, day: string) => q("UPDATE battle_opt SET first=? WHERE profile=? AND first IS NULL").run(day, p),
     byToken: (t: string): OptRow | null => { const r = q("SELECT * FROM battle_opt WHERE token=?").get(t); return r ? map(r) : null; },
     markSent: (p: string, day: string) => q("UPDATE battle_opt SET sent=? WHERE profile=?").run(day, p),
     aims: (night: number): Map<string, string[]> => { const m = new Map<string, string[]>(); for (const r of q("SELECT * FROM battle_aims WHERE night=? ORDER BY ts").all(night) as any[]) { if (!m.has(r.attacker)) m.set(r.attacker, []); m.get(r.attacker)!.push(r.target); } return m; },
