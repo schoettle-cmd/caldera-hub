@@ -67,6 +67,9 @@ export function battleHub(c: BattleHubCtx) {
   const BT = battleTrack({ q: c.q, hub: c.hub, now: () => now() });   // battle mail opens / clicks / unsubscribes (battletrack.ts)
   const A = armoryStore(c.q), PR = armoryPrefs(c.q, () => crypto.randomBytes(18).toString("base64url"));
   const idem = new Map<string, { at: number; v: any }>();   // Buy taps by idempotency key (10 minutes)
+  // one "Armory open" email per address per night: two profiles with the same email got two copies 2 s apart (mail health 11-25)
+  c.q(`CREATE TABLE IF NOT EXISTS armory_mail_sent (h TEXT, night INTEGER, PRIMARY KEY (h, night))`).run();
+  const claimAddr = (to: string, night: number) => c.q("INSERT OR IGNORE INTO armory_mail_sent (h, night) VALUES (?,?)").run(crypto.createHash("sha256").update(to.trim().toLowerCase()).digest("hex"), night).changes > 0;
   // the nightly battle picture (battlecard.ts), rendered one time per night and city and stored (who "" = the generic picture)
   c.q(`CREATE TABLE IF NOT EXISTS battle_cards (night INTEGER, who TEXT, png BLOB, alt TEXT, at INTEGER, PRIMARY KEY (night, who))`).run();
   // the week pictures (WEEKLY.md 6.3) are stored under the week's last night (who "week" or "week:<id>"): a changed night drops
@@ -546,7 +549,7 @@ export function battleHub(c: BattleHubCtx) {
       const reward = A.rewarded(m.id, n), t = alertText(due.kind, { lock: w.lock, tz: pr.tz, balance: bal, reward });
       c.alertPost({ target: m.id, key: "armory:" + due.night, title: t.title, body: t.body, ctaLabel: t.ctaLabel, ctaUrl: t.ctaUrl, by: "armory" }); sent++;
       if (due.kind === "open" && mailOn && pr.mail) {
-        const to = c.emailOf(m.id); if (!to) continue;
+        const to = c.emailOf(m.id); if (!to || !claimAddr(to, due.night)) continue;
         const un = `${c.hub.replace(/\/$/, "")}/u/armory?t=${pr.token}`, mail = armoryEmail({ name: m.name || m.handle, lock: w.lock, tz: pr.tz, balance: bal, reward, hub: c.hub, unsubArmory: un, unsubAll: c.unsubAll?.(m.id) || un, postal: c.postal });
         await c.send({ to, subject: mail.subject, html: mail.html, text: mail.text, src: "armory-open", kind: "armory", headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }).catch((e: any) => console.error("[armory] send", e?.message));
       }
