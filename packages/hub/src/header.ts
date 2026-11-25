@@ -223,8 +223,8 @@ var n=m+a;document.title=(n?'('+(n>9?'9+':n)+') ':'')+base;if(!fl&&n){fl=documen
 if(S){S.querySelector('button').addEventListener('click',function(){S.hidden=true;try{sessionStorage.setItem('ch-strip-x',key(h.getAttribute('data-m'),h.getAttribute('data-from')))}catch(e){}})}
 show(+h.getAttribute('data-m')||0,+h.getAttribute('data-a')||0,h.getAttribute('data-from')||'',undefined,+h.getAttribute('data-g')||0);
 var bt=h.getAttribute('data-bt'),same=false;try{same=!!hub&&new URL(hub).origin===location.origin&&self.origin!=='null'}catch(e){}
-var busy=0;function tick(){if(busy||document.hidden)return;busy=1;fetch(same?'/v1/me/badges':hub+'/v1/me/badges?t='+encodeURIComponent(bt),{credentials:same?'same-origin':'omit',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){busy=0;if(j&&typeof j.messages==='number')show(j.messages,j.alerts||0,(j.from||[]).map(function(x){return '@'+x}).join(', '),j.feed,j.groups||0)},function(){busy=0})}
-if(same||(hub&&bt)){setInterval(tick,30000);document.addEventListener('visibilitychange',function(){if(!document.hidden)tick()});window.addEventListener('focus',tick)}`;
+var busy=0,dead=0,iv=0;function tick(){if(dead||busy||document.hidden)return;busy=1;fetch(same?'/v1/me/badges':hub+'/v1/me/badges?t='+encodeURIComponent(bt),{credentials:same?'same-origin':'omit',cache:'no-store'}).then(function(r){if(r.status===401){dead=1;clearInterval(iv);return null}return r.ok?r.json():null}).then(function(j){busy=0;if(j&&typeof j.messages==='number')show(j.messages,j.alerts||0,(j.from||[]).map(function(x){return '@'+x}).join(', '),j.feed,j.groups||0)},function(){busy=0})}
+if(same||(hub&&bt)){iv=setInterval(tick,30000);document.addEventListener('visibilitychange',function(){if(!document.hidden)tick()});window.addEventListener('focus',tick)}`;
 
 /** Feedback button for signed-in members (2026-10-26, Mike: one product-feedback queue across HA, Caldera and Inbox
  *  Hero, reviewed at mjonesone.com/control/feedback). Not on sandboxed pages (origin "null"), where the post would be

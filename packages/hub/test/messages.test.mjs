@@ -241,6 +241,8 @@ test("sandboxed pages (profiles, cities) refresh the header counts with the head
     const [p, sig] = bt.split("."); const forged = Buffer.from(JSON.stringify({ v: "x", h: "badges", x: Date.now() + 1e7 })).toString("base64url") + "." + sig;
     assert.equal((await fetch(base + "/v1/me/badges?t=" + encodeURIComponent(forged))).status, 401, "a forged token gets nothing");
     assert.equal((await get("bo", "/feed").then(r => r.text())).match(/data-bt="([^"]+)"/)?.[1], bt, "same token on every page for a while");
+    assert.equal(JSON.parse(Buffer.from(p, "base64url").toString()).h, "badges2", "11-25 rotation: tokens of the old kind 'badges' are refused");
+    assert.match(html, /if\(r\.status===401\)\{dead=1;clearInterval\(iv\);return null\}/, "the header stops polling on 401 (no 30 s retry loop on an expired token)");
   } finally { hub.server.close(); fs.rmSync(d, { recursive: true, force: true }); }
 });
 

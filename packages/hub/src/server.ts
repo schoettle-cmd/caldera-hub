@@ -2001,9 +2001,11 @@ setInterval(check,60000);setInterval(go,5000);document.addEventListener('visibil
   }
   /** One badge token per member, reused for 6 of its 12 hours: the header reads the same on every page. */
   const badgeToks = new Map<string, { t: string; until: number }>();
+  /** the token kind: a new name retires every badge token issued before it (11-25: tokens copied from a log search were rotated) */
+  const BADGE_KIND = "badges2";
   function badgeToken(id: string): string {
     const c0 = badgeToks.get(id); if (c0 && c0.until - Date.now() > 6 * 3600_000) return c0.t;
-    const t = actToken(id, "badges", 12 * 3600_000); badgeToks.set(id, { t, until: Date.now() + 12 * 3600_000 });
+    const t = actToken(id, BADGE_KIND, 12 * 3600_000); badgeToks.set(id, { t, until: Date.now() + 12 * 3600_000 });
     if (badgeToks.size > 5000) for (const [k, v] of badgeToks) if (v.until < Date.now() + 6 * 3600_000) badgeToks.delete(k);
     return t;
   }
@@ -2609,7 +2611,7 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (req.method === "GET" && p === "/manifest.webmanifest") { res.writeHead(200, { "content-type": "application/manifest+json", "cache-control": "public, max-age=3600", "access-control-allow-origin": "*" }); return res.end(MANIFEST); }   // * : sandboxed profile pages fetch it from an opaque origin
       if (req.method === "GET" && p === "/v1/me/badges") {   // the signed-in header polls this: unread messages + alerts, nothing else
         // the cookie on hub pages; the header's short-lived token on sandboxed pages (profiles, cities), which send no cookie
-        const tk = readAct(url.searchParams.get("t")), me = memberOf(req) || (tk && tk.h === "badges" && profile(tk.v) ? tk.v : null);
+        const tk = readAct(url.searchParams.get("t")), me = memberOf(req) || (tk && tk.h === BADGE_KIND && profile(tk.v) ? tk.v : null);
         res.setHeader("cache-control", "no-store"); res.setHeader("vary", "Cookie");
         if (!me) return json(res, 401, { error: "signed out" });
         const m = unreadMsgs(me), al = alerts.forOwner(me, alertKind(me), 20).filter((a: any) => !a.read).length;
