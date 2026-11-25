@@ -113,6 +113,8 @@ async function hubWith(handles) {
 function work(h, ids) {
   const today = Math.floor(Date.now() / DAY), ins = h.db.prepare("INSERT OR IGNORE INTO growth_events VALUES (?,?,?,?,?,?,?,?,?)");
   for (const [handle, id] of Object.entries(ids)) for (let d = today - 40; d <= today; d++) for (let k = 0; k < 20; k++) { const t = d * DAY + H + k * 60_000; ins.run(`c:${handle}${d}x${k}`, id.id, "commit", `${handle}/app`, t, t, 1, "", null); }
+  // and work in the open window of the next night (since the 20:00 PT move its work day starts at 03:45 UTC, after the hour above)
+  for (const [handle, id] of Object.entries(ids)) for (let k = 0; k < 20; k++) { const t = Date.now() - (k + 1) * 60_000; ins.run(`c:${handle}now${k}`, id.id, "commit", `${handle}/app`, t, t, 1, "", null); }
   h.admin.growth.recompute();
 }
 
