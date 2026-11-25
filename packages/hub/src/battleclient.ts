@@ -1104,7 +1104,9 @@ export function battleClient() {
     panel.removeAttribute('aria-busy');
     if (!me) {
       panel.innerHTML = tnHead(clockTitle(left), '') + '<p class="b-txt">Put your city in the fight. Your GitHub becomes a city, and today\'s code becomes missiles. Damage shows only on this map.</p>'
-        + '<div class="b-cta-row"><a class="b-cta2" href="/#start">Add your city</a><a class="b-lnk" href="/signin?next=%2Fworld%3Fview%3Dbattle">Sign in</a></div>';
+        + '<div class="b-cta-row"><a class="b-cta2" href="/#start">Add your city</a><a class="b-lnk" href="/signin?back=%2Fworld%3Fview%3Dbattle%23tonight">Sign in</a></div>';
+      // the mail button "Set tonight's defenses" (WEEKLY.md 6.6): a signed-out member signs in first, then comes back to #tonight
+      if (location.hash === '#tonight' && !render.sg) { render.sg = 1; try { location.replace('/signin?back=' + encodeURIComponent('/world?view=battle#tonight')); } catch (e) {} }
       armClockGo(); popClose(false); return; }
     if (!me.war) {
       panel.innerHTML = tnHead('Your city is out of the battles', 'No shots in or out. Rejoin and it fights by itself each night.', gearBtn()) + '<button type="button" class="b-cta2 b-join">Rejoin the battles</button>';

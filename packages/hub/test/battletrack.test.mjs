@@ -65,7 +65,11 @@ test("record, pixel, click, refusal, unsubscribe and the report", () => {
   BT.unsub("p2"); assert.ok(q("SELECT unsub FROM battle_mail WHERE token=?").get(b.token).unsub);
   set(now() + 8 * DAY); BT.unsub("p3"); assert.equal(q("SELECT unsub FROM battle_mail WHERE token=?").get(c2.token).unsub, null, "older than 7 days");
   set(now() - 8 * DAY);
-  assert.deepEqual(BT.report(14), [{ night: "2026-11-24", sent: 3, opened: 2, openPct: 66.7, clicked: 2, clickPct: 66.7, unsub: 1, unsubPct: 33.3, opens: 2, clicks: 3, weekly: 1 }]);
+  const rep = BT.report(14), { byFreq, ...tot } = rep[0];
+  assert.equal(rep.length, 1, "one row per night");
+  assert.deepEqual(tot, { night: "2026-11-24", sent: 3, opened: 2, openPct: 66.7, clicked: 2, clickPct: 66.7, unsub: 1, unsubPct: 33.3, opens: 2, clicks: 3, weekly: 1, weeklyQuiet: 0 });
+  assert.deepEqual(Object.keys(byFreq).sort(), ["daily", "weekly"]); assert.equal(byFreq.weekly.sent, 1); assert.equal(byFreq.daily.sent, 2);
+  assert.equal(byFreq.daily.sent + byFreq.weekly.sent, tot.sent, "the groups add up to the night");
 });
 
 // ---------------------------------------------------------------- the live hub: sendReports writes the row, /u/battle marks unsub

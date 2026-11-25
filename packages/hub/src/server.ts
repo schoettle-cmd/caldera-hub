@@ -2322,7 +2322,7 @@ body{overflow-x:hidden}.kd{max-width:440px;margin:0 auto;padding:22px 16px 40px}
 <p class="mut" style="font-size:12.5px;margin-top:8px">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p></div>
 <div class="card"><h2>Already on Caldera?</h2><div class="row"><a rel="nofollow" class="btn small ghost" href="/auth/github${bq}" style="display:inline-flex;align-items:center;gap:7px">${GH_ICON}Sign in with GitHub</a></div><p class="mut" style="font-size:12.5px;margin-top:10px">Made your page in Obsidian? Open your page and tap <b>Sign in</b> in the bar at the top, then come back here. Made it with ChatGPT or Claude? <a href="/start${bq}">Email me a sign-in link</a>.</p></div>`;
   // ---- "Email me a code" screens (sign-in standard, 2026-10-29): the same form, check-your-email page and code box everywhere
-  const SIGNIN_BACK = /^\/(link\/orpheus|messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|settings\/agents|alerts)$/;
+  const SIGNIN_BACK = /^\/(world\?view=battle(?:#tonight)?|link\/orpheus|messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|settings\/agents|alerts)$/;
   const signinBack = (b: string) => SIGNIN_BACK.test(b) ? b : "";
   const CODE_OR = `<div class="mut" style="display:flex;align-items:center;gap:10px;margin:16px 0 12px"><span style="flex:1;height:1px;background:currentColor;opacity:.25"></span>or<span style="flex:1;height:1px;background:currentColor;opacity:.25"></span></div>`;
   const codeForm = (h: string, back: string) => `<form method="post" action="/signin/email">${h ? `<input type="hidden" name="h" value="${escAttr(h)}">` : ""}${back ? `<input type="hidden" name="back" value="${escAttr(back)}">` : ""}<input type="email" name="email" required autocomplete="email" inputmode="email" placeholder="you@example.com" aria-label="Email"><button class="btn small" type="submit">Email me a code</button></form>`;
@@ -2333,7 +2333,7 @@ ${email ? `<form method="post" action="/signin/code"><input type="hidden" name="
   }
   const googleBtn = (qs = "") => EMP?.googleOn() ? `<a rel="nofollow" class="btn ghost" href="/auth/google${qs}" style="display:inline-flex;align-items:center;gap:8px">${GOOGLE_ICON}Continue with Google</a>` : "";
   function signinGeneral(res: http.ServerResponse, back = "", req?: http.IncomingMessage, note = "") {
-    const bq = /^\/(link\/orpheus|messages|messages\/@[a-z0-9-]+|messages\/groups(?:\/[a-z0-9-]+(?:\/[0-9a-f]{16})?)?|feed|people|world|@[a-z0-9-]+\/|me\/building|settings|settings\/agents|alerts)$/.test(back) ? `?back=${encodeURIComponent(back)}` : "";   // come back to the page that asked (e.g. a conversation)
+    const bq = SIGNIN_BACK.test(back) ? `?back=${encodeURIComponent(back)}` : "";   // come back to the page that asked (e.g. a conversation)
     // "Message" on someone's page, signed out: say why, offer sign-up first (credited to them), and land in the conversation after
     const mh = back.match(/^\/messages\/@([a-z0-9-]+)$/)?.[1] || "", them = mh ? byHandle(mh) : null;
     // a group link, signed out: same idea, "Sign up to join <group>", back into the group after

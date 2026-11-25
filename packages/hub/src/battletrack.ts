@@ -73,13 +73,20 @@ export function battleTrack(c: { q: Q; hub: string; now: () => number }) {
     return false;
   }
 
-  /** per night (newest first), mails sent in the last `days` days: counts only, no addresses */
+  /** per night (newest first), mails sent in the last `days` days: counts only, no addresses. freq of a row: "daily", "weekly"
+   *  (the member chose weekly) or "weekly-quiet" (a daily member's weekly mail after a quiet Sunday, WEEKLY.md 6.4). Each night
+   *  has the totals, the counts of the two weekly groups, and byFreq: the same counts and rates for each group apart. */
   function report(days = 14) {
     const pct = (a: number, b: number) => b ? Math.round(1000 * a / b) / 10 : 0;
-    return (q(`SELECT night, COUNT(*) sent, SUM(opened IS NOT NULL) opened, SUM(clicked IS NOT NULL) clicked, SUM(unsub IS NOT NULL) unsub,
-        SUM(opens) opens, SUM(clicks) clicks, SUM(freq='weekly') weekly FROM battle_mail WHERE sent >= ? GROUP BY night ORDER BY night DESC`).all(iso(c.now() - days * DAY)) as any[])
-      .map(r => ({ night: r.night, sent: r.sent, opened: r.opened || 0, openPct: pct(r.opened || 0, r.sent), clicked: r.clicked || 0, clickPct: pct(r.clicked || 0, r.sent),
-        unsub: r.unsub || 0, unsubPct: pct(r.unsub || 0, r.sent), opens: r.opens || 0, clicks: r.clicks || 0, weekly: r.weekly || 0 }));
+    const rate = (r: any) => ({ sent: r.sent, opened: r.opened || 0, openPct: pct(r.opened || 0, r.sent), clicked: r.clicked || 0, clickPct: pct(r.clicked || 0, r.sent),
+      unsub: r.unsub || 0, unsubPct: pct(r.unsub || 0, r.sent), opens: r.opens || 0, clicks: r.clicks || 0 });
+    const cols = "COUNT(*) sent, SUM(opened IS NOT NULL) opened, SUM(clicked IS NOT NULL) clicked, SUM(unsub IS NOT NULL) unsub, SUM(opens) opens, SUM(clicks) clicks", since = iso(c.now() - days * DAY);
+    const by = new Map<string, Record<string, ReturnType<typeof rate>>>();
+    for (const r of q(`SELECT night, COALESCE(freq, 'daily') freq, ${cols} FROM battle_mail WHERE sent >= ? GROUP BY night, COALESCE(freq, 'daily')`).all(since) as any[]) {
+      const m = by.get(r.night) || {}; m[r.freq] = rate(r); by.set(r.night, m);
+    }
+    return (q(`SELECT night, ${cols}, SUM(freq='weekly') weekly, SUM(freq='weekly-quiet') weeklyQuiet FROM battle_mail WHERE sent >= ? GROUP BY night ORDER BY night DESC`).all(since) as any[])
+      .map(r => ({ night: r.night, ...rate(r), weekly: r.weekly || 0, weeklyQuiet: r.weeklyQuiet || 0, byFreq: by.get(r.night) || {} }));
   }
   const erase = (profile: string) => q("DELETE FROM battle_mail WHERE profile=?").run(profile);
 

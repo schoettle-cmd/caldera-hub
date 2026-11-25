@@ -60,7 +60,8 @@ test("subject for each result (LOOP.md a.2), ASCII, the winner's own subject, we
   assert.equal(subj("LOST"), "Last night: @novak won, your city lost");
   assert.equal(subj("FELL"), "Last night: @novak won, your city fell");
   assert.equal(subj("WON", { mine: true }), "Last night: your city won the battle");
-  assert.equal(B.battleEmail(R, W, { ...O, res: "WON", weekly: true, week: { n: 5, w: 3, lots: 14, dealt: 31e6, took: 9e6 } }).subject, "Last week: 5 battles, your city won 3");
+  const world = { range: "Nov 18-24", battles: 5, hits: 40, usd: 2e8, tops: [{ h: "@novak", usd: 9e7 }], hard: [], leaders: [] };
+  assert.equal(B.battleEmail(R, W, { ...O, res: "WON", weekly: true, week: { n: 5, w: 3, fought: 4, lots: 14, dealt: 31e6, took: 9e6, move: null }, world }).subject, "Last week: @novak won, your city won 3 of 4 nights");
   for (const r of ["WON", "HELD", "LOST", "FELL"]) assert.ok(/^[\x20-\x7e]+$/.test(subj(r)));
 });
 test("the mail: picture and two buttons first, the report, rank line, preheader, footer; tables and inline styles; light only", () => {
@@ -81,14 +82,14 @@ test("the mail: picture and two buttons first, the report, rank line, preheader,
   assert.ok(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(m.text), "text is ASCII");
   const nr = B.battleEmail({ ...R, fired: 0 }, W, { ...O, res: "HELD" }).text; assert.ok(nr.includes("Nothing armed by 19:45 PT: no work counted that day."));
 });
-test("first-mail line only when o.first; weekly line; podium and promoted card when given", () => {
+test("first-mail line only when o.first; the weekly mail has no daily report; podium and promoted card when given", () => {
   const line = "You get this after each nightly battle.";
   const f = B.battleEmail(R, W, { ...O, res: "WON", first: true });
   assert.ok(f.text.startsWith(line + " Weekly or off: https://caldera.social/world?view=battle#reports"));
   assert.ok(f.html.indexOf(line) >= 0 && f.html.indexOf(line) < f.html.indexOf("Nightly battle,"), "the grey line above the wordmark row");
   assert.ok(!B.battleEmail(R, W, { ...O, res: "WON" }).html.includes(line) && !B.battleEmail(R, W, { ...O, res: "WON" }).text.includes(line));
-  const wk = B.battleEmail(R, W, { ...O, res: "WON", weekly: true, week: { n: 5, w: 3, lots: 14, dealt: 31e6, took: 9e6 } });
-  assert.ok(wk.text.includes("Hey Sam,\n\nThis week: 5 battles, your city won 3. 14 lots built, $31M of damage dealt, $9M taken (all rebuilt on its own).\n\nYOUR CITY"), wk.text);
+  const wk = B.battleEmail(R, W, { ...O, res: "WON", weekly: true, week: { n: 5, w: 3, fought: 4, lots: 14, dealt: 31e6, took: 9e6, move: null }, world: { range: "Nov 18-24", battles: 5, hits: 40, usd: 2e8, tops: [], hard: [], leaders: [] } });
+  assert.ok(wk.text.includes("Hey Sam,\n\nYOUR CITY, NOV 18-24\nYour city fought in 4 of 5 battles and won 3. It dealt $31M of damage and took $9M (all rebuilt on its own). 14 lots built.") && !wk.text.includes("This week:") && !wk.text.includes("Armed by"), wk.text);
   const pd = B.battleEmail(R, W, { ...O, res: "WON", podium: [{ h: "@novak", usd: 1.8e9 }, { h: "@tessera", usd: 4e8 }, { h: "@quill", usd: 3.47e8 }] });
   for (const s of ["SEASON 1 FINAL", "@novak", "$1.8B", "$347M", "The three winners keep a Season 1 badge. Season 2 starts tonight at 20:00 PT.", ">Full ranking</a>"]) assert.ok(pd.html.includes(s), s);
   const pr = B.battleEmail(R, W, { ...O, res: "WON", promo: { title: "tidepool: a <tiny> job queue", line: "One file.", handle: "okafor", url: "https://caldera.social/p/x", report: "https://caldera.social/points/report?ad=x" } });
@@ -112,7 +113,7 @@ test("the SVG is valid XML for 1, 2 and 3 rows and a 39-character handle; result
     assert.equal((svg.match(/missiles hit<\/text>/g) || []).length, k, "draws only the rows that exist");
   }
   const long = K.battleCardSvg(night(3, true), { ...ME, h: "@" + "b".repeat(39) });
-  assert.doesNotThrow(() => new Resvg(long)); assert.ok(long.includes("A".repeat(20) + "..") && long.includes('font-size="78"'), "headline cut at 20 with .., 78 px");
+  assert.doesNotThrow(() => new Resvg(long)); assert.ok(long.includes(">" + "A".repeat(16) + "..<") && long.includes('font-size="78"'), "headline cut at 16 with .., 78 px (WEEKLY.md 6.2)");
   assert.ok(long.includes(">" + "B".repeat(12) + "<"), "the band handle is cut at 12");
   assert.ok(K.battleCardSvg(night(), ME).includes('font-size="100"'), "a short handle is 100 px");
   for (const [res, col] of [["WON", "#4BE38A"], ["HELD", "#3DF2FF"], ["LOST", "#FF6A3D"], ["FELL", "#FF4D5E"]]) { const s = K.battleCardSvg(night(), { ...ME, res }); assert.ok(s.includes(`fill="${col}">${res}</text>`), res); }

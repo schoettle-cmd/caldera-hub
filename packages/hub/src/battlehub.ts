@@ -16,8 +16,8 @@ import { DAY, dayOf, dayKey, type GEvent, type SimOut } from "./growth";
 import { POINTS } from "./points";
 const POINTS_ORDER = POINTS.order;
 import { WAR, RAIDERS, SWITCH_NIGHT, battleAt, lockAt, bdOf, lastNight, arsenal, firedOf, reachOf, rivalOf, rankOf as levelOf, ordersFor, badgesFor, shieldAt, type Order, type OrderKey, shield, towersOf, dmgAt, dmgAll, usdOf, fallenOf, heldOf, restrike, fmtUsd, summaryNames, scaledDistance, isBeginner, towerH as towerHOf, resolveNight, remaining, season, scoreOf, reportFor, mvpOf, battleEmail, battleSummary, worldLines, battleStore, targetable,
-  freqOf, nightOf, nightSummary, dateLong, type Fighter, type Shot, type Report, type ReportFreq, type MailOpts, type NightSum } from "./battle";
-import { battleCardSvg, battleStorySvg, battleCardAlt, fetchAvatar, avatarUri, type CardNight, type CardMe } from "./battlecard";
+  freqOf, nightOf, nightSummary, weekSummary, weekRange, sundayNight, dateLong, type Fighter, type Shot, type Report, type ReportFreq, type MailOpts, type NightSum } from "./battle";
+import { battleCardSvg, battleStorySvg, battleCardAlt, weeklyCardSvg, weeklyCardAlt, fetchAvatar, avatarUri, type CardNight, type CardMe, type CardWeek, type CardWeekMe } from "./battlecard";
 import type { GrowthMember } from "./growthhub";
 import { giftMail } from "./giftmail";
 import { battleTrack } from "./battletrack";
@@ -69,7 +69,9 @@ export function battleHub(c: BattleHubCtx) {
   const idem = new Map<string, { at: number; v: any }>();   // Buy taps by idempotency key (10 minutes)
   // the nightly battle picture (battlecard.ts), rendered one time per night and city and stored (who "" = the generic picture)
   c.q(`CREATE TABLE IF NOT EXISTS battle_cards (night INTEGER, who TEXT, png BLOB, alt TEXT, at INTEGER, PRIMARY KEY (night, who))`).run();
-  const dropCards = (night?: number) => { if (night === undefined) c.q("DELETE FROM battle_cards").run(); else c.q("DELETE FROM battle_cards WHERE night=?").run(night); };
+  // the week pictures (WEEKLY.md 6.3) are stored under the week's last night (who "week" or "week:<id>"): a changed night drops
+  // the pictures of every week that holds it
+  const dropCards = (night?: number) => { if (night === undefined) c.q("DELETE FROM battle_cards").run(); else { c.q("DELETE FROM battle_cards WHERE night=?").run(night); c.q("DELETE FROM battle_cards WHERE night>? AND night<=? AND who LIKE 'week%'").run(night, night + 6); } };
   // the Armory gift emails (giftmail.ts): a bomb aimed at a member's city tells them; the summary names them the next day
   const G = giftMail({ q: c.q, hub: c.hub, now: () => now(), postal: c.postal, A, battleAt, ran: n => S.hasNight(n),
     summary: n => { const id = c.sysPosted?.("battle:" + dayKey(n)); if (!id) return null; const s = summaryNames(S.shots(n));
@@ -281,6 +283,40 @@ export function battleHub(c: BattleHubCtx) {
     const h = String(city || "").replace(/^@/, "").toLowerCase(), m = h ? x.ms.find(mm => mm.handle.toLowerCase() === h) : null, me = m ? cardMe(n, x, m.id) : null;
     return { image: cardUrl(n, me ? m!.handle : null), alt: battleCardAlt(cardNight(n, x, sum), me) };
   }
+
+  // ---------------------------------------------------------------- the week picture (WEEKLY.md 4 and 6.3)
+  /** the world's week up to night n (the 7 nights n-6 .. n): battle.ts weekSummary; null when no night has shots */
+  function weekSumOf(n: number) {
+    const by = new Map<number, Shot[]>(); for (let k = n - 6; k <= n; k++) by.set(k, []);
+    for (const s2 of S.shots(n - 6, n)) by.get(s2.night)?.push(s2);
+    return weekSummary([...by.entries()].map(([k, shots]) => ({ night: k, shots })));
+  }
+  function cardWeek(n: number, x: Ctx, ws: NonNullable<ReturnType<typeof weekSumOf>>): CardWeek {
+    const se = season(n, launch());
+    return { night: dayKey(n), range: weekRange(dayKey(n)), season: se.n, week: se.week, battles: ws.battles, hits: ws.hits, usd: ws.usd,
+      tops: ws.tops.map(t => ({ h: x.handle(t.id), usd: t.usd, hits: t.hits, nights: t.nights })), hard: ws.hard.map(t => ({ h: x.handle(t.id), usd: t.usd, hits: t.hits, nights: t.nights, fell: t.fell })) };
+  }
+  /** the member band of the week picture (fought or quiet); null for a non-member */
+  function cardWeekMe(n: number, x: Ctx, id: string): CardWeekMe | null {
+    const m = x.byId.get(id); if (!m) return null;
+    const k = weekOf(x, m, n);
+    return { h: "@" + m.handle, won: k.w, fought: k.fought, dealt: k.dealt, took: k.took, lots: k.lots, rank: k.rank, move: k.fought ? k.move : null };
+  }
+  /** the week picture up to night n (id null: the public one), rendered one time and stored like the daily pictures */
+  async function weekCardFor(n: number, id: string | null): Promise<{ png: Buffer; alt: string } | null> {
+    const who = id ? "week:" + id : "week", row = c.q("SELECT png, alt FROM battle_cards WHERE night=? AND who=?").get(n, who) as any;
+    if (row?.png) return { png: Buffer.from(row.png), alt: String(row.alt || "") };
+    const x = ctxFor(), ws = weekSumOf(n); if (!ws) return null;
+    const me = id ? cardWeekMe(n, x, id) : null; if (id && !me) return weekCardFor(n, null);
+    const render = c.cardPng || (c.png ? (svg: string) => c.png!(svg, 1200) : null); if (!render) return null;
+    const cw = cardWeek(n, x, ws);
+    await Promise.all([...cw.tops.map(async (t, i) => { t.av = await avatarOf(x, ws.tops[i]!.id); }), ...cw.hard.map(async (t, i) => { t.av = await avatarOf(x, ws.hard[i]!.id); }),
+      (async () => { if (me && id) me.av = await avatarOf(x, id); })()]);
+    const alt = weeklyCardAlt(cw, me), png = await render(weeklyCardSvg(cw, me));
+    c.q("INSERT OR REPLACE INTO battle_cards (night, who, png, alt, at) VALUES (?,?,?,?,?)").run(n, who, png, alt, now());
+    return { png, alt };
+  }
+  const weekCardUrl = (n: number, handle?: string | null) => `${c.hub.replace(/\/$/, "")}/v1/world/battle/card/week/${dayKey(n)}${handle ? "/" + handle : ""}.png`;
 
   // ---------------------------------------------------------------- the public state for the Battle view
   function state() {
@@ -537,12 +573,15 @@ ${c.emailOf(id) ? "" : `<div class="st-row"><b class="st-l" id="st-nomail">No ba
 <script>(function(){var g=document.getElementById('st-battles').parentNode,er=g.querySelector('.st-err');g.querySelectorAll('.st-sw').forEach(function(b){b.onclick=function(){var on=b.getAttribute('aria-checked')!=='true';b.setAttribute('aria-checked',on);b.setAttribute('aria-busy','true');er.hidden=true;
 var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fetch('/v1/world/battle/notify',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)}).then(function(r){if(!r.ok)throw 0}).catch(function(){b.setAttribute('aria-checked',!on);er.textContent='Could not save. Your setting did not change. Try again.';er.hidden=false}).then(function(){b.removeAttribute('aria-busy')})}})})();</script>`;
   }
-  /** the week up to night n for one member (weekly mail): battles that ran, nights the city won, nights it fought, lots, dollars */
+  /** the week up to night n for one member (weekly mail): battles that ran, nights the city won, nights it fought, lots, dollars;
+   *  the season rank now and its move of the week (rank 7 nights before minus rank now; null when n-7 is before the season start
+   *  or the city had no rank then) */
   function weekOf(x: Ctx, m: GrowthMember, n: number) {
     let battles = 0, won = 0, fought = 0, dealt = 0, took = 0;
     for (let k = n - 6; k <= n; k++) { const sh = S.shots(k); if (!sh.length) continue; battles++; const o = nightOf(m.id, sh); if (o.res === "WON") won++; if (o.res !== "QUIET") fought++; dealt += o.dealt; took += o.took; }
     const lots = (x.sims.get(m.id)?.stats || []).filter(s => s.d >= n - 7 && s.d < n).reduce((t, s) => t + s.top, 0);
-    return { n: battles, w: won, fought, lots, dealt, took };
+    const rank = ranksAt(n, x).get(m.id) ?? null, before = rank && n - 7 >= season(n, launch()).from ? ranksAt(n - 7, x).get(m.id) ?? null : null;
+    return { n: battles, w: won, fought, lots, dealt, took, rank, move: rank && before ? before - rank : null };
   }
 
   // ---------------------------------------------------------------- the battle mail (LOOP.md part a; spec 11-24 section 2; sends only with CALDERA_BATTLE_EMAIL=1)
@@ -552,7 +591,9 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
   const mailAt = (n: number) => n < SWITCH_NIGHT ? battleAt(n) + 18 * 3600_000 + 10 * 60_000 : battleAt(n) + 10 * 60_000;
   /** the feed summary: 30 minutes after the battle (20:30 PT); before the switch 18.5 hours after the 10:00 UTC battle */
   const summaryAt = (n: number) => n < SWITCH_NIGHT ? battleAt(n) + 18.5 * 3600_000 : battleAt(n) + 30 * 60_000;
-  function compose(x: Ctx, m: GrowthMember, night: number, weekly: boolean, o: { first?: boolean } = {}) {
+  /** night n's battle ran on a Sunday, Pacific (WEEKLY.md 6.4): the day of the battle, not of the clock of the send */
+  const sundayOf = sundayNight;
+  function compose(x: Ctx, m: GrowthMember, night: number, weekly: boolean, o: { first?: boolean; why?: "quiet" | "chose" } = {}) {
     const r = { ...reportOf(x, m, night), ...lastBombs(x, m.id, night) }, opt = S.ensure(m.id), shots = S.shots(night), on = warSet(Infinity, x);
     const built = x.ms.map(o => [x.handle(o.id), x.sims.get(o.id)?.stats.find(s => s.d === night - 1)?.top || 0] as [string, number]).filter(y => y[1] > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     const reb = x.ms.filter(o => on.has(o.id)).map(o => { const mine = shots.filter(s => s.d === o.id && s.f > 0), t = mine.reduce((a, s) => a + dmgAt(s, now()), 0), l = mine.reduce((a, s) => a + remaining(dmgAt(s, now()), s.t, now(), x.pts(o.id)), 0);
@@ -562,43 +603,64 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
     const sum = summaryOf(night, x), mine = nightOf(m.id, shots), rk = rankOf(m.id, night, x), cn = sum ? cardNight(night, x, sum) : null, cm = cn ? cardMe(night, x, m.id) : null;
     const week = weekly ? weekOf(x, m, night) : null, podium = season(night + 1, launch()).n !== se.n ? podiumOf(night, x) : null;
     let promo: MailOpts["promo"] = null; try { promo = c.promo ? c.promo() || null : null; } catch (e: any) { console.error("[battle] promo", e?.message); }
-    const mail = battleEmail(r, w, { name: m.name, hub: c.hub, unsub: unsubUrl(opt.token), postal: c.postal, weekly, first: !!o.first,
-      card: cn ? cardUrl(night, cm ? m.handle : null) : null, alt: cn ? battleCardAlt(cn, cm) : undefined, promo, podium: podium && podium.length ? podium : null,
-      rank: rk.rank, move: rk.move, res: mine.res, winner: sum?.winner ? x.handle(sum.winner) : null, mine: !!sum && sum.winner === m.id, week, date: dateLong(dayKey(night)) });
-    return { r, mail, quiet: mine.res === "QUIET", res: mine.res, week, night: !!sum };
+    const base = { name: m.name, hub: c.hub, unsub: unsubUrl(opt.token), postal: c.postal, first: !!o.first, promo, podium: podium && podium.length ? podium : null };
+    // the weekly mail (WEEKLY.md 3.3): the week's world, the member's week, the week picture
+    const ws = weekly ? weekSumOf(night) : null;
+    if (weekly && week && ws) {
+      const cw = cardWeek(night, x, ws), me = cardWeekMe(night, x, m.id);
+      const world = { range: cw.range, battles: ws.battles, hits: ws.hits, usd: ws.usd, tops: cw.tops.map(t => ({ h: t.h, usd: t.usd })), hard: cw.hard.map(t => ({ h: t.h, usd: t.usd, fell: t.fell })), leaders: podiumOf(night, x) };
+      const mail = battleEmail(r, w, { ...base, weekly: true, why: o.why || "chose", week: { n: week.n, w: week.w, fought: week.fought, lots: week.lots, dealt: week.dealt, took: week.took, move: week.move },
+        world, card: weekCardUrl(night, m.handle), alt: weeklyCardAlt(cw, me), rank: week.rank, res: mine.res, mine: ws.tops[0]?.id === m.id });
+      return { r, mail, quiet: mine.res === "QUIET", res: mine.res, week, night: !!sum, weekly: true };
+    }
+    const mail = battleEmail(r, w, { ...base, card: cn ? cardUrl(night, cm ? m.handle : null) : null, alt: cn ? battleCardAlt(cn, cm) : undefined,
+      rank: rk.rank, move: rk.move, res: mine.res, winner: sum?.winner ? x.handle(sum.winner) : null, mine: !!sum && sum.winner === m.id, date: dateLong(dayKey(night)) });
+    return { r, mail, quiet: mine.res === "QUIET", res: mine.res, week, night: !!sum, weekly: false };
   }
-  /** One pass, once a night: every city in the battles with a confirmed email gets last night's mail once (daily unless the
-   *  member chose weekly, on Mondays Pacific, or off). Nothing happened to the city (QUIET) or no battle: no daily mail.
-   *  dry: compose only. The shared mail guard and caps apply (c.send). */
+  /** One pass, once a night (WEEKLY.md 6.4): every city in the battles with a confirmed email gets one mail for the night.
+   *  Daily: the daily mail when the city fought; a QUIET Sunday (also a Sunday with no shots in the world) gives the weekly
+   *  mail instead (why "quiet"); a quiet weekday gives nothing. Weekly: the weekly mail on Sunday (why "chose"), also on a quiet
+   *  week. Off or no confirmed email: nothing. The weekly mail goes only when the week had a battle. Sunday = the battle of the
+   *  night ran on a Sunday, Pacific. dry: compose only. force: skip the one-mail-a-night guard, the day test and the quiet test
+   *  (operator). The shared mail guard and caps apply (c.send). */
   async function sendReports(o: { dry?: boolean; only?: string; force?: boolean } = {}) {
-    const n = lastNight(now()), x = ctxFor(), day = dayKey(n), monday = new Date(now() - 8 * 3600_000).getUTCDay() === 1, out: any[] = [];
+    const n = lastNight(now()), x = ctxFor(), day = dayKey(n), sunday = sundayOf(n), out: any[] = [];
     if (!S.hasNight(n)) return { sent: 0, out: [{ skip: "no battle yet tonight" }] };
-    const on = warSet(Infinity, x);
+    const on = warSet(Infinity, x), shotsN = S.shots(n);
     for (const m of x.ms) {
       if (!on.has(m.id) || (o.only && m.id !== o.only)) continue;
       const opt = S.ensure(m.id), freq = freqOf(opt);
       if (freq === "off") continue;
       if (!o.force && opt.sent === day) continue;
-      if (freq === "weekly" && !monday && !o.force) continue;
+      const quietNight = !shotsN.length || nightOf(m.id, shotsN).res === "QUIET";
+      // which mail: daily (the city fought), weekly (a weekly member on Sunday, or a daily member after a quiet Sunday), or none
+      const why: "quiet" | "chose" | null = freq === "weekly" ? (sunday || o.force ? "chose" : null) : quietNight && sunday ? "quiet" : null;
+      if (freq === "weekly" && !why) continue;
+      if (freq === "daily" && quietNight && !why && !o.force) { out.push({ h: m.handle, skip: "nothing to report" }); continue; }
       const to = c.emailOf(m.id); if (!to) { out.push({ h: m.handle, skip: "no confirmed email" }); continue; }
-      const k = compose(x, m, n, freq === "weekly", { first: !opt.first }), mail = k.mail;
-      if (!o.force && (freq === "daily" ? !k.night || k.quiet : !k.week?.fought)) { out.push({ h: m.handle, skip: "nothing to report" }); continue; }
-      if (o.dry || !c.emailOn()) { out.push({ h: m.handle, dry: true, subject: mail.subject, text: mail.text }); continue; }
-      try { await cardFor(n, k.quiet ? null : m.id); } catch (e: any) { console.error("[battle] card", e?.message); }   // the picture exists before the mail does
+      const k = compose(x, m, n, !!why, { first: !opt.first, why: why || undefined }), mail = k.mail;
+      if (why && !k.weekly) { out.push({ h: m.handle, skip: "no battle in the week" }); continue; }
+      if (o.dry || !c.emailOn()) { out.push({ h: m.handle, dry: true, weekly: k.weekly, subject: mail.subject, text: mail.text }); continue; }
+      try { if (k.weekly) await weekCardFor(n, m.id); else await cardFor(n, k.quiet ? null : m.id); } catch (e: any) { console.error("[battle] card", e?.message); }   // the picture exists before the mail does
       const un = unsubUrl(opt.token), tr = BT.wrap(mail.html, [un]);   // open pixel + click redirects (not the unsubscribe link)
-      const ok = await c.send({ to, subject: mail.subject, html: tr.html, text: mail.text, src: "battle-report", kind: "daily", headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }).catch((e: any) => { console.error("[battle] send", e?.message); return false; });
-      if (ok !== false) { try { BT.record({ token: tr.token, night: day, profile: m.id, freq, links: tr.links }); } catch (e: any) { console.error("[battle] track", e?.message); }
-        S.markSent(m.id, day); S.markFirst(m.id, day); out.push({ h: m.handle, sent: true, subject: mail.subject }); } else out.push({ h: m.handle, blocked: true });
+      const ok = await c.send({ to, subject: mail.subject, html: tr.html, text: mail.text, src: "battle-report", kind: k.weekly ? "weekly" : "daily", headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }).catch((e: any) => { console.error("[battle] send", e?.message); return false; });
+      // freq in the row: "daily", "weekly" (chose weekly) or "weekly-quiet" (a daily member's weekly mail after a quiet Sunday)
+      const tf = !k.weekly ? "daily" : freq === "weekly" ? "weekly" : "weekly-quiet";
+      if (ok !== false) { try { BT.record({ token: tr.token, night: day, profile: m.id, freq: tf, links: tr.links }); } catch (e: any) { console.error("[battle] track", e?.message); }
+        S.markSent(m.id, day); S.markFirst(m.id, day); out.push({ h: m.handle, sent: true, weekly: k.weekly, subject: mail.subject }); } else out.push({ h: m.handle, blocked: true });
     }
     return { sent: out.filter(y => y.sent).length, out };
   }
-  /** operator test (admin.js battle-mail-test): one member's mail for the newest night, composed only; the caller decides where it goes */
-  async function mailTest(id: string) {
+  /** operator test (admin.js battle-mail-test): one member's mail for the newest night, composed only; the caller decides where
+   *  it goes. weekly: the weekly mail for any member, whatever the day (a weekly member's words, else the quiet-Sunday words) */
+  async function mailTest(id: string, o: { weekly?: boolean } = {}) {
     const x = ctxFor(), m = x.byId.get(id); if (!m) return { error: "not a listed member" };
     const n = newest(); if (n === null) return { error: "no battle night yet" };
-    const opt = S.ensure(id), freq = freqOf(opt), k = compose(x, m, n, freq === "weekly", { first: !opt.first });
-    let png: Buffer | null = null; try { png = (await cardFor(n, k.quiet ? null : id))?.png || null; } catch (e: any) { console.error("[battle] card", e?.message); }
-    return { night: dayKey(n), freq, res: k.res, quiet: k.quiet, subject: k.mail.subject, preheader: k.mail.preheader, html: k.mail.html, text: k.mail.text, png };
+    const opt = S.ensure(id), freq = freqOf(opt), weekly = !!o.weekly || (freq === "weekly" && sundayOf(n));
+    const k = compose(x, m, n, weekly, { first: !opt.first, why: freq === "weekly" ? "chose" : "quiet" });
+    if (weekly && !k.weekly) return { error: "no battle in the week" };
+    let png: Buffer | null = null; try { png = (k.weekly ? await weekCardFor(n, id) : await cardFor(n, k.quiet ? null : id))?.png || null; } catch (e: any) { console.error("[battle] card", e?.message); }
+    return { night: dayKey(n), freq, weekly: k.weekly, res: k.res, quiet: k.quiet, subject: k.mail.subject, preheader: k.mail.preheader, html: k.mail.html, text: k.mail.text, png };
   }
 
   /** the daily feed post, once per battle day (sysposts key battle:<night>); dry: the text only */
@@ -628,6 +690,19 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
       res.end(c.page("You're unsubscribed", "<p>No more Armory emails. The alert in your bell stays. You can turn the email back on in Settings.</p>")); return true;
     }
     if (!p.startsWith("/v1/world/battle/")) return false;
+    // the week picture (WEEKLY.md 6.3): {date} is the key of the week's last night; 404 when its 7 nights have no shots; a handle
+    // that is not a member gets the public picture
+    const mw = (req.method === "GET" || req.method === "HEAD") ? p.match(/^\/v1\/world\/battle\/card\/week\/(\d{4}-\d{2}-\d{2})(?:\/([A-Za-z0-9-]{1,39}))?\.png$/) : null;
+    if (mw) {
+      const night = Math.floor(Date.parse(mw[1] + "T00:00:00Z") / DAY);
+      let who: string | null = null;
+      if (mw[2]) { const h = mw[2].toLowerCase(), m = ctxFor().ms.find(mm => mm.handle.toLowerCase() === h); who = m ? m.id : null; }
+      let card: { png: Buffer } | null = null;
+      try { card = Number.isFinite(night) && S.hasNight(night) ? await weekCardFor(night, who) : null; } catch (e: any) { console.error("[battle] week card", e?.message); res.writeHead(500, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }); res.end("Could not draw the picture."); return true; }
+      if (!card) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=300" }); res.end("No battle picture here."); return true; }
+      res.writeHead(200, { "content-type": "image/png", "content-length": String(card.png.length), "cache-control": "public, max-age=604800" });
+      res.end(req.method === "HEAD" ? undefined : card.png); return true;
+    }
     // the nightly battle picture (LOOP.md a.6): public battle data only; rendered one time per night and city, then stored
     const mc = (req.method === "GET" || req.method === "HEAD") ? p.match(/^\/v1\/world\/battle\/card\/(\d{4}-\d{2}-\d{2})(?:\/([A-Za-z0-9-]{1,39})(\.story)?)?\.png$/) : null;
     if (mc) {

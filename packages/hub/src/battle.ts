@@ -576,12 +576,52 @@ export function nightSummary(shots: Shot[], o: { night: string; cities: number }
   return { night: o.night, cities: o.cities, hits: shots.filter(s => s.f > 0).length, usd: shots.reduce((t, s) => t + usdOf(s), 0), held: shots.reduce((t, s) => t + heldOf(s), 0), fallen, winner: tops[0]?.id ?? null, tops, hard };
 }
 
+/** night n's battle ran on a Sunday evening, Pacific (WEEKLY.md 6.4: the weekly mail's day; the day of the battle, not of the send) */
+export function sundayNight(n: number): boolean { const t = battleAt(n); return new Date(t + ptOff(t)).getUTCDay() === 0; }
+/** The week up to night key `key` (WEEKLY.md 6.1): the 7 nights key-6 .. key, as night keys (the daily mail's dates).
+ *  "2026-11-30" -> "Nov 24-30"; across two months "Nov 28-Dec 4". */
+export function weekRange(key: string): string {
+  const e = new Date(String(key) + "T12:00:00Z"); if (isNaN(+e)) return String(key ?? "");
+  const s = new Date(+e - 6 * DAY), M = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return s.getUTCMonth() === e.getUTCMonth() && s.getUTCFullYear() === e.getUTCFullYear() ? `${M[s.getUTCMonth()]} ${s.getUTCDate()}-${e.getUTCDate()}` : `${M[s.getUTCMonth()]} ${s.getUTCDate()}-${M[e.getUTCMonth()]} ${e.getUTCDate()}`;
+}
+/** The week in numbers (WEEKLY.md 2 and 6.1), from the shots of up to 7 nights: battles (nights with shots), missiles that hit,
+ *  total damage; the top 3 attackers by dollars dealt (the first is the winner of the week) and the 3 cities hit hardest by
+ *  dollars taken. The raiders rule and the tie order of nightSummary. hits = shots with f > 0; nights = nights the city fired
+ *  (tops) or took a hit (hard); fell = nights the city was that night's fallenOf. Ids, not handles. null: no night has shots. */
+export interface WeekSum { battles: number; hits: number; usd: number; tops: { id: string; usd: number; hits: number; nights: number }[]; hard: { id: string; usd: number; hits: number; nights: number; fell: number }[] }
+export function weekSummary(nights: { night: string | number; shots: Shot[] }[]): WeekSum | null {
+  const att = new Map<string, { usd: number; hits: number; n: Set<string> }>(), def = new Map<string, { usd: number; hits: number; n: Set<string>; fell: number }>();
+  let battles = 0, hits = 0, usd = 0;
+  for (const nt of nights) {
+    if (!nt.shots.length) continue;
+    battles++; const k = String(nt.night), fallen = fallenOf(nt.shots);
+    for (const s of nt.shots) {
+      const u = usdOf(s); usd += u; if (s.f > 0) hits++;
+      const a = att.get(s.a) || { usd: 0, hits: 0, n: new Set<string>() }; a.usd += u; if (s.f > 0) a.hits++; a.n.add(k); att.set(s.a, a);
+      const d = def.get(s.d) || { usd: 0, hits: 0, n: new Set<string>(), fell: 0 }; d.usd += u; if (s.f > 0) { d.hits++; d.n.add(k); } def.set(s.d, d);
+    }
+    if (fallen) { const d = def.get(fallen); if (d) d.fell++; }
+  }
+  if (!battles) return null;
+  const cmp = (x: [string, { usd: number }], y: [string, { usd: number }]) => y[1].usd - x[1].usd || (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0);
+  const people = [...att.entries()].filter(([k]) => k !== RAIDERS);
+  const tops = (people.length ? people : [...att.entries()]).sort(cmp).slice(0, 3).map(([id, v]) => ({ id, usd: v.usd, hits: v.hits, nights: v.n.size }));
+  const hard = [...def.entries()].filter(([k, v]) => k !== RAIDERS && v.usd > 0).sort(cmp).slice(0, 3).map(([id, v]) => ({ id, usd: v.usd, hits: v.hits, nights: v.n.size, fell: v.fell }));
+  return { battles, hits, usd, tops, hard };
+}
+
 // ---------------------------------------------------------------- 9c. the battle email (LOOP.md part a; spec 11-24 section 2)
 const RES_WORD: Record<Result, string> = { WON: "won", HELD: "held", LOST: "lost", FELL: "fell", QUIET: "was quiet" };
 /** "Last night: @{winner} won, your city {won too|held|lost|fell}"; the member is the winner: "Last night: your city won the
- *  battle"; weekly: "Last week: {n} battles, your city won {w}". ASCII. */
-export function loopSubject(o: { res: Result; winner: string | null; mine: boolean; weekly?: { n: number; w: number } | null }): string {
-  if (o.weekly) return `Last week: ${o.weekly.n} battle${o.weekly.n === 1 ? "" : "s"}, your city won ${o.weekly.w}`;
+ *  battle". Weekly (WEEKLY.md 3.1): top = the winner of the week ("@h" or "raiders from the sea"), mine = the member is it. ASCII. */
+export function loopSubject(o: { res: Result; winner: string | null; mine: boolean; weekly?: { n: number; w: number; fought: number; top: string | null; mine: boolean } | null }): string {
+  if (o.weekly) {
+    const k = o.weekly, n1 = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+    const s = !k.top ? `Last week: ${n1(k.n, "battle")}, your city ${k.fought ? `won ${k.w}` : "was not hit"}` : k.mine ? "Last week: your city won the week"
+      : !k.fought ? `Last week: ${k.top} won, your city was not hit` : k.w ? `Last week: ${k.top} won, your city won ${k.w} of ${n1(k.fought, "night")}` : `Last week: ${k.top} won, your city fought ${n1(k.fought, "night")}`;
+    return s.replace(/[^\x20-\x7e]/g, "");
+  }
   if (o.mine) return "Last night: your city won the battle";
   const word = o.res === "WON" ? (o.winner ? "won too" : "won") : RES_WORD[o.res];
   return (o.winner ? `Last night: ${o.winner} won, your city ${word}` : `Last night: your city ${word}`).replace(/[^\x20-\x7e]/g, "");
@@ -594,17 +634,91 @@ export interface MailOpts {
   /** the season's final top 3 (the mail after the last battle of a season), or null */ podium?: { h: string; usd: number }[] | null;
   /** season rank after the night, and its move since the night before (+ up, - down) */ rank?: number | null; move?: number;
   /** the result word and the night's winner ("@h"; mine = the member is the winner) for the subject */ res?: Result; winner?: string | null; mine?: boolean;
-  /** weekly: battles in the week, nights the city won, lots built, dollars dealt and taken */ week?: { n: number; w: number; lots: number; dealt: number; took: number } | null;
+  /** weekly: battles in the week, nights the city won, nights it fought, lots built, dollars dealt and taken, and the season
+   *  rank move of the week (rank 7 nights before minus rank now; null: no rank then) */ week?: { n: number; w: number; fought: number; lots: number; dealt: number; took: number; move: number | null } | null;
+  /** weekly (WEEKLY.md 3.3): the world's week; the top 3 of the season board */
+  world?: { range: string; battles: number; hits: number; usd: number; tops: { h: string; usd: number }[]; hard: { h: string; usd: number; fell: number }[]; leaders: { h: string; usd: number }[] } | null;
+  /** weekly: why this member gets it (a daily member after a quiet Sunday, or a member who chose weekly) */ why?: "quiet" | "chose";
   /** the day of the night, for the wordmark row ("Nov 24") */ date?: string;
 }
 /** The battle mail: the picture and the two buttons first (Replay is easy to find), then the report as today, the podium at a
- *  season end, one promoted card, the footer. HTML: tables and inline styles only, light only. Text: the order of today. */
+ *  season end, one promoted card, the footer. HTML: tables and inline styles only, light only. Text: the order of today.
+ *  Weekly (o.weekly with o.week and o.world): the week in one mail (WEEKLY.md 3.3), the same shell, podium, card and footer. */
 export function battleEmail(r: Report, w: WorldLines, o: MailOpts): { subject: string; text: string; html: string; preheader: string } {
   const first = (o.name || r.h).replace(/^@/, "").trim().split(/\s+/)[0] || r.h, hub = o.hub.replace(/\/$/, ""), n1 = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const replay = `${hub}/world?view=battle&replay=1`, tonight = `${hub}/world?view=battle#tonight`, prefs = `${hub}/world?view=battle#reports`;
+  const weekly = !!(o.weekly && o.week && o.world);
+  const pod = o.podium && o.podium.length ? o.podium.slice(0, 3) : null, sn = w.season.n;
+  const podEnd = `The three winners keep a Season ${sn} badge. Season ${sn + 1} starts ${weekly ? "Monday" : "tonight"} at 20:00 PT.`;
+  // html helpers (LOOP.md a.1; mailHtml() of the mockups)
+  const esc = (s: string) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+  const FONT = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif", A = (u: string, t: string, col = "#6E4FE0") => `<a href="${esc(u)}" style="color:${col}">${t}</a>`;
+  const linkify = (s: string) => esc(s).replace(/(https?:\/\/[^\s<]+)/g, m => `<a href="${m}" style="color:#6E4FE0">${m}</a>`);
+  const P = (t: string) => `<p style="margin:0 0 10px">${t}</p>`, H = (t: string) => `<p style="margin:22px 0 8px;font:700 12px/1.3 ${FONT};letter-spacing:1.2px;color:#6B6878">${t}</p>`;
+  const btn = (u: string, t: string, solid: boolean) => `<a href="${esc(u)}" style="display:inline-block;margin:0 8px 8px 0;padding:13px 22px;border-radius:999px;border:1px solid ${solid ? "#6D4AE8" : "#CFCBDD"};background:${solid ? "#6D4AE8" : "#ffffff"};color:${solid ? "#ffffff" : "#24222B"};font:600 15px/1.2 ${FONT};text-decoration:none">${t}</a>`;
+  const td = "padding:7px 0;border-top:1px solid #EEECF4", PODC = ["#B07A0E", "#6B6878", "#9C5A2E"];
+  const podHtml = pod ? `${H(`SEASON ${sn} FINAL`)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
+${pod.map((p, i) => `<tr><td width="34" style="${td};font:700 18px/1 ${FONT};color:${PODC[i]}">${i + 1}</td><td style="${td};font-weight:600">${esc(p.h)}</td><td align="right" style="${td};font-weight:600">${esc(fmtUsd(p.usd))}</td></tr>`).join("")}</table>
+${P(`<span style="color:#6B6878;font-size:13.5px">${esc(podEnd)} ${A(hub + "/leaderboard", "Full ranking")}</span>`)}` : "";
+  const pr = o.promo, adHtml = pr ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border:1px solid #E4E2EC;border-radius:10px"><tr><td style="padding:14px 16px">
+<p style="margin:0 0 6px;font:700 11px/1.3 ${FONT};letter-spacing:1.2px;color:#6B6878">BUILT BY THE FLEET</p>
+<p style="margin:0 0 2px;font:600 16px/1.35 ${FONT}"><a href="${esc(pr.url)}" style="color:#24222B;text-decoration:none">${esc(pr.title)}</a></p>
+<p style="margin:0 0 8px;color:#4A4758">${esc(pr.line)}</p>
+<p style="margin:0;font-size:12.5px;color:#6B6878">Promoted by @${esc(pr.handle.replace(/^@/, ""))} with Caldera Points. ${A(pr.url, "View project")} &nbsp; ${A(pr.report, "Report", "#6B6878")}</p></td></tr></table>` : "";
+  const img = (alt0: string) => o.card ? `<a href="${esc(replay)}" style="display:block;background:#0B0D13;border-radius:10px;color:#F4F6FA;font-size:14px;text-decoration:none"><img src="${esc(o.card)}" width="560" height="294" alt="${esc(o.alt || alt0)}" style="display:block;width:100%;height:auto;border:0;border-radius:10px;color:#F4F6FA;background:#0B0D13;font:14px/1.4 sans-serif"></a>` : "";
+  const footHtml = `<p style="margin:26px 0 0;padding:14px 0 0;border-top:1px solid #EEECF4;font-size:12.5px;line-height:1.7;color:#6B6878">Season ${sn}, week ${w.season.week}. ${A(hub + "/leaderboard", "Leaderboard")}<br>You get this because your city is in the Caldera battle. ${A(prefs, "Daily, weekly or off")} &nbsp; ${A(o.unsub, "Unsubscribe")}<br>${esc(o.postal)}</p>`;
+  const footText = ["", `Season ${sn}, week ${w.season.week}. Leaderboard: ${hub}/leaderboard`, `You get this because your city is in the Caldera battle. Daily, weekly or off: ${prefs}`, `Unsubscribe: ${o.unsub}`, "", o.postal];
+  const tailText = (T: string[]) => {
+    if (pod) T.push("", `SEASON ${sn} FINAL`, ...pod.map((p, i) => `${i + 1} ${p.h} ${fmtUsd(p.usd)}`), `${podEnd} Full ranking: ${hub}/leaderboard`);
+    if (o.promo) T.push("", "BUILT BY THE FLEET", `${o.promo.title}: ${o.promo.url}`, o.promo.line, `Promoted by @${o.promo.handle.replace(/^@/, "")} with Caldera Points. Report: ${o.promo.report}`);
+    T.push(...footText); return T.join("\n").replace(/[^\x09\x0a\x0d\x20-\x7e]/g, "");
+  };
+  const shell = (subject: string, preheader: string, firstHtml: string, head: string, body: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"><title>${esc(subject)}</title></head>
+<body style="margin:0;padding:20px 14px;background:#ffffff;color:#24222B;font:15px/1.55 ${FONT}">
+<div style="display:none;max-height:0;overflow:hidden">${esc(preheader)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px"><tr><td style="text-align:left">
+${firstHtml}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px"><tr><td style="font:700 18px/1.2 Georgia,'Times New Roman',serif;color:#24222B">Caldera</td><td align="right" style="font-size:13px;color:#6B6878">${esc(head)}</td></tr></table>
+${body}
+${podHtml}${adHtml}
+${footHtml}
+</td></tr></table></td></tr></table></body></html>`;
+
+  if (weekly) {
+    // ---------------------------------------------------------------- the weekly mail (WEEKLY.md 3; words() of the mockup)
+    const k = o.week!, wd = o.world!, RANGE = wd.range.toUpperCase(), fought = k.fought > 0, why = o.why || "chose";
+    const top = wd.tops[0]?.h ?? null;
+    const lots = k.lots > 0 ? (fought ? ` ${n1(k.lots, "lot")} built.` : ` You built ${n1(k.lots, "lot")}.`) : "";
+    const city = fought ? `Your city fought in ${k.fought} of ${n1(k.n, "battle")}${k.w ? ` and won ${k.w}` : ""}. It dealt ${fmtUsd(k.dealt)} of damage and took ${fmtUsd(k.took)} (all rebuilt on its own).${lots}`
+      : `A calm week for your city: no missiles came your way in ${n1(k.n, "battle")}, and it fired none.${lots}`;
+    const invite = fought ? "The next battle is Monday at 20:00 PT. Defenses lock at 19:45 PT." : "Monday's battle is at 20:00 PT. Set your defenses, and the code you push before 19:45 PT becomes your missiles.";
+    const rank = !o.rank ? null : `Season rank ${o.rank}${fought && k.move != null ? (k.move > 0 ? `, up ${k.move} in the week` : k.move < 0 ? `, down ${-k.move} in the week` : ", no change in the week") : ""}.`;
+    const world = [`${n1(wd.battles, "battle")}, ${n1(wd.hits, "missile")} hit, ${fmtUsd(wd.usd)} of damage.`];
+    if (wd.tops.length) world.push(`Most damage dealt: ${wd.tops.map(t => `${t.h} (${fmtUsd(t.usd)})`).join(", ")}`);
+    if (wd.hard.length) world.push(`Hit the hardest: ${wd.hard.map(t => `${t.h} (${fmtUsd(t.usd)}${t.fell ? `, fell on ${n1(t.fell, "night")}` : ""})`).join(", ")}`);
+    if (!pod && wd.leaders.length) world.push(`Season ${sn} top ${Math.min(3, wd.leaders.length)}: ${wd.leaders.slice(0, 3).map(t => `${t.h} ${fmtUsd(t.usd)}`).join(", ")}`);
+    const firstL = !o.first ? null : why === "chose" ? ["You get this each Sunday after the battle.", "Daily or off"] : ["You get a mail after each battle your city fights, and this summary after a quiet Sunday.", "Weekly or off"];
+    const lead = why === "quiet" ? "Sunday night was quiet for your city, so here is the whole week in one mail." : null;
+    const subject = loopSubject({ res: o.res || "QUIET", winner: null, mine: false, weekly: { n: k.n, w: k.w, fought: k.fought, top, mine: !!o.mine } });
+    const preheader = fought ? `Dealt ${fmtUsd(k.dealt)}, took ${fmtUsd(k.took)} in ${n1(k.fought, "night")}.${o.rank ? ` Season rank ${o.rank}.` : ""} Next battle Monday at 20:00 PT.`
+      : `No missiles came your way in ${n1(k.n, "battle")}. Next battle Monday at 20:00 PT. Set your defenses by 19:45 PT.`;
+    const T: string[] = [];
+    if (firstL) T.push(`${firstL[0]} ${firstL[1]}: ${prefs}`, "");
+    T.push(`Hey ${first},`, ""); if (lead) T.push(lead, "");
+    T.push(`YOUR CITY, ${RANGE}`, city, invite); if (rank) T.push(rank);
+    T.push(`Set tonight's defenses: ${tonight}`, `Watch the replay: ${replay}`, "", `THE WORLD, ${RANGE}`, ...world);
+    const text = tailText(T);
+    const firstHtml = firstL ? `<p style="margin:0 0 14px;font-size:13px;color:#6B6878">${esc(firstL[0])} ${A(prefs, firstL[1])}.</p>` : "";
+    const body = `${img(`Caldera week in battle, ${wd.range}.`)}
+<div style="padding:16px 0 4px">${btn(tonight, "Set tonight's defenses", true)}${btn(replay, "Watch the replay", false)}</div>
+${P(`Hey ${esc(first)},`)}${lead ? P(esc(lead)) : ""}
+${H(`YOUR CITY, ${esc(RANGE)}`)}${P(esc(city))}${P(`${esc(invite)} ${A(tonight, "Set tonight's defenses")}`)}${rank ? P(esc(rank)) : ""}
+${H(`THE WORLD, ${esc(RANGE)}`)}${world.map(l => P(esc(l))).join("")}`;
+    return { subject: subject.replace(/[^\x20-\x7e]/g, ""), text, html: shell(subject, preheader, firstHtml, `Week in battle, ${wd.range}`, body), preheader };
+  }
+
   const res = o.res || "LOST", mv = o.move || 0;
   const rankLine = o.rank ? `Season rank ${o.rank}${mv > 0 ? `, up ${mv}` : mv < 0 ? `, down ${-mv}` : ", no change"}.` : null;
-  const weekLine = o.weekly && o.week ? `This week: ${n1(o.week.n, "battle")}, your city won ${o.week.w}. ${n1(o.week.lots, "lot")} built, ${fmtUsd(o.week.dealt)} of damage dealt, ${fmtUsd(o.week.took)} taken (all rebuilt on its own).` : null;
   // YOUR CITY
   const C: string[] = [];
   if (r.peace) { C.push(`Peaceful zone: no missiles in or out.`, r.built ? `${n1(r.built, "lot")} built yesterday.` : "No new lots yesterday."); }
@@ -631,52 +745,21 @@ export function battleEmail(r: Report, w: WorldLines, o: MailOpts): { subject: s
     if (w.rivalry) W.push(`Rivalry of the day: ${w.rivalry[0]} vs ${w.rivalry[1]}${w.rivalry[2] > 1 ? `, ${w.rivalry[2]} days running` : ""}`);
     W.push("Cranes rebuild every tower overnight; by noon the world stands as it did.");
   }
-  const pod = o.podium && o.podium.length ? o.podium.slice(0, 3) : null, sn = w.season.n;
-  const podEnd = `The three winners keep a Season ${sn} badge. Season ${sn + 1} starts tonight at 20:00 PT.`;
   // text: the order of today
   const T: string[] = [];
   if (o.first) T.push(`You get this after each nightly battle. Weekly or off: ${prefs}`, "");
   T.push(`Hey ${first},`, "");
-  if (weekLine) T.push(weekLine, "");
   T.push("YOUR CITY", ...C, `Watch the replay: ${replay}`, `Set tonight's defenses: ${tonight}`, "", "TODAY IN THE WORLD", ...W);
-  if (pod) T.push("", `SEASON ${sn} FINAL`, ...pod.map((p, i) => `${i + 1} ${p.h} ${fmtUsd(p.usd)}`), `${podEnd} Full ranking: ${hub}/leaderboard`);
-  if (o.promo) T.push("", "BUILT BY THE FLEET", `${o.promo.title}: ${o.promo.url}`, o.promo.line, `Promoted by @${o.promo.handle.replace(/^@/, "")} with Caldera Points. Report: ${o.promo.report}`);
-  T.push("", `Season ${sn}, week ${w.season.week}. Leaderboard: ${hub}/leaderboard`, `You get this because your city is in the Caldera battle. Daily, weekly or off: ${prefs}`, `Unsubscribe: ${o.unsub}`, "", o.postal);
-  const text = T.join("\n").replace(/[^\x09\x0a\x0d\x20-\x7e]/g, "");
-  const subject = (o.weekly && o.week ? loopSubject({ res, winner: null, mine: false, weekly: o.week }) : o.res ? loopSubject({ res, winner: o.winner ?? null, mine: !!o.mine }) : battleSubject(r)).replace(/[^\x20-\x7e]/g, "");
+  const text = tailText(T);
+  const subject = (o.res ? loopSubject({ res, winner: o.winner ?? null, mine: !!o.mine }) : battleSubject(r)).replace(/[^\x20-\x7e]/g, "");
   const preheader = `Dealt ${fmtUsd(r.dealtUsd)}, took ${fmtUsd(r.takenUsd)}, shield held ${fmtUsd(r.heldUsd)}.${o.rank ? ` Season rank ${o.rank}.` : ""} Next battle tonight at 20:00 PT.`;
-  // html (LOOP.md a.1 order; mailHtml() of the mockup)
-  const esc = (s: string) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
-  const FONT = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif", A = (u: string, t: string, col = "#6E4FE0") => `<a href="${esc(u)}" style="color:${col}">${t}</a>`;
-  const linkify = (s: string) => esc(s).replace(/(https?:\/\/[^\s<]+)/g, m => `<a href="${m}" style="color:#6E4FE0">${m}</a>`);
-  const P = (t: string) => `<p style="margin:0 0 10px">${t}</p>`, H = (t: string) => `<p style="margin:22px 0 8px;font:700 12px/1.3 ${FONT};letter-spacing:1.2px;color:#6B6878">${t}</p>`;
-  const btn = (u: string, t: string, solid: boolean) => `<a href="${esc(u)}" style="display:inline-block;margin:0 8px 8px 0;padding:13px 22px;border-radius:999px;border:1px solid ${solid ? "#6D4AE8" : "#CFCBDD"};background:${solid ? "#6D4AE8" : "#ffffff"};color:${solid ? "#ffffff" : "#24222B"};font:600 15px/1.2 ${FONT};text-decoration:none">${t}</a>`;
-  const td = "padding:7px 0;border-top:1px solid #EEECF4", PODC = ["#B07A0E", "#6B6878", "#9C5A2E"];
-  const podHtml = pod ? `${H(`SEASON ${sn} FINAL`)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
-${pod.map((p, i) => `<tr><td width="34" style="${td};font:700 18px/1 ${FONT};color:${PODC[i]}">${i + 1}</td><td style="${td};font-weight:600">${esc(p.h)}</td><td align="right" style="${td};font-weight:600">${esc(fmtUsd(p.usd))}</td></tr>`).join("")}</table>
-${P(`<span style="color:#6B6878;font-size:13.5px">${esc(podEnd)} ${A(hub + "/leaderboard", "Full ranking")}</span>`)}` : "";
-  const pr = o.promo, adHtml = pr ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border:1px solid #E4E2EC;border-radius:10px"><tr><td style="padding:14px 16px">
-<p style="margin:0 0 6px;font:700 11px/1.3 ${FONT};letter-spacing:1.2px;color:#6B6878">BUILT BY THE FLEET</p>
-<p style="margin:0 0 2px;font:600 16px/1.35 ${FONT}"><a href="${esc(pr.url)}" style="color:#24222B;text-decoration:none">${esc(pr.title)}</a></p>
-<p style="margin:0 0 8px;color:#4A4758">${esc(pr.line)}</p>
-<p style="margin:0;font-size:12.5px;color:#6B6878">Promoted by @${esc(pr.handle.replace(/^@/, ""))} with Caldera Points. ${A(pr.url, "View project")} &nbsp; ${A(pr.report, "Report", "#6B6878")}</p></td></tr></table>` : "";
   const firstHtml = o.first ? `<p style="margin:0 0 14px;font-size:13px;color:#6B6878">You get this after each nightly battle. ${A(prefs, "Weekly or off")}.</p>` : "";
-  const img = o.card ? `<a href="${esc(replay)}" style="display:block;background:#0B0D13;border-radius:10px;color:#F4F6FA;font-size:14px;text-decoration:none"><img src="${esc(o.card)}" width="560" height="294" alt="${esc(o.alt || "Caldera battle, last night.")}" style="display:block;width:100%;height:auto;border:0;border-radius:10px;color:#F4F6FA;background:#0B0D13;font:14px/1.4 sans-serif"></a>` : "";
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"><title>${esc(subject)}</title></head>
-<body style="margin:0;padding:20px 14px;background:#ffffff;color:#24222B;font:15px/1.55 ${FONT}">
-<div style="display:none;max-height:0;overflow:hidden">${esc(preheader)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px"><tr><td style="text-align:left">
-${firstHtml}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px"><tr><td style="font:700 18px/1.2 Georgia,'Times New Roman',serif;color:#24222B">Caldera</td><td align="right" style="font-size:13px;color:#6B6878">Nightly battle, ${esc(o.date || dateLong(r.night))}</td></tr></table>
-${img}
+  const body = `${img("Caldera battle, last night.")}
 <div style="padding:16px 0 4px">${btn(replay, "Watch the replay", true)}${btn(tonight, "Set tonight's defenses", false)}</div>
-${P(`Hey ${esc(first)},`)}${weekLine ? P(esc(weekLine)) : ""}
+${P(`Hey ${esc(first)},`)}
 ${H("YOUR CITY")}${C.map(l => P(linkify(l))).join("")}
-${H("TODAY IN THE WORLD")}${W.map(l => P(linkify(l))).join("")}
-${podHtml}${adHtml}
-<p style="margin:26px 0 0;padding:14px 0 0;border-top:1px solid #EEECF4;font-size:12.5px;line-height:1.7;color:#6B6878">Season ${sn}, week ${w.season.week}. ${A(hub + "/leaderboard", "Leaderboard")}<br>You get this because your city is in the Caldera battle. ${A(prefs, "Daily, weekly or off")} &nbsp; ${A(o.unsub, "Unsubscribe")}<br>${esc(o.postal)}</p>
-</td></tr></table></td></tr></table></body></html>`;
-  return { subject, text, html, preheader };
+${H("TODAY IN THE WORLD")}${W.map(l => P(linkify(l))).join("")}`;
+  return { subject, text, html: shell(subject, preheader, firstHtml, `Nightly battle, ${o.date || dateLong(r.night)}`, body), preheader };
 }
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** "2026-11-24" -> "Nov 24" */

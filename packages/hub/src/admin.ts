@@ -19,8 +19,10 @@
  *   ... growth-run [--polls N] [--backfills N] | growth-run @handle [--backfill]   the World's growth views: one tick now
  *   ... growth-drops                    today's daily drop manifest
  *   ... battle-state | battle-run [--force] [YYYY-MM-DD] | battle-dry [YYYY-MM-DD] | battle-restrike [YYYY-MM-DD] [--save] | battle-optin @handle [--backdate] [--waive] | battle-optout @handle | battle-report [--dry] [--force] [@handle] | battle-summary [--dry]
- *   ... battle-mail-test <handle>      that member's battle mail for the newest night, written to files (html, text, png); never sent
- *   ... battle-mail-report [days]     the battle mail per night (default 14 days): sent, opened, open %, clicked, click %, unsub, unsub % (counts only)
+ *   ... battle-mail-test <handle> [--weekly]  that member's battle mail for the newest night, written to files (html, text, png); never sent.
+ *                                     --weekly: the weekly summary (WEEKLY.md) with the week picture, whatever the day
+ *   ... battle-mail-report [days]     the battle mail per night (default 14 days): sent, opened, open %, clicked, click %, unsub, unsub % (counts only);
+ *                                     weekly / weeklyQuiet counts and byFreq (daily, weekly, weekly-quiet apart)
  *   ... leaderboard [day|week|month|all]            the Leaderboard's rows (top 25)
  *   ... leaderboard-post [--dry] [--force] [YYYY-MM-DD]   yesterday's (or that Pacific day's) top 10 to the feed, once per day; --dry composes only; --force posts under 3 shippers
  *   ... land-run [--dry] [handle]   the World's Expansion view: fetch merged PRs and stars gained now, store tonight's land
@@ -87,17 +89,17 @@ try {
     const who = argv.find((x, i) => i > 0 && x.startsWith("@"))?.slice(1), list = a.growthMembers?.() || [], mm = who ? list.find((x: any) => x.handle === who) : null;
     if (who && !mm) { out({ error: "no listed member @" + who }); process.exit(1); }
     if (cmd === "battle-state") { out(b.state()); process.exit(0); }
-    if (cmd === "battle-mail-report") { out(b.track.report(Number(argv[1]) || 14)); process.exit(0); }   // counts only, no addresses (battletrack.ts)
+    if (cmd === "battle-mail-report") { out(b.track.report(Number(argv.find((x, i) => i > 0 && /^\d+$/.test(x))) || 14)); process.exit(0); }   // counts only, no addresses (battletrack.ts)
     // LOOP.md part a: the hub has no test/ops address (agents@) in its code, so the test mail is written to files, never sent
     if (cmd === "battle-mail-test") {
       const h = clean(argv[1] || ""), mt = list.find((x: any) => String(x.handle).toLowerCase() === h);
-      if (!mt) { out({ error: "usage: battle-mail-test <handle> (a listed member)" }); process.exit(1); }
-      const r = await b.mailTest(mt.id); if (r.error) { out(r); process.exit(1); }
+      if (!mt) { out({ error: "usage: battle-mail-test <handle> [--weekly] (a listed member)" }); process.exit(1); }
+      const r = await b.mailTest(mt.id, { weekly: argv.includes("--weekly") }); if (r.error) { out(r); process.exit(1); }
       const dir = path.join(process.env.CALDERA_DATA || "./data", "battle-mail-test"); fs.mkdirSync(dir, { recursive: true });
-      const base = path.join(dir, `${h}-${r.night}`), files: string[] = [base + ".html", base + ".txt"];
+      const base = path.join(dir, `${h}-${r.night}${r.weekly ? "-weekly" : ""}`), files: string[] = [base + ".html", base + ".txt"];
       fs.writeFileSync(base + ".html", r.html); fs.writeFileSync(base + ".txt", `Subject: ${r.subject}\nPreheader: ${r.preheader}\n\n${r.text}\n`);
       if (r.png) { fs.writeFileSync(base + ".png", r.png); files.push(base + ".png"); }
-      out({ sent: false, why: "no agents@ test address in the hub; open the files", night: r.night, freq: r.freq, result: r.res, quiet: r.quiet, subject: r.subject, files }); process.exit(0);
+      out({ sent: false, why: "no agents@ test address in the hub; open the files", night: r.night, freq: r.freq, weekly: !!r.weekly, result: r.res, quiet: r.quiet, subject: r.subject, files }); process.exit(0);
     }
     if (cmd === "battle-dry") { const d = argv.find(x => /^\d{4}-\d{2}-\d{2}$/.test(x)), n = d ? Math.floor(Date.parse(d + "T00:00:00Z") / 86_400_000) : Math.floor((Date.now() - 10 * 3600_000) / 86_400_000);   // nothing is saved: the stored night through today's strike math, and the night resolved again
       out({ restrike: b.restrikeNight(n), resolve: b.resolve(n, { dry: true }) }); process.exit(0); }
