@@ -209,18 +209,19 @@ const ascii = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"
 const escH = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 /** The once-a-day "Armory open" email (frontier-design B4; markup from the approved mockup 02-alert-email.html). ASCII only. */
 export function armoryEmail(o: { name: string; lock: number; tz: string; balance: number; reward: number; hub: string; unsubArmory: string; unsubAll: string; postal: string }) {
-  const hub = o.hub.replace(/\/$/, ""), at = clockIn(o.lock, o.tz), pt = clockIn(o.lock, "America/Los_Angeles"), first = ascii(String(o.name || "").replace(/^@/, "").split(/\s+/)[0] || "there");
+  const hub = o.hub.replace(/\/$/, ""), at = clockIn(o.lock, o.tz), pt = clockIn(o.lock, "America/Los_Angeles"), first = ascii(String(o.name || "").replace(/^@/, "").trim().split(/\s+/)[0] || "").replace(/[^A-Za-z0-9._'-]/g, "");
+  // no usable name (empty, or not in Latin letters): no greeting line at all (Growth Engine 11-25: "Hi," was held by the mail guard)
+  const hey = /[A-Za-z0-9]/.test(first) ? `Hey ${first},` : "";
   const url = `${hub}/world#armory`, set = `${hub}/settings#notifications`;
   const subject = ascii(`Your Armory is open until ${at}`), pre = ascii(`${o.balance} credits to spend. Pick your bombs and write a word before the battle.`);
-  const text = ascii([`Hey ${first},`, "", "Your Armory is open for the next battle. Pick your bombs and write one word on each. The word rises over the hit in the replay, for everyone to see.", "",
+  const text = ascii([...(hey ? [hey, ""] : []), "Your Armory is open for the next battle. Pick your bombs and write one word on each. The word rises over the hit in the replay, for everyone to see.", "",
     `Locks: ${at} your time (${pt} Pacific), 15 minutes before the battle`, `Balance: ${o.balance} credits`, ...(o.reward > 0 ? [`Last battle: +${o.reward} credits, because your city fired`] : []), "",
     `Open the Armory: ${url}`, "", "Bombs start at 5 credits. Credits are for the game only and have no cash value.", "",
     "You get this email once a day when your Armory opens.", `Turn off Armory emails: ${o.unsubArmory}`, `Unsubscribe from all Caldera email: ${o.unsubAll}`, `Caldera, ${o.postal}`].join("\n"));
   const td = (k: string, v: string) => `<tr><td style="padding:2px 16px 2px 0;color:#5F5C6B">${k}</td><td style="padding:2px 0">${v}</td></tr>`;
   const html = ascii(`<div style="margin:0;padding:20px 14px;background:#fff;color:#24222B;font:15px/1.55 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif"><div style="max-width:560px;margin:0 auto">
 <div style="display:none;max-height:0;overflow:hidden">${escH(pre)}</div>
-<p style="margin:0 0 14px">Hey ${escH(first)},</p>
-<p style="margin:0 0 14px">Your Armory is open for the next battle. Pick your bombs and write one word on each. The word rises over the hit in the replay, for everyone to see.</p>
+${hey ? `<p style="margin:0 0 14px">${escH(hey)}</p>\n` : ""}<p style="margin:0 0 14px">Your Armory is open for the next battle. Pick your bombs and write one word on each. The word rises over the hit in the replay, for everyone to see.</p>
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px;border-collapse:collapse;font:15px/1.5 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#24222B">
 ${td("Locks", `<b>${escH(at)} your time</b> (${escH(pt)} Pacific), 15 minutes before the battle`)}
 ${td("Balance", `<b>${o.balance} credits</b>`)}${o.reward > 0 ? "\n" + td("Last battle", `+${o.reward} credits, because your city fired`) : ""}</table>

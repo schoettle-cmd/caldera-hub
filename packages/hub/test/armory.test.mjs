@@ -67,6 +67,11 @@ test("armory: alert and email copy (ASCII email, local lock time plus Pacific on
   for (const s of [e.subject, e.text, e.html]) assert.ok(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(s), "ASCII only");
   assert.ok(e.text.startsWith("Hey Ana,") && e.text.includes("Locks: 5:00 AM your time (2:00 AM Pacific)") && e.text.includes("Last battle: +10 credits"));
   assert.ok(e.html.includes('href="https://caldera.social/world#armory"') && e.html.includes("u/armory?t=x") && e.html.includes("v1/email/unsub?t=y"));
+  for (const nm of ["", "  ", "李雷", "🚀", "@"]) {   // no usable name: no greeting line (Growth Engine 11-25)
+    const x = A.armoryEmail({ name: nm, lock, tz: "Europe/London", balance: 5, reward: 0, hub: "https://h", unsubArmory: "u", unsubAll: "v", postal: "p" });
+    assert.ok(x.text.startsWith("Your Armory is open"), JSON.stringify(nm) + ": " + x.text.slice(0, 20)); assert.ok(!/Hey|Hi\b/.test(x.html), nm);
+  }
+  assert.ok(A.armoryEmail({ name: "@ana_dev", lock, tz: "Europe/London", balance: 5, reward: 0, hub: "https://h", unsubArmory: "u", unsubAll: "v", postal: "p" }).text.startsWith("Hey ana_dev,\n"));
   assert.ok(!A.armoryEmail({ name: "Ana", lock, tz: "Europe/London", balance: 5, reward: 0, hub: "https://h", unsubArmory: "u", unsubAll: "v", postal: "p" }).text.includes("Last battle"));
 });
 
