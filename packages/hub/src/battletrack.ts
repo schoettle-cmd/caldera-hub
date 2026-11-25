@@ -45,6 +45,13 @@ export function battleTrack(c: { q: Q; hub: string; now: () => number }) {
   function record(o: { token: string; night: string; profile: string; freq: string; links: string[] }) {
     q("INSERT OR IGNORE INTO battle_mail (night, profile, token, freq, sent, links) VALUES (?,?,?,?,?,?)").run(o.night, o.profile, o.token, o.freq, iso(c.now()), JSON.stringify(o.links));
   }
+  /** the stop rule (Growth Engine 11-25): how many of the member's newest battle mails in a row are weekly-quiet mails with no
+   *  open and no click. A daily mail (the city fought), an opened or clicked mail, or a weekly mail they chose ends the run. */
+  function quietRun(profile: string): number {
+    let n = 0; for (const r of q("SELECT freq, opened, clicked FROM battle_mail WHERE profile=? ORDER BY sent DESC LIMIT 12").all(profile) as any[]) {
+      if (r.freq !== "weekly-quiet" || r.opened || r.clicked) break; n++; }
+    return n;
+  }
   /** the member turned the battle mail off: mark their newest mail of the last 7 days */
   function unsub(profile: string) {
     const r = q("SELECT token FROM battle_mail WHERE profile=? AND sent >= ? ORDER BY sent DESC LIMIT 1").get(profile, iso(c.now() - 7 * DAY)) as any;
@@ -86,10 +93,19 @@ export function battleTrack(c: { q: Q; hub: string; now: () => number }) {
       const m = by.get(r.night) || {}; m[r.freq] = rate(r); by.set(r.night, m);
     }
     return (q(`SELECT night, ${cols}, SUM(freq='weekly') weekly, SUM(freq='weekly-quiet') weeklyQuiet FROM battle_mail WHERE sent >= ? GROUP BY night ORDER BY night DESC`).all(since) as any[])
-      .map(r => ({ night: r.night, ...rate(r), weekly: r.weekly || 0, weeklyQuiet: r.weeklyQuiet || 0, byFreq: by.get(r.night) || {} }));
+      .map(r => { const a = acted(r.night); return { night: r.night, ...rate(r), weekly: r.weekly || 0, weeklyQuiet: r.weeklyQuiet || 0, ...a, byFreq: by.get(r.night) || {} }; });
+  }
+  /** the mark of the weekly-quiet mail (registry caldera_battle_loop, GE 11-25): of its recipients that night, how many fought
+   *  (fired a missile) or set tonight's defenses (an order in battle_turn) in the 7 nights after it. Counts only. */
+  function acted(nightKey: string): { quietActed7: number; quietActed7Pct: number } {
+    try {
+      const n0 = Math.floor(Date.parse(nightKey + "T12:00:00Z") / DAY), ps = (q("SELECT profile FROM battle_mail WHERE night=? AND freq='weekly-quiet'").all(nightKey) as any[]).map(r => r.profile);
+      let k = 0; for (const p of ps) if (q("SELECT 1 FROM battle_shots WHERE a=? AND night>? AND night<=? LIMIT 1").get(p, n0, n0 + 7) || q("SELECT 1 FROM battle_turn WHERE profile=? AND night>? AND night<=? LIMIT 1").get(p, n0, n0 + 7)) k++;
+      return { quietActed7: k, quietActed7Pct: ps.length ? Math.round(1000 * k / ps.length) / 10 : 0 };
+    } catch { return { quietActed7: 0, quietActed7Pct: 0 }; }
   }
   const erase = (profile: string) => q("DELETE FROM battle_mail WHERE profile=?").run(profile);
 
-  return { wrap, record, unsub, route, report, erase };
+  return { wrap, record, unsub, quietRun, route, report, erase };
 }
 export type BattleTrack = ReturnType<typeof battleTrack>;

@@ -67,7 +67,7 @@ test("record, pixel, click, refusal, unsubscribe and the report", () => {
   set(now() - 8 * DAY);
   const rep = BT.report(14), { byFreq, ...tot } = rep[0];
   assert.equal(rep.length, 1, "one row per night");
-  assert.deepEqual(tot, { night: "2026-11-24", sent: 3, opened: 2, openPct: 66.7, clicked: 2, clickPct: 66.7, unsub: 1, unsubPct: 33.3, opens: 2, clicks: 3, weekly: 1, weeklyQuiet: 0 });
+  assert.deepEqual(tot, { night: "2026-11-24", sent: 3, opened: 2, openPct: 66.7, clicked: 2, clickPct: 66.7, unsub: 1, unsubPct: 33.3, opens: 2, clicks: 3, weekly: 1, weeklyQuiet: 0, quietActed7: 0, quietActed7Pct: 0 });
   assert.deepEqual(Object.keys(byFreq).sort(), ["daily", "weekly"]); assert.equal(byFreq.weekly.sent, 1); assert.equal(byFreq.daily.sent, 2);
   assert.equal(byFreq.daily.sent + byFreq.weekly.sent, tot.sent, "the groups add up to the night");
 });
@@ -127,4 +127,17 @@ test("live: a sent battle mail has a row, a pixel and wrapped links; unsubscribe
     const rep = B2.track.report(7); assert.equal(rep.length, 1); assert.equal(rep[0].sent, 1); assert.equal(rep[0].unsubPct, 100); assert.equal(rep[0].openPct, 100);
     assert.ok(!JSON.stringify(rep).includes("ana"), "counts only");
   } finally { delete process.env.CALDERA_BATTLE_EMAIL; h.server?.close?.(); }
+});
+
+test("stop rule (GE 11-25): 4 weekly-quiet mails in a row with no open and no click; an open or a fight (daily mail) ends the run", () => {
+  const { BT, set, now } = rig(); let t = now();
+  const send = (freq, open = false) => { t += 7 * DAY; set(t); const w = BT.wrap(HTML); BT.record({ token: w.token, night: "n" + t, profile: "p1", freq, links: w.links }); if (open) get(BT, `/email/bo.gif?t=${w.token}`); };
+  for (let i = 0; i < 3; i++) send("weekly-quiet");
+  assert.equal(BT.quietRun("p1"), 3);
+  send("weekly-quiet", true); assert.equal(BT.quietRun("p1"), 0, "an open ends the run");
+  for (let i = 0; i < 4; i++) send("weekly-quiet");
+  assert.equal(BT.quietRun("p1"), 4, "stop: 4 unopened in a row");
+  send("daily"); assert.equal(BT.quietRun("p1"), 0, "the night the city fights, the weekly-quiet mail comes back");
+  send("weekly"); assert.equal(BT.quietRun("p1"), 0, "a weekly mail the member chose is not counted");
+  assert.equal(BT.quietRun("nobody"), 0);
 });

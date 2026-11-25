@@ -623,6 +623,7 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
    *  week. Off or no confirmed email: nothing. The weekly mail goes only when the week had a battle. Sunday = the battle of the
    *  night ran on a Sunday, Pacific. dry: compose only. force: skip the one-mail-a-night guard, the day test and the quiet test
    *  (operator). The shared mail guard and caps apply (c.send). */
+  const QUIET_STOP = 4;
   async function sendReports(o: { dry?: boolean; only?: string; force?: boolean } = {}) {
     const n = lastNight(now()), x = ctxFor(), day = dayKey(n), sunday = sundayOf(n), out: any[] = [];
     if (!S.hasNight(n)) return { sent: 0, out: [{ skip: "no battle yet tonight" }] };
@@ -638,6 +639,9 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
       if (freq === "weekly" && !why) continue;
       if (freq === "daily" && quietNight && !why && !o.force) { out.push({ h: m.handle, skip: "nothing to report" }); continue; }
       const to = c.emailOf(m.id); if (!to) { out.push({ h: m.handle, skip: "no confirmed email" }); continue; }
+      // stop rule (GE 11-25): 4 weekly-quiet mails in a row with no open and no click stop that mail; the setting stays, and
+      // the first night the city fights (a daily mail) ends the run, so the weekly-quiet mail comes back after it
+      if (why === "quiet" && !o.force && BT.quietRun(m.id) >= QUIET_STOP) { out.push({ h: m.handle, skip: "weekly-quiet paused" }); continue; }
       const k = compose(x, m, n, !!why, { first: !opt.first, why: why || undefined }), mail = k.mail;
       if (why && !k.weekly) { out.push({ h: m.handle, skip: "no battle in the week" }); continue; }
       if (o.dry || !c.emailOn()) { out.push({ h: m.handle, dry: true, weekly: k.weekly, subject: mail.subject, text: mail.text }); continue; }
