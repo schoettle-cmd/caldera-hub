@@ -1672,13 +1672,13 @@ html.b-sum-on{overflow:hidden}
 .b-twr .tn{max-width:100%;padding:0 2px;font:500 12px/1.3 var(--ui);color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .b-twr[aria-checked="true"] .tn{color:var(--ink)}
 .b-twr .sky{position:relative;display:flex;align-items:flex-end;justify-content:center;width:100%;height:60px;border-bottom:1px solid var(--line)}
-.b-twr .bld{position:relative;width:30px;height:var(--h,60%);border-radius:2px 2px 0 0;background-color:#2B3244;
+.b-twr .bld{position:relative;width:30px;height:calc(var(--h,60%)*.8);border-radius:2px 2px 0 0;background-color:#2B3244;
   background-image:repeating-linear-gradient(0deg,#2B3244 0 5px,transparent 5px 9px),repeating-linear-gradient(90deg,#2B3244 0 4px,rgba(244,246,250,.3) 4px 8px);background-position:1px 3px}
 .b-twr .bld::before{content:"";position:absolute;left:50%;top:-7px;width:2px;height:7px;margin-left:-1px;background:#5A6478}
 .b-twr:nth-of-type(3) .bld{width:38px;clip-path:polygon(0 8px,24% 8px,24% 0,76% 0,76% 8px,100% 8px,100% 100%,0 100%)}
 .b-twr:nth-of-type(4) .bld{width:24px}.b-twr:nth-of-type(3) .bld::before{display:none}
 /* the dome over a covered tower (none when the member has no shield: .b-sh.none) */
-.b-twr .sky::after{content:"";position:absolute;left:50%;bottom:0;width:62px;max-width:92%;height:calc(var(--h,60%) + 9px);transform:translateX(-50%);border:1.5px solid rgba(61,242,255,.5);border-bottom:0;border-radius:999px 999px 0 0;background:rgba(61,242,255,.06)}
+.b-twr .sky::after{content:"";position:absolute;left:50%;bottom:0;width:62px;max-width:92%;height:calc(var(--h,60%)*.8 + 9px);transform:translateX(-50%);border:1.5px solid rgba(61,242,255,.5);border-bottom:0;border-radius:999px 999px 0 0;background:rgba(61,242,255,.06)}
 .b-twr.hi .sky::after{border-width:2px;border-color:var(--cy);background:rgba(61,242,255,.16);box-shadow:0 0 14px rgba(61,242,255,.35)}
 .b-twr.lo .sky::after{border-color:rgba(61,242,255,.28);background:none}.b-twr.lo .pc{color:var(--ink2)}
 .b-sh.none .sky::after{display:none}.b-sh.none .pc{color:var(--ink3)}
@@ -1708,7 +1708,7 @@ html.b-sum-on{overflow:hidden}
 .b-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--rule);font-size:12.5px;color:var(--ink2)}
 .b-fb{display:none;justify-content:center;align-items:center;min-height:44px;margin-top:4px;color:var(--ink2);font:500 13px var(--ui);text-decoration:underline;text-underline-offset:3px}
 /* 900 px and up: the targets column is the widest, so the handle stays readable next to its control */
-@media (min-width:900px){.b-steps{grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr) minmax(0,1fr)}.b-rvs .b-rv{grid-template-columns:26px minmax(0,1fr) 88px;gap:0 8px;padding:4px 8px}.b-rvs .b-rv .av,.b-rvs .b-rv .b-av{width:26px;height:26px}.b-stp,.b-aim{width:88px}.b-aim i{font-size:12px}}
+@media (min-width:900px){.b-steps{grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr) minmax(0,1fr)}.b-rvs .b-rv{grid-template-columns:26px minmax(0,1fr) 88px;gap:0 8px;padding:4px 8px}.b-rvs .b-rv .av,.b-rvs .b-rv .b-av{width:26px;height:26px}.b-stp,.b-aim{width:88px}.b-aim i{font-size:12px}.b-twr{padding:8px 2px 7px}.b-twr .pc{font-size:16px}}
 @media (max-width:899px){
 .b-steps{grid-template-columns:1fr}
 .b-step,.b-step:first-child,.b-step:last-child{padding:14px 0}.b-step:last-child{padding-bottom:0}
