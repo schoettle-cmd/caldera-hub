@@ -229,7 +229,7 @@ if(same||(hub&&bt)){iv=setInterval(tick,30000);document.addEventListener('visibi
 /** Feedback button for signed-in members (2026-10-26, Mike: one product-feedback queue across HA, Caldera and Inbox
  *  Hero, reviewed at mjonesone.com/control/feedback). Not on sandboxed pages (origin "null"), where the post would be
  *  refused. Raised to clear the phone bottom nav. Viewers carry no email here, so the form asks for one (optional). */
-const FEEDBACK_JS = `<script>(function(){if(self.origin==='null'||document.querySelector('script[src*="/fb/widget.js"]'))return;var s=document.createElement('script');s.src='https://mjonesone.com/fb/widget.js';s.defer=true;var du=document.documentElement.matches('.ch-duo,.ch-duof');s.setAttribute('data-position',du?'none':'right');s.setAttribute('data-trigger','#chFbk');s.setAttribute('data-offset',innerWidth<760||document.documentElement.matches('.ch-duo-outer')?'84':'20');document.body.appendChild(s)})()</script>`;
+const FEEDBACK_JS = `<script>(function(){if(self.origin==='null'||document.querySelector('script[src*="/fb/widget.js"]'))return;var s=document.createElement('script');s.src='https://mjonesone.com/fb/widget.js';s.defer=true;var du=document.documentElement.matches('.ch-duo,.ch-duof');var wp=location.pathname.indexOf('/world')===0&&innerWidth<700;s.setAttribute('data-position',du||wp?'none':'right');s.setAttribute('data-trigger','#chFbk');s.setAttribute('data-offset',innerWidth<760||document.documentElement.matches('.ch-duo-outer')?'84':'20');document.body.appendChild(s)})()</script>`;
 
 /** The header for one request's viewer. Same markup and CSS everywhere: the regression test compares these. */
 export function appHeader(o: HeaderOpts): string {

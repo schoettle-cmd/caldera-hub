@@ -640,6 +640,7 @@ export function battleClient() {
     if ((b = t.closest('[data-place]'))) { if (!b.disabled && b.getAttribute('aria-checked') !== 'true') tnSave('/v1/world/battle/tonight', { place: +b.getAttribute('data-place') }, '[data-place="' + b.getAttribute('data-place') + '"]'); return; }
     if ((b = t.closest('[data-ord]'))) { if (b.getAttribute('aria-checked') !== 'true') tnSave('/v1/world/battle/tonight', { order: b.getAttribute('data-ord') }, '[data-ord="' + b.getAttribute('data-ord') + '"]'); return; }
     if ((b = t.closest('[data-aim]'))) { var ah = b.getAttribute('data-aim'), ad = b.getAttribute('data-d'); tnSave('/v1/world/battle/aim', ad === '1' ? { target: ah } : { target: ah, off: true }, '[data-aim="' + ah + '"][data-d="' + ad + '"]'); return; }
+    if ((b = t.closest('[data-fbk]'))) { e.preventDefault(); var fk = document.getElementById('chFbk'); if (fk) fk.click(); return; }
     if ((b = t.closest('[data-strike]'))) { tnSave('/v1/world/battle/tonight', { strike: b.getAttribute('aria-pressed') !== 'true' }, '[data-strike]'); return; }
     if ((b = t.closest('[data-armo]'))) { armOpen = !armOpen; render(); var fb = panel.querySelector(armOpen ? '.b-bc:not([disabled])' : '[data-armo]'); if (fb) try { fb.focus({ preventScroll: true }); } catch (e5) {} return; }
     if ((b = t.closest('[data-sum]'))) { summaryOpen(b, false); return; }
@@ -959,24 +960,35 @@ export function battleClient() {
       + '<div class="b-tile"><span>Reach</span><b>' + T.reachTonight + ' rivals</b><i>' + (aimedN + (T.strike ? 1 : 0)) + ' aimed, rest auto</i></div>'
       + '<div class="b-tile"><span>Shield</span><b class="cy">' + shNow + '</b><i>' + (T.dome ? 'beginner dome' : T.shield ? T.streak + '-day streak' : T.order === 'atk' ? 'all-in: hits do 25% more' : T.streak + ' of 7 days') + '</i></div></div>';
     var shWords = pl < 0 ? 'whole city ' + wh + '%' : (TW[pl] ? TW[pl].name : 'tower') + ' ' + T.through[pl] + '%, other towers ' + wh + '%';
-    if (lk) return head + work + tiles + '<div class="b-lock" role="status"><b>' + (X.run ? 'Battle running' : 'Locked') + '</b><p>' + esc('Shield: ' + shWords + '. Targets: ' + (aimedN ? aimedN + ' aimed' : 'auto') + (T.strike && T.rival ? ', strike back at ' + T.rival.h : '') + '. Orders: ' + ORDN[T.order] + '.') + '</p><p>You can set the next night after this battle.</p></div>'
+    if (lk) return head + work + tiles + '<div class="b-lock" role="status"><b>' + (X.run ? 'Battle running' : 'Locked') + '</b><dl class="b-lk"><dt>Shield</dt><dd>' + esc(shWords) + '</dd><dt>Targets</dt><dd>' + esc((aimedN ? aimedN + ' aimed' : 'auto') + (T.strike && T.rival ? ', strike back at ' + T.rival.h : '')) + '</dd><dt>Orders</dt><dd>' + ORDN[T.order] + '</dd></dl><p>You can set the next night after this battle.</p></div>'
       + (armOpen || (me.armory && me.armory.bought.length) ? armoryHtml(true) : '');
     // step 1: the shield
+    // the towers are the choice (Fable 11-25 DESIGN.md F3): Whole city + one button per tower with its name, percent and dome
     var mx = TW.reduce(function (a, t) { return Math.max(a, t.h || 0); }, 1);
-    var hs = TW.map(function (t, i) { return '<div style="height:' + Math.max(24, Math.round(86 * (t.h || 0) / mx)) + '%"' + (canPlace && pl === i ? ' class="hi"' : canPlace && pl >= 0 ? ' class="lo"' : '') + '><em>' + T.through[i] + '%</em><span>' + esc(t.name) + '</span></div>'; }).join('');
-    var pill = function (v, name) { var on = canPlace ? pl === v : v === -1; return '<button type="button" class="b-pill" role="radio" aria-checked="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-place="' + v + '"' + (canPlace ? '' : ' disabled') + '>' + esc(name) + '</button>'; };
+    var rad = function (v) { var on = canPlace ? pl === v : v === -1; return ' role="radio" aria-checked="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-place="' + v + '"' + (canPlace ? '' : ' disabled'); };
+    var hs = '<button type="button" class="b-all"' + rad(-1) + '>Whole city</button>' + TW.map(function (t, i) {
+      return '<button type="button" class="b-twr' + (canPlace && pl === i ? ' hi' : canPlace && pl >= 0 ? ' lo' : '') + '"' + rad(i) + ' aria-label="' + esc(t.name + ', ' + T.through[i] + '%') + '" title="' + esc(t.name) + '"><span class="pc">' + T.through[i] + '%</span><span class="sky" style="--h:' + Math.max(40, Math.round(100 * (t.h || 0) / mx)) + '%"><span class="bld"></span></span><span class="tn">' + esc(t.name) + '</span></button>'; }).join('');
     var s1 = '<div class="b-step"><h3><i>1</i>Shield</h3><p>' + esc(T.dome ? 'Your beginner dome covers every tower. You can place a shield when the dome ends.' : !T.shield ? 'No shield yet. A 7-day streak raises one. You are at ' + T.streak + ' of 7 days.' : 'Missiles aim at your three tallest towers. Cover all of them, or guard one harder.') + '</p>'
-      + '<div class="b-tw" aria-hidden="true">' + hs + '</div><div class="b-twp" role="radiogroup" aria-label="Shield placement">' + pill(-1, 'Whole city') + TW.map(function (t, i) { return pill(i, t.name); }).join('') + '</div>'
+      + '<div class="b-sh' + (T.shield || T.dome ? '' : ' none') + '" role="radiogroup" aria-label="Shield placement">' + hs + '</div>'
       + '<p class="b-fact">' + esc(!canPlace ? 'Every tower ' + wh + '%.' : pl < 0 ? 'Whole city: every tower ' + wh + '%.' : (TW[pl] ? TW[pl].name : 'tower') + ' ' + T.through[pl] + '%, the other towers ' + wh + '%.') + '</p></div>';
     // step 2: targets (the rival first)
     var cap = T.cap || 3, riv = T.rival;
+    // one control for each row (Fable 11-25 DESIGN.md F1): Aim at 0, a stepper above 0; at the rival the first tap is the free strike back
     var rows = (T.rivals || []).map(function (r, i) {
-      var isR = riv && r.h === riv.h, stp = '<span class="b-stp"><button type="button" data-aim="' + esc(r.h) + '" data-d="-1" aria-label="Remove a shot from ' + esc(r.h) + '"' + (r.n ? '' : ' disabled') + '>-</button><output aria-label="Shots at ' + esc(r.h) + '">' + (r.n || 0) + '</output><button type="button" data-aim="' + esc(r.h) + '" data-d="1" aria-label="Aim a shot at ' + esc(r.h) + '"' + (aimedN >= cap ? ' disabled' : '') + '>+</button></span>';
-      return '<div class="b-rv' + (isR ? ' rival' : '') + '">' + avOf(r.h, i) + '<span class="nm">' + who(r.h) + '<small>' + esc(r.dome ? 'Beginner dome ' + r.sh + '%' : r.sh ? 'Shield ' + r.sh + '%' : 'No shield') + '</small></span>' + stp
-        + (isR ? '<span class="rv2">' + (riv.canStrike ? '<span>Your rival. Hit you for ' + esc(usd(riv.usd)) + ' last night.</span><button type="button" class="b-gb" data-strike aria-pressed="' + !!T.strike + '"' + (T.strike ? ' style="border-color:var(--atk);color:var(--atk)"' : '') + '>' + (T.strike ? 'Strike back set. Remove' : 'Strike back') + '</button>'
-          : '<span>' + esc('You hit ' + riv.h + ' last night. No city is hit by the same rival two nights in a row.') + '</span>') + '</span>' : '') + '</div>';
+      var isR = riv && r.h === riv.h, sb = isR && riv.canStrike, set = sb && !!T.strike, n = (r.n || 0), hE = esc(r.h), full = aimedN >= cap;
+      var plus = '<button type="button" data-aim="' + hE + '" data-d="1" aria-label="Aim a shot at ' + hE + '"' + (full ? ' disabled' : '') + '><i>+</i></button>';
+      var minus = n ? '<button type="button" data-aim="' + hE + '" data-d="-1" aria-label="Remove a shot from ' + hE + '"><i>&minus;</i></button>'
+        : '<button type="button" data-strike aria-pressed="true" aria-label="Remove the strike back at ' + hE + '"><i>&minus;</i></button>';
+      var ctl = sb && !set ? '<button type="button" class="b-aim sb" data-strike aria-pressed="false"><i>Strike back</i></button>'
+        : !n && !set ? '<button type="button" class="b-aim" data-aim="' + hE + '" data-d="1" aria-label="Aim a shot at ' + hE + '"' + (full ? ' disabled' : '') + '><i>Aim</i></button>'
+        : '<span class="b-stp">' + minus + '<output aria-label="Shots at ' + hE + '">' + (n + (set ? 1 : 0)) + '</output>' + plus + '</span>';
+      var link = pOf(r.h) != null ? '<a href="/@' + encodeURIComponent(String(r.h).slice(1)) + '/">' + hE + '</a>' : hE;
+      var rv2 = !isR ? '' : '<span class="rv2">' + esc(!riv.canStrike ? 'You hit ' + riv.h + ' last night. No city is hit by the same rival two nights in a row.'
+        : set ? 'Strike back set' + (n ? ' + ' + n + ' aimed' : '') + '. The strike back does not use your ' + cap + ' aimed shots.'
+        : 'Your rival. Hit you for ' + usd(riv.usd) + ' last night.' + (n ? ' ' + n + ' aimed here.' : '')) + '</span>';
+      return '<div class="b-rv' + (isR ? ' rival' : '') + '">' + avOf(r.h, i) + '<span class="nm" title="' + hE + '">' + link + '<small>' + esc(r.dome ? 'Beginner dome ' + r.sh + '%' : r.sh ? 'Shield ' + r.sh + '%' : 'No shield') + '</small></span>' + ctl + rv2 + '</div>';
     }).join('');
-    var s2 = '<div class="b-step"><h3><i>2</i>Targets</h3><p>' + esc(W.missiles ? 'Aim up to ' + cap + ' shots. The rest pick a fair rival by themselves. You reach ' + T.reachTonight + ' rivals tonight.' : 'You have no missiles yet. Your aims stay ready for the work you push.') + '</p>' + rows
+    var s2 = '<div class="b-step"><h3><i>2</i>Targets</h3><p>' + esc(W.missiles ? 'Aim up to ' + cap + ' shots. The rest pick a fair rival by themselves. You reach ' + T.reachTonight + ' rivals tonight.' : 'You have no missiles yet. Your aims stay ready for the work you push.') + '</p><div class="b-rvs">' + rows + '</div>'
       + '<p class="b-fact">' + esc(aimedN + ' of ' + cap + ' aimed' + (T.strike && riv ? ' + 1 strike back at ' + riv.h : '') + '.' + (riv && riv.canStrike && !T.strike ? ' Strike back = 1 extra aimed shot at your rival.' : '')) + '</p></div>';
     // step 3: tonight's orders
     var O = T.opts || {}, n = W.missiles || 0, sh0 = T.shield || T.dome;
@@ -987,7 +999,8 @@ export function battleClient() {
       + opt('tur', '<span class="plus">20 points less of every hit gets through</span><span class="minus">1 missile in 3 stays home and is not kept</span>') + '</div></div>';
     return head + (T.dome ? '<p class="b-sub" style="margin-top:10px">First battles: your beginner dome holds 99% of every hit for your first 30 days.</p>' : '') + work + tiles + '<div class="b-steps">' + s1 + s2 + s3 + '</div>'
       + '<div class="b-foot"><span role="status">' + (T.savedAt && !tnErr ? '<span class="ok">Saved ' + hhmm(T.savedAt) + '.</span> ' : '') + 'You can change all of this until ' + lkPT + ' PT.</span><button type="button" class="b-gb" data-armo aria-expanded="' + armOpen + '">Armory: add a bomb</button></div>'
-      + (tnErr ? '<p class="b-arm-err" role="alert">' + esc(tnErr) + '</p>' : '') + (armOpen ? armoryHtml(false) : '');
+      + (tnErr ? '<p class="b-arm-err" role="alert">' + esc(tnErr) + '</p>' : '') + (armOpen ? armoryHtml(false) : '')
+      + (document.getElementById('chFbk') ? '<a class="b-fb" href="#feedback" data-fbk>Feedback</a>' : '');   // phones: the floating tab is off on /world (DESIGN.md F8)
   }
   /** each change saves at once (LOOP.md c.10); the card re-renders from the answer and the focus goes back to the same control */
   function tnSave(path, body, focus) {
@@ -1298,6 +1311,18 @@ html.w-replay .b-rp-map,html.w-board .b-rp-map,html:not(.w-battle) .b-rp-map{dis
 .b-how section{padding:12px 0 2px;border-top:1px solid rgba(255,255,255,.09);margin-top:10px}.b-how p{margin:0 0 8px}.b-how ul{margin:0 0 8px;padding-left:18px}.b-how li{margin:0 0 4px}.b-how b{color:#fff;font-weight:600}.b-lede{color:#9A9AA5}
 #b-how-shot{border:1px solid rgba(255,179,71,.35);border-radius:10px;padding:10px 12px 4px;background:rgba(255,179,71,.06)}
 .b-tw{overflow-x:auto;margin:0 0 8px}.b-how table{border-collapse:collapse;width:100%;font:12px/1.35 var(--font-mono,'IBM Plex Mono',monospace);font-variant-numeric:tabular-nums}
+@media (max-width:699px){
+.b-fb{display:flex}
+/* F4 room for the tab bar and the home indicator */
+.b-deck{padding-bottom:calc(var(--gap) + var(--tabbar-h,0px))}
+.b-tn .b-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.b-tile b{font-size:22px}
+.b-work{grid-template-columns:1fr}.b-work .w2{text-align:left}
+.b-all{min-height:44px}
+.b-rvs .b-rv{grid-template-columns:28px minmax(0,1fr) 112px;min-height:56px}
+.b-stp,.b-aim{width:112px}.b-stp{grid-template-columns:44px minmax(0,1fr) 44px}
+.b-stp button,.b-aim{height:44px}.b-stp button i{width:32px;height:32px}.b-aim i{height:34px}
+.b-foot{flex-direction:column;align-items:stretch}.b-foot .b-gb{width:100%;justify-content:center;height:44px;font-size:14px}
+}
 .b-how th,.b-how td{text-align:left;padding:5px 8px 5px 0;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top;white-space:nowrap}.b-how th{color:#9A9AA5;font-weight:500}.b-how tr>th[scope=row]{color:#E8EEF8;white-space:normal}.b-how td{color:#E8EEF8}.b-how small{color:#9A9AA5;font-size:11px}
 .b-szl{display:inline-block;min-width:24px;text-align:center;padding:2px 4px;border-radius:4px;background:#FFB347;color:#1A1206!important;font-size:11px}
 .b-math{display:grid;grid-template-columns:minmax(92px,auto) 1fr;gap:3px 12px;margin:0 0 8px;font-size:12.5px}.b-math dt{color:#9A9AA5}.b-math dd{margin:0;color:#E8EEF8;overflow-wrap:anywhere}.b-math dt:last-of-type,.b-math dd:last-of-type{color:#FFB347;font-weight:600;padding-top:3px;border-top:1px solid rgba(255,255,255,.12)}
@@ -1563,10 +1588,7 @@ html.w-battle:not(.w-replay) .c-stage:has(.b-chip) .g-today{top:80px;max-height:
 .b-work p{margin:0}.b-work .w1{font:600 15px var(--ui)}.b-work .w1 b{font:700 20px var(--disp);letter-spacing:.02em;color:var(--gd)}
 .b-work .w0{font:700 11.5px var(--disp);letter-spacing:.16em;text-transform:uppercase;color:#B9A6FF;grid-column:1/-1}
 .b-work .w2{font-size:12.5px;color:var(--ink2);text-align:right}
-.b-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin-top:12px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
-.b-step{background:#14171E;padding:12px;min-width:0}
 .b-step h3{display:flex;align-items:center;gap:8px;margin:0 0 4px;font:700 15px var(--disp);letter-spacing:.1em;text-transform:uppercase}
-.b-step h3 i{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--you);color:#fff;font:600 11px var(--mono);font-style:normal}
 .b-step>p{margin:0 0 8px;font-size:12.5px;color:var(--ink2)}
 .b-opt{display:grid;grid-template-columns:18px minmax(0,1fr);gap:1px 8px;width:100%;min-height:44px;margin-top:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .b-opt::before{content:"";grid-row:1/4;width:14px;height:14px;margin-top:3px;border-radius:50%;border:2px solid var(--ink3)}
@@ -1574,29 +1596,7 @@ html.w-battle:not(.w-replay) .c-stage:has(.b-chip) .g-today{top:80px;max-height:
 .b-opt[aria-checked="true"]::before{border-color:var(--you);background:radial-gradient(circle,#fff 0 3px,var(--you) 4px)}
 .b-opt b{font:600 13.5px var(--ui)}.b-opt span{grid-column:2;font-size:12px;color:var(--ink2)}
 .b-opt span.plus::before{content:"+ ";color:var(--up);font-weight:600}.b-opt span.minus::before{content:"- ";color:var(--atk);font-weight:600}
-.b-opt em{grid-column:2;font:500 11.5px var(--mono);font-style:normal;color:var(--cy)}
 .b-opt:disabled{opacity:.5;cursor:default}
-.b-tw{display:flex;align-items:flex-end;gap:10px;height:96px;margin:4px 0 2px;padding:0 6px;position:relative}
-.b-tw div{flex:1;min-width:0;border-radius:4px 4px 0 0;background:#3A4257;position:relative}
-.b-tw div span{position:absolute;left:0;right:0;bottom:-18px;font:500 10.5px var(--mono);color:var(--ink2);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.b-tw div em{position:absolute;left:0;right:0;top:-18px;font:600 11px var(--mono);font-style:normal;color:var(--cy);text-align:center}
-.b-tw div.hi{box-shadow:0 0 0 2px var(--cy),0 0 18px rgba(61,242,255,.35)}.b-tw div.lo em{color:var(--ink2)}
-.b-twp{display:flex;flex-wrap:wrap;gap:6px;margin-top:26px}
-.b-pill{min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:none;color:var(--ink);font:500 12px var(--ui);cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.b-pill[aria-checked="true"]{border-color:var(--cy);background:rgba(61,242,255,.12);color:var(--cy)}
-.b-pill:disabled{opacity:.5;cursor:default}
-.b-fact{margin:8px 0 0!important;font:500 12px var(--mono)!important;color:var(--cy)!important}
-.b-rv{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:8px;align-items:center;min-height:44px;border-top:1px solid var(--rule)}
-.b-rv:first-of-type{border-top:0}
-.b-rv .av,.b-rv .b-av{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:600 12px var(--ui);color:#fff}
-.b-rv .nm{min-width:0;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.b-rv .nm small{display:block;font:400 11.5px var(--ui);color:var(--ink2);overflow:hidden;text-overflow:ellipsis}
-.b-rv.rival{margin:0 -6px 4px;padding:2px 6px 8px;border:1px solid rgba(255,106,61,.5);border-radius:10px;background:rgba(255,106,61,.08)}
-.b-rv .rv2{grid-column:2/-1;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;font-size:12px;color:var(--atk);white-space:normal}
-.b-stp{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.b-stp button{width:32px;height:32px;border:0;background:none;color:var(--ink);font:600 15px var(--mono);cursor:pointer}.b-stp button:disabled{opacity:.35;cursor:default}
-.b-stp output{min-width:22px;text-align:center;font:600 13px var(--mono)}
-.b-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px;margin-top:12px;font-size:12.5px;color:var(--ink2)}
 .b-foot .ok{color:var(--up)}
 .b-tn .b-arm{margin-top:12px;padding-top:12px;border-top:1px solid var(--rule)}
 .b-lock{margin-top:12px;padding:12px;border-radius:10px;border:1px solid rgba(255,200,61,.45);background:rgba(255,200,61,.08)}
@@ -1644,10 +1644,79 @@ html.b-sum-on{overflow:hidden}
 .b-shimg{display:block;width:100%;height:auto;aspect-ratio:1200/630;border-radius:12px;border:1px solid var(--line);background:#0B0D13}
 .b-story{position:relative;width:216px;aspect-ratio:9/16;border-radius:12px;overflow:hidden;background:#0B0D13;border:1px solid var(--line);flex:none}
 @media (prefers-reduced-motion:reduce){.b-up svg{animation:none}}
-@media (max-width:899px){.b-steps{grid-template-columns:1fr}}
-@media (min-width:700px) and (max-width:899px){.b-work .w1{font-size:13px}.b-step{padding:10px}.b-step>p{font-size:11.5px}.b-rank{height:28px;font-size:11.5px}}
+/* the Last night card's rival row (not in .b-rvs) */
+.b-rv{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:8px;align-items:center;min-height:44px}
+.b-rv .av,.b-rv .b-av{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:600 12px var(--ui);color:#fff}
+.b-rv .nm{min-width:0;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-rv .nm small{display:block;font:400 11.5px var(--ui);color:var(--ink2);overflow:hidden;text-overflow:ellipsis}
+/* Tonight card fix (Fable 11-25, reports/2026-11-25-world-ui/DESIGN.md) */
+/* F8 one frame: the steps lose their own box; hairlines only */
+.b-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:14px;border-top:1px solid var(--rule)}
+.b-step{min-width:0;padding:14px 16px 0}
+.b-step:first-child{padding-left:0}.b-step:last-child{padding-right:0}
+.b-step+.b-step{border-left:1px solid var(--rule)}
+/* F3 one type voice: no mono, no cyan sentences */
+.b-step h3 i{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--you);color:#fff;font:700 12px/1 var(--ui);font-style:normal}
+.b-step>p.b-fact{margin:10px 0 0;font:400 12.5px/1.4 var(--ui);color:var(--ink2)}
+.b-opt em{grid-column:2;margin-top:2px;font:500 12px var(--ui);font-style:normal;color:var(--ink)}
+/* F2 shield: the towers are the choice */
+.b-sh{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.b-all,.b-twr{border:1px solid var(--line);border-radius:10px;background:none;color:var(--ink);font:inherit;cursor:pointer;min-width:0}
+.b-all{grid-column:1/-1;display:flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;font:600 13px var(--ui);text-align:left}
+.b-all::before{content:"";flex:none;width:14px;height:14px;border-radius:50%;border:2px solid var(--ink3)}
+.b-all[aria-checked="true"]::before{border-color:var(--cy);background:radial-gradient(circle,#0C0E13 0 2.5px,var(--cy) 3.5px)}
+.b-twr{display:grid;grid-template-rows:auto 60px auto;justify-items:center;gap:4px;padding:8px 4px 7px}
+.b-all[aria-checked="true"],.b-twr[aria-checked="true"]{border-color:var(--cy);background:rgba(61,242,255,.1)}
+.b-all:disabled,.b-twr:disabled{opacity:.55;cursor:default}
+.b-twr .pc{font:700 20px/1 var(--disp);color:var(--cy)}
+.b-twr .tn{max-width:100%;padding:0 2px;font:500 12px/1.3 var(--ui);color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-twr[aria-checked="true"] .tn{color:var(--ink)}
+.b-twr .sky{position:relative;display:flex;align-items:flex-end;justify-content:center;width:100%;height:60px;border-bottom:1px solid var(--line)}
+.b-twr .bld{position:relative;width:30px;height:var(--h,60%);border-radius:2px 2px 0 0;background-color:#2B3244;
+  background-image:repeating-linear-gradient(0deg,#2B3244 0 5px,transparent 5px 9px),repeating-linear-gradient(90deg,#2B3244 0 4px,rgba(244,246,250,.3) 4px 8px);background-position:1px 3px}
+.b-twr .bld::before{content:"";position:absolute;left:50%;top:-7px;width:2px;height:7px;margin-left:-1px;background:#5A6478}
+.b-twr:nth-of-type(3) .bld{width:38px;clip-path:polygon(0 8px,24% 8px,24% 0,76% 0,76% 8px,100% 8px,100% 100%,0 100%)}
+.b-twr:nth-of-type(4) .bld{width:24px}.b-twr:nth-of-type(3) .bld::before{display:none}
+/* the dome over a covered tower (none when the member has no shield: .b-sh.none) */
+.b-twr .sky::after{content:"";position:absolute;left:50%;bottom:0;width:62px;max-width:92%;height:calc(var(--h,60%) + 9px);transform:translateX(-50%);border:1.5px solid rgba(61,242,255,.5);border-bottom:0;border-radius:999px 999px 0 0;background:rgba(61,242,255,.06)}
+.b-twr.hi .sky::after{border-width:2px;border-color:var(--cy);background:rgba(61,242,255,.16);box-shadow:0 0 14px rgba(61,242,255,.35)}
+.b-twr.lo .sky::after{border-color:rgba(61,242,255,.28);background:none}.b-twr.lo .pc{color:var(--ink2)}
+.b-sh.none .sky::after{display:none}.b-sh.none .pc{color:var(--ink3)}
+/* F1 F5 F6 F7 targets: one list, one grid, one control for each row */
+.b-rvs{border-radius:10px;background:rgba(255,255,255,.04);overflow:hidden}
+.b-rvs .b-rv{display:grid;grid-template-columns:28px minmax(0,1fr) 96px;gap:0 10px;align-items:center;min-height:52px;padding:4px 10px}
+.b-rvs .b-rv+.b-rv{border-top:1px solid var(--rule)}
+.b-rvs .b-rv.rival{background:rgba(255,106,61,.09);box-shadow:inset 3px 0 0 var(--atk);padding-bottom:8px}
+.b-rvs .b-rv .av,.b-rvs .b-rv .b-av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;object-fit:cover;font:600 12px var(--ui);font-style:normal;color:#fff}
+.b-rvs .b-rv .nm{min-width:0;font:600 14px/1.25 var(--ui);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b-rvs .b-rv .nm a{color:inherit;text-decoration:none}
+.b-rvs .b-rv .nm small{display:block;font:400 12px/1.3 var(--ui);color:var(--ink2);overflow:hidden;text-overflow:ellipsis}
+.b-rvs .b-rv .rv2{grid-column:2/-1;font-size:12px;line-height:1.35;color:var(--atk)}
+.b-stp,.b-aim{justify-self:end;width:96px}
+.b-stp{display:grid;grid-template-columns:32px minmax(0,1fr) 32px;align-items:center}
+.b-stp button,.b-aim{display:grid;place-items:center;height:32px;padding:0;border:0;background:none;color:var(--ink);cursor:pointer}
+.b-stp button{width:100%}
+.b-stp button i{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);font:500 18px/1 var(--ui);font-style:normal}
+.b-stp button[data-d="1"] i{background:rgba(255,255,255,.1)}
+.b-stp output{text-align:center;font:700 20px/1 var(--disp)}
+.b-aim i{display:grid;place-items:center;width:100%;height:30px;border-radius:999px;border:1px solid var(--line);font:600 13px/1 var(--ui);font-style:normal}
+.b-aim.sb i{border-color:var(--atk);background:var(--atk);color:#0C0E13}
+.b-stp button:disabled,.b-aim:disabled{opacity:.35;cursor:default}
+/* the locked box: three short lines in place of one long sentence */
+.b-lk{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 12px;margin:6px 0 0;font-size:13px}
+.b-lk dt{color:var(--ink2)}.b-lk dd{margin:0;font-weight:500}
+.b-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--rule);font-size:12.5px;color:var(--ink2)}
+.b-fb{display:none;justify-content:center;align-items:center;min-height:44px;margin-top:4px;color:var(--ink2);font:500 13px var(--ui);text-decoration:underline;text-underline-offset:3px}
+/* 900 px and up: the targets column is the widest, so the handle stays readable next to its control */
+@media (min-width:900px){.b-steps{grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr) minmax(0,1fr)}.b-rvs .b-rv{grid-template-columns:26px minmax(0,1fr) 88px;gap:0 8px;padding:4px 8px}.b-rvs .b-rv .av,.b-rvs .b-rv .b-av{width:26px;height:26px}.b-stp,.b-aim{width:88px}.b-aim i{font-size:12px}}
+@media (max-width:899px){
+.b-steps{grid-template-columns:1fr}
+.b-step,.b-step:first-child,.b-step:last-child{padding:14px 0}.b-step:last-child{padding-bottom:0}
+.b-step+.b-step{border-left:0;border-top:1px solid var(--rule)}
+}
+@media (min-width:700px) and (max-width:899px){.b-work .w1{font-size:13px}.b-step>p{font-size:11.5px}.b-rank{height:28px;font-size:11.5px}}
 @media (max-width:699px){
-.b-rp,.b-orow .b-rp{height:44px}.b-stp button{width:40px;height:40px}.b-pill{min-height:44px}
+.b-rp,.b-orow .b-rp{height:44px}
 .b-tn .b-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.b-tile b{font-size:22px}
 .b-work{grid-template-columns:1fr}.b-work .w2{text-align:left}
 }
