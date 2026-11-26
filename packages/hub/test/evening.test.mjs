@@ -191,7 +191,7 @@ test("Tonight routes: orders, placement and strike back save until 19:45 PT, the
     const me0 = hub.me("a"); assert.ok(me0.tonight && !me0.tonight.locked && me0.tonight.order === "bal", JSON.stringify(me0.tonight));
     assert.equal(me0.tonight.towers.length, 3); assert.equal(me0.tonight.towers[0].name, "app");
     assert.equal(me0.tonight.lockAt, B.lockAt(SW + 2)); assert.equal(iso(me0.tonight.lockAt), "2026-11-27T03:45:00.000Z");
-    assert.equal(me0.orders.length, 3); assert.equal(me0.rank.name, me0.rank.name && B.rankOf(me0.rank.score).name);
+    assert.equal(me0.orders.length, 3); assert.deepEqual(me0.orders.map((o) => o.key.split(":")[0]), ["build", "fight", "scout"], "each order carries its key: the row knows where it goes (11-26)"); assert.equal(me0.rank.name, me0.rank.name && B.rankOf(me0.rank.score).name);
     let r = await call("a", "/v1/world/battle/tonight", { order: "tur" }); assert.equal(r.status, 200); assert.equal(r.body.tonight.order, "tur");
     assert.equal(r.body.tonight.work.fired, Math.ceil(2 * r.body.tonight.work.missiles / 3));
     r = await call("a", "/v1/world/battle/tonight", { order: "nope" }); assert.equal(r.status, 400);
@@ -289,4 +289,17 @@ test("orderCheck (c.2 release check): runs the resolved nights again per order, 
   assert.deepEqual(r.nights.map(n => n - SW), [-1, 0, 1, 2]); assert.equal(r.members, 3);
   assert.equal(r.best.atk + r.best.bal + r.best.tur + r.best.same, 3); assert.equal(r.ok, r.share.atk <= .5 && r.share.bal <= .5 && r.share.tur <= .5);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM battle_shots").get().n, before, "writes nothing");
+});
+
+test("Today's orders act (Mike 11-26: 'I click these objects, but nothing happens'): each open row is one control with a Go pill; a blocked row says why; done comes from the server", async () => {
+  const src = BC.battleClient.toString();
+  for (const k of ["build:commit", "build:pr", "fight:place", "fight:aim", "fight:orders", "scout:replay", "scout:season"]) assert.ok(src.includes("'" + k + "'") || src.includes('"' + k + '"'), k);
+  assert.ok(/<button type=\\?"button\\?" class=\\?"b-orow go\\?" data-go=/.test(src) && /<a class=\\?"b-orow go\\?" href=\\?"\/guide#f-counted\\?" data-go=/.test(src), "the whole row is the control (button, or a link for Build)");
+  assert.ok(!/b-orow[^\n]*data-bl="replay"/.test(src), "no Replay pill nested in a row");
+  for (const w of ["Battle running. Opens when it ends.", "battle. Opens when it ends.", "Your beginner dome covers you. Shields open when it ends.", "No shield yet. A 7-day streak raises one.",
+    "No rivals in reach tonight.", "No replay yet. It comes after tonight", "Tap Whole city or one tower to place your shield.", "Tap Aim next to one rival.", "Pick one of the three orders.", "Order done. +", "All 3 orders done. New orders at 20:00 PT.", "Back to orders"])
+    assert.ok(src.includes(w), w);
+  assert.ok(/if \(k === ["']scout:replay["']\) \{\s*setLayer\(["']replay["'], true\);/.test(src), "the replay row starts the replay, the same as the Replay button");
+  assert.ok(/ordPrev\[k\] === false && o\.done/.test(src), "done only after a server answer flips it");
+  for (const c of [".b-orow.go{", ".b-orow .gp{", ".b-orow.off .t i{", ".b-step.b-arrive{", ".b-ohint{", "@media (prefers-reduced-motion:reduce){.b-orow.go"]) assert.ok(BC.BATTLE_CSS.includes(c), c);
 });

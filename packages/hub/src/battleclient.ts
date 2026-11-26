@@ -637,6 +637,7 @@ export function battleClient() {
   if (bar) bar.addEventListener('click', function (e) {
     var t = e.target && e.target.closest ? e.target : null, b; if (!t) return;
     // the evening turn: every change saves at once
+    if ((b = t.closest('.b-orow.go[data-go],[data-go="back"]'))) { if (b.tagName === 'A') return; ordGo(b.getAttribute('data-go')); return; }
     if ((b = t.closest('[data-place]'))) { if (!b.disabled && b.getAttribute('aria-checked') !== 'true') tnSave('/v1/world/battle/tonight', { place: +b.getAttribute('data-place') }, '[data-place="' + b.getAttribute('data-place') + '"]'); return; }
     if ((b = t.closest('[data-ord]'))) { if (b.getAttribute('aria-checked') !== 'true') tnSave('/v1/world/battle/tonight', { order: b.getAttribute('data-ord') }, '[data-ord="' + b.getAttribute('data-ord') + '"]'); return; }
     if ((b = t.closest('[data-aim]'))) { var ah = b.getAttribute('data-aim'), ad = b.getAttribute('data-d'); tnSave('/v1/world/battle/aim', ad === '1' ? { target: ah } : { target: ah, off: true }, '[data-aim="' + ah + '"][data-d="' + ad + '"]'); return; }
@@ -1017,18 +1018,81 @@ export function battleClient() {
     e.preventDefault(); L[(i + d + L.length) % L.length].click();
   }
   // ---------------------------------------------------------------- Today's orders (LOOP.md c.3)
-  var scoutSent = false;
+  // Mike 11-26 ("I click these objects, but nothing happens"): each open row is ONE control that takes the member to where the
+  // order is done (design: reports/2026-11-26-orders-taps/DESIGN.md, Opus stand-in for Fable). The tick shows state only; done is
+  // what the server says. A row that cannot act now says why (no dead tap).
+  var scoutSent = false, ordPrev = null, ordHint = null, ordLine = null, ordLineT = 0, ordJust = {};
+  var GO = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var CLOCK = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.8V8l2.2 1.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  var OKI = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var ORD = {   // pill, what the row does (aria), the step it goes to, the focus target, the hint line
+    'build:commit': { pill: 'How', does: 'Opens what counts.' }, 'build:pr': { pill: 'How', does: 'Opens what counts.' },
+    'fight:place': { pill: 'Shield', does: 'Goes to step 1.', step: '.b-sh', focus: '.b-sh [aria-checked="true"]', hint: 'Tap Whole city or one tower to place your shield.' },
+    'fight:aim': { pill: 'Aim', does: 'Goes to step 2.', step: '.b-rvs', focus: '.b-rv.rival .b-aim:not([disabled]),.b-rvs .b-aim:not([disabled]),.b-rvs [data-aim]:not([disabled])', hint: 'Tap Aim next to one rival.' },
+    'fight:orders': { pill: 'Orders', does: 'Goes to step 3.', step: '.b-opt', focus: '.b-opt[aria-checked="true"],.b-opt', hint: 'Pick one of the three orders.' },
+    'scout:replay': { pill: 'Replay', does: 'Starts the replay.' }, 'scout:season': { pill: 'Ranking', does: 'Opens the Season ranking tab.' } };
+  function ordKey(o) { return o.key || (o.kind === 'scout' ? (o.text === 'Watch last night\'s replay' ? 'scout:replay' : 'scout:season') : o.kind === 'build' ? (/pull/.test(o.text) ? 'build:pr' : 'build:commit') : /shield/i.test(o.text) ? 'fight:place' : /Aim/.test(o.text) ? 'fight:aim' : 'fight:orders'); }
+  /** why a row cannot act now (null: it can) */
+  function ordWhy(k) {
+    if (k.indexOf('fight:') === 0) {
+      var T = me && me.tonight; if (!T || !panel) return 'Open the Tonight card to do this.';
+      var st = tnState(); if (st.run) return 'Battle running. Opens when it ends.'; if (st.lk) return 'Locked for tonight\'s battle. Opens when it ends.';
+      if (k === 'fight:place' && !T.canPlace) return T.dome ? 'Your beginner dome covers you. Shields open when it ends.' : 'No shield yet. A 7-day streak raises one.';
+      if (k === 'fight:aim' && !(T.rivals || []).length) return 'No rivals in reach tonight.';
+      if (!q(ORD[k].step)) return 'Open the Tonight card to do this.';
+    }
+    if (k === 'scout:replay' && !((data && data.shots) || []).length) return 'No replay yet. It comes after tonight\'s battle.';
+    return null;
+  }
   function ordersRender() {
     var el = q('[data-b="orders"]'); if (!el) return; var O = me && me.war && me.orders ? me.orders : [];
     if (!O.length) { el.hidden = true; el.innerHTML = ''; return; }
-    var n = O.filter(function (o) { return o.done; }).length, KN = { build: 'Build', fight: 'Fight', scout: 'Scout' };
-    el.hidden = false;
+    var n = O.filter(function (o) { return o.done; }).length, KN = { build: 'Build', fight: 'Fight', scout: 'Scout' }, now = {};
+    O.forEach(function (o) { var k = ordKey(o); now[k] = !!o.done; if (ordPrev && ordPrev[k] === false && o.done) { ordJust[k] = 1; ordDone(k, o.points, n); } });
+    ordPrev = now; el.hidden = false;
     el.innerHTML = '<div class="b-top"><p class="b-eb" id="b-or-h">Today\'s orders</p><span class="b-cred">' + n + ' of 3 done</span></div>'
-      + O.map(function (o) { var pill = !o.done && o.kind === 'scout' && o.text === 'Watch last night\'s replay';
-        return '<div class="b-orow' + (o.done ? ' done' : '') + '"><span class="ck" aria-hidden="true">' + (o.done ? TICK : '') + '</span><span class="t"><small>' + KN[o.kind] + '</small><b>' + esc(o.text) + '</b></span>'
-          + (pill ? '<button type="button" class="b-rp" data-bl="replay" aria-pressed="false">' + PLAY + 'Replay</button>' : '<span></span>') + '<span class="p">' + (o.done ? o.points + ' earned' : '+' + o.points) + '</span></div>'; }).join('')
+      + O.map(function (o) { var k = ordKey(o), m = ORD[k] || { pill: 'Go', does: '' }, t = '<small>' + KN[o.kind] + '</small><b>' + (o.done ? '<span class="sr">Done: </span>' : '') + esc(o.text);
+        if (o.done) return '<div class="b-orow done' + (ordJust[k] ? ' just' : '') + '"><span class="ck" aria-hidden="true">' + TICK + '</span><span class="t">' + t + '</b></span><span></span><span class="p">' + o.points + ' earned</span></div>';
+        var why = ordWhy(k);
+        if (why) return '<div class="b-orow off" data-go="' + k + '"><span class="ck" aria-hidden="true"></span><span class="t">' + t + '</b><i>' + CLOCK + esc(why) + '</i></span><span></span><span class="p">+' + o.points + '</span></div>';
+        var aria = esc(o.text + ', +' + o.points + ' points. ' + m.does), pill = '<span class="gp" aria-hidden="true">' + (k === 'scout:replay' ? PLAY + 'Replay' : m.pill + GO) + '</span>';
+        var inner = '<span class="ck" aria-hidden="true"></span><span class="t">' + t + '</b></span>' + pill + '<span class="p">+' + o.points + '</span>';
+        return k.indexOf('build:') === 0 ? '<a class="b-orow go" href="/guide#f-counted" data-go="' + k + '" aria-label="' + aria + '">' + inner + '</a>'
+          : '<button type="button" class="b-orow go" data-go="' + k + '" aria-label="' + aria + '">' + inner + '</button>'; }).join('')
       + '<p class="b-fine">New orders at 20:00 PT. Orders pay Caldera Points. Points buy promotion for your project and have no cash value.</p>';
+    if (!ordLine) { ordLine = document.createElement('p'); ordLine.className = 'b-odone'; ordLine.setAttribute('role', 'status'); }
+    var top = el.querySelector('.b-top'); if (top) top.insertAdjacentElement('afterend', ordLine);
+    if (Object.keys(ordJust).length) setTimeout(function () { ordJust = {}; }, 1200);
+    hintPut();
   }
+  /** the hint at the target step (kept in state, so a re-render of the Tonight card keeps it) */
+  function hintPut() {
+    if (!panel) return; var old = panel.querySelector('.b-ohint'); if (old) old.remove(); if (!ordHint) return;
+    var m = ORD[ordHint.k], tg = m && m.step ? q(m.step) : null, st = tg && tg.closest('.b-step'), h3 = st && st.querySelector('h3'); if (!h3) return;
+    var p = document.createElement('p'); p.className = 'b-ohint' + (ordHint.ok ? ' ok' : ''); p.setAttribute('role', 'status');
+    p.innerHTML = ordHint.ok ? OKI + esc(ordHint.ok) + ' <button type="button" data-go="back">Back to orders</button>' : esc(m.hint); h3.insertAdjacentElement('afterend', p);
+  }
+  /** server-confirmed done: one line, 4 s (at the step when the member came from a row, else under the orders header) */
+  function ordDone(k, pts, n) {
+    var w = n >= 3 ? 'All 3 orders done. New orders at 20:00 PT.' : 'Order done. +' + pts + ' points.';
+    if (ordHint && ordHint.k === k) { ordHint.ok = w; var hk = ordHint; setTimeout(function () { if (ordHint === hk) { ordHint = null; hintPut(); } }, 4000); return; }
+    if (!ordLine) return; clearTimeout(ordLineT); ordLine.className = 'b-odone on'; ordLine.innerHTML = OKI + esc(w);
+    ordLineT = setTimeout(function () { ordLine.className = 'b-odone on out'; ordLineT = setTimeout(function () { ordLine.className = 'b-odone'; ordLine.innerHTML = ''; }, 300); }, 4000);
+  }
+  /** a tap on an open row */
+  function ordGo(k) {
+    if (k === 'back') { ordHint = null; hintPut(); var oe = q('[data-b="orders"]'); if (oe) { try { oe.scrollIntoView({ block: 'center', behavior: rmo() ? 'auto' : 'smooth' }); } catch (e) {} var f0 = oe.querySelector('.b-orow.go'); if (f0) try { f0.focus({ preventScroll: true }); } catch (e) {} } return; }
+    if (ordWhy(k)) { ordersRender(); return; }
+    if (k === 'scout:replay') { setLayer('replay', true); return; }
+    if (k === 'scout:season') { setTab('season', true, true); var tb = q('[data-tab="season"]'); if (tb) try { tb.scrollIntoView({ block: 'start', behavior: rmo() ? 'auto' : 'smooth' }); } catch (e) {} return; }
+    var m = ORD[k]; if (!m || !m.step) return; ordHint = { k: k }; hintPut();
+    var tg = q(m.step), st = tg && tg.closest('.b-step'); if (!st) return;
+    try { st.scrollIntoView({ block: 'center', behavior: rmo() ? 'auto' : 'smooth' }); } catch (e) {}
+    var f = q(m.focus) || st.querySelector('h3'); if (f) { if (f.tagName === 'H3') f.tabIndex = -1; try { f.focus({ preventScroll: true }); } catch (e) {} }
+    st.classList.remove('b-arrive'); void st.offsetWidth; st.classList.add('b-arrive'); setTimeout(function () { st.classList.remove('b-arrive'); }, 1600);
+  }
+  var render0 = render; render = function () { render0(); hintPut(); };   // the hint survives a re-render of the Tonight card
+  function rmo() { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
   /** Scout is done when the replay reaches the results board, or the ranking tab opens */
   function scoutDone(what) {
     if (scoutSent || !me || !me.orders) return; var o = me.orders.filter(function (x) { return x.kind === 'scout'; })[0]; if (!o || o.done) return;
@@ -1602,12 +1666,46 @@ html.w-battle:not(.w-replay) .c-stage:has(.b-chip) .g-today{top:80px;max-height:
 .b-lock{margin-top:12px;padding:12px;border-radius:10px;border:1px solid rgba(255,200,61,.45);background:rgba(255,200,61,.08)}
 .b-lock b{display:block;font:700 15px var(--disp);letter-spacing:.1em;text-transform:uppercase;color:var(--gd)}
 .b-lock p{margin:4px 0 0;font-size:13px;color:var(--ink2)}
-.b-orow{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:10px;align-items:center;min-height:48px;border-top:1px solid var(--rule)}
-.b-orow .ck{width:20px;height:20px;border-radius:6px;border:2px solid var(--ink3);display:grid;place-items:center}
-.b-orow.done .ck{border-color:var(--up);background:var(--up)}.b-orow.done .t b{color:var(--ink2);text-decoration:line-through}
-.b-orow .t b{display:block;font-weight:600;font-size:13.5px}.b-orow .t small{font:700 11px var(--disp);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+.b-orow{box-sizing:border-box;display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:10px;align-items:center;min-height:48px;width:calc(100% + 16px);margin:0 -8px;padding:6px 8px;border:0;border-top:1px solid var(--rule);border-radius:0;background:none;color:var(--ink);font:inherit;text-align:left;text-decoration:none}
+.b-orow .ck{width:20px;height:20px;box-sizing:border-box;border-radius:6px;border:2px solid var(--ink3);display:grid;place-items:center}
+.b-orow .t{min-width:0}.b-orow .t b{display:block;font-weight:600;font-size:13.5px;line-height:1.3}
+.b-orow .t small{font:700 11px var(--disp);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
 .b-orow .p{font:600 12.5px var(--mono);color:var(--pt);white-space:nowrap}
-.b-orow .b-rp{height:32px}
+.b-orow .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* open row */
+.b-orow.go{-webkit-appearance:none;appearance:none;cursor:pointer;border-radius:10px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background-color .18s ease-out}
+.b-orow .gp{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px 0 13px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font:600 13px/1 var(--ui);white-space:nowrap;transition:background-color .18s ease-out,color .18s ease-out,border-color .18s ease-out}
+.b-orow .gp svg{width:14px;height:14px;flex:none}
+.b-orow .gp svg path[d^="M7 4.5"]{fill:currentColor}
+.b-orow.go:hover{background:rgba(255,255,255,.04)}
+.b-orow.go:hover .gp,.b-orow.go:focus-visible .gp{background:#F4F6FA;border-color:#F4F6FA;color:#0B0D13}
+.b-orow.go:active{background:rgba(255,255,255,.07)}.b-orow.go:active .gp{transform:translateY(1px)}
+.b-deck .b-orow.go:focus-visible{outline:2px solid var(--cy);outline-offset:-2px}
+/* blocked row */
+.b-orow.off{cursor:default}
+.b-orow.off .ck{border-style:dashed;opacity:.6}
+.b-orow.off .t b{color:var(--ink2)}
+.b-orow.off .t i{display:flex;align-items:center;gap:5px;margin-top:2px;font-style:normal;font-size:12px;line-height:1.35;color:var(--ink2)}
+.b-orow.off .t i svg{width:13px;height:13px;flex:none}
+.b-orow.off .p{color:var(--ink3)}
+/* done row */
+.b-orow.done .ck{border-color:var(--up);background:var(--up)}
+.b-orow.done .t b{color:var(--ink2);text-decoration:line-through}
+.b-orow.just{border-radius:10px;animation:b-ojust 1.2s ease-out}
+@keyframes b-ojust{from{background:rgba(75,227,138,.16)}to{background:transparent}}
+/* done line and hint */
+.b-odone{margin:0;min-height:0;font:600 12.5px/1.4 var(--ui);color:var(--up)}
+.b-odone.on{display:flex;align-items:center;gap:6px;margin:6px 0 4px}
+.b-odone.out,.b-ohint.out{opacity:0;transition:opacity .3s ease-out}
+.b-odone svg,.b-ohint svg{width:14px;height:14px;flex:none}
+.b-ohint{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0 0 8px;padding:8px 10px;border-radius:8px;border:1px solid rgba(61,242,255,.35);background:rgba(61,242,255,.07);font-size:12.5px;line-height:1.4;color:var(--ink)}
+.b-ohint.ok{border-color:rgba(75,227,138,.4);background:rgba(75,227,138,.08);color:var(--up);font-weight:600}
+.b-ohint button{-webkit-appearance:none;appearance:none;min-height:44px;margin:-12px 0;padding:0 4px;border:0;background:none;color:var(--ink);font:600 12.5px var(--ui);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+/* arrival highlight on the target step (class on .b-step, removed after 1600 ms) */
+.b-step.b-arrive{border-radius:10px;box-shadow:inset 0 0 0 2px var(--cy);background:rgba(61,242,255,.06);animation:b-arrive 1.6s ease-out forwards}
+@keyframes b-arrive{0%{box-shadow:inset 0 0 0 2px var(--cy);background:rgba(61,242,255,.14)}70%{box-shadow:inset 0 0 0 2px rgba(61,242,255,.7)}100%{box-shadow:inset 0 0 0 2px rgba(61,242,255,0);background:rgba(61,242,255,0)}}
+@media (max-width:600px){.b-orow{min-height:56px}.b-orow .gp{padding:0 9px 0 11px}}
+@media (prefers-reduced-motion:reduce){.b-orow.go,.b-orow .gp{transition:none}.b-orow.just,.b-step.b-arrive{animation:none}.b-orow.go:active .gp{transform:none}.b-odone.out,.b-ohint.out{transition:none}}
 .b-lvl{height:6px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden;margin:8px 0 6px}.b-lvl i{display:block;height:100%;background:var(--gd)}
 .b-bdgs{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .b-bdg{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px 0 7px;border:1px solid var(--line);border-radius:999px;font:600 11.5px var(--ui);color:var(--ink2);white-space:nowrap}

@@ -511,7 +511,7 @@ export function battleHub(c: BattleHubCtx) {
     return { h: "@" + m.handle, war: on.has(id) ? 1 : 0, waive: opt.waive, report: freqOf(opt), email: !!c.emailOf(id), emailLive: c.emailOn(),
       arsenal: f ? { usd: f.ars.usd, n: f.ars.n, tech: f.ars.tech, why: f.ars.techWhy, guide: f.ars.guide, cep: f.ars.cepX, reach: f.ars.reach, left: f.ars.left, ammo: f.ars.ammo, c: f.ars.c, pr: f.ars.pr, rel: f.ars.rel, ci: f.ars.ci, ai: f.ars.aiX, streak: f.ars.streakX, best: f.ars.best, shots: f.ars.shots.length } : null,
       shield: f?.sh ?? 0, beginner: f?.beg ? 1 : 0, next: battleAt(n + 1), lockAt: lockAt(n + 1), aims, aimCap: WAR.manualCap, rivals, last,
-      tonight, orders: on.has(id) ? ordersOf(x, m, n).map(o => ({ kind: o.kind, text: o.text, points: o.points, done: o.done ? 1 : 0 })) : [],
+      tonight, orders: on.has(id) ? ordersOf(x, m, n).map(o => ({ kind: o.kind, key: o.key, text: o.text, points: o.points, done: o.done ? 1 : 0 })) : [],
       rank: { level: lv.level, name: lv.name, score: lv.score, next: lv.next, toNext: lv.toNext, pct: lv.pct, place: rk.rank }, badges: badgesOf(id, lastN, lastN),
       points: P ? P.balanceOf(id) : null,
       armory: on.has(id) ? armoryOf(x, id) : null };
