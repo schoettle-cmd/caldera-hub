@@ -1904,7 +1904,7 @@ html.b-sum-on{overflow:hidden}
 @keyframes b-dot{50%{opacity:.35}}
 .b-sl li.b-arrive>.b-sr{border-radius:6px;animation:b-arrive 1.6s ease-out forwards}
 /* end panel on the map */
-.b-rpend{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);z-index:8;box-sizing:border-box;width:min(420px,calc(100% - 20px));padding:10px 12px 12px;border-radius:12px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);color:#E8EEF8;animation:b-rpend .18s ease-out}
+.b-rpend{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:8;box-sizing:border-box;width:min(420px,calc(100% - 20px));padding:10px 12px 12px;border-radius:12px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);color:#E8EEF8;animation:b-rpend .18s ease-out}
 .b-rpend p{margin:0 0 8px;font:600 12.5px/1.35 var(--font-mono,'IBM Plex Mono',monospace);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .b-rpend-b{display:flex;gap:8px}
 .b-rpend-b button{-webkit-appearance:none;appearance:none;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;margin:0;padding:0 14px;border-radius:18px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#F4F6FA;font:600 13px/1 var(--ui,'IBM Plex Sans',sans-serif);white-space:nowrap;cursor:pointer;touch-action:manipulation}
@@ -1912,7 +1912,7 @@ html.b-sum-on{overflow:hidden}
 .b-rpend-b .nx{background:#F4F6FA;border-color:#F4F6FA;color:#0B0D13}
 .b-rpend-b button:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
 @media (hover:hover){.b-rpend-b button:hover{background:rgba(255,255,255,.12)}.b-rpend-b .nx:hover{background:#fff}}
-@keyframes b-rpend{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes b-rpend{from{opacity:0;transform:translate(-50%,-6px)}to{opacity:1;transform:translate(-50%,0)}}
 html.w-rpend .b-pu{display:none}
 /* 700-899: dense (house rule 4) */
 @media (min-width:700px) and (max-width:899px){
@@ -1934,7 +1934,7 @@ html.w-rpend .b-pu{display:none}
 .b-shotact .b-rp,.b-lnk{min-height:44px}
 }
 @media (max-width:600px){
-.b-rpend{left:10px;right:10px;width:auto;transform:none;bottom:calc(68px + env(safe-area-inset-bottom,0px));animation-name:b-rpend-s}
+.b-rpend{left:10px;right:10px;width:auto;transform:none;top:auto;bottom:calc(68px + env(safe-area-inset-bottom,0px));animation-name:b-rpend-s}
 .b-rpend-b{flex-wrap:wrap}.b-rpend-b button{flex:1 1 0;height:44px;border-radius:22px;padding:0 10px}.b-rpend-b .nx{flex-basis:100%}
 @keyframes b-rpend-s{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 }
