@@ -36,7 +36,7 @@ test("speed persistence: the choice is saved per viewer and read back; 1x for a 
 
 test("battle client script: parses, reads the saved speed at start, starts replays at it, saves a change; one compact bar of 44 px controls", () => {
   const js = M.BATTLE_CLIENT_JS; new Function(js);
-  assert.ok(js.includes("speed = BSPD.load()"), "starts at the viewer's saved speed"); assert.ok(/api\(\)\.replay\(mode, \{ speed(: speed)?(, auto: !!auto)? \}\)/.test(js), "a replay starts at it");
+  assert.ok(js.includes("speed = BSPD.load()"), "starts at the viewer's saved speed"); assert.ok(/api\(\)\.replay\((only \? .shots. : )?mode, \{ speed(: speed)?(, auto: !!auto)?(, only(: only)?)? \}\)/.test(js), "a replay starts at it");
   assert.ok(/speed = BSPD\.next\(speed\);\s*BSPD\.save\(speed\);\s*if \(A\(\) && A\(\)\.speed\) A\(\)\.speed\(speed\)/.test(js), "a tap on the speed button cycles, saves and applies at once");
   for (const k of ["prev", "pause", "skip", "speed", "fit", "follow", "stop"]) assert.ok(js.includes(`data-p="${k}"`), `a ${k} control`);
   assert.ok(/data-p="follow"[^>]*hidden/.test(js) && js.includes("fo.hidden = ph.follow !== false"), "Follow shows only once the viewer has moved the camera");
@@ -49,7 +49,7 @@ test("battle client script: parses, reads the saved speed at start, starts repla
 });
 
 test("11-13 pure city: the replay (and the demo) sets html.w-replay while it plays and clears it on End or when it finishes; it never writes the viewer's Labels or Friendships choice", async () => {
-  const js = M.BATTLE_CLIENT_JS, play = js.slice(js.indexOf("function play(mode, auto)"), js.indexOf("function mine()")), stop = js.slice(js.indexOf("function stopPlay()"), js.indexOf("function play(mode, auto)"));
+  const js = M.BATTLE_CLIENT_JS, play = js.slice(js.indexOf("function play(mode, auto"), js.indexOf("function mine()")), stop = js.slice(js.indexOf("function stopPlay()"), js.indexOf("function play(mode, auto"));
   assert.ok(play.includes("classList.add('w-replay')") || play.includes('classList.add("w-replay")'), "play() sets the class the city renderer's PURE flag keys on");
   assert.ok(stop.includes("classList.remove('w-replay')") || stop.includes('classList.remove("w-replay")'), "stopPlay() clears it, so labels and rays come back");
   assert.ok(/if \(!p2 \|\| !p2\.replay\) \{\s*stopPlay\(\)/.test(play), "a replay that runs out ends through stopPlay too");
@@ -199,7 +199,7 @@ test("popovers and tabs: one at a time, Esc and a tap outside close, focus retur
 test("people in the deck: members get an avatar and a /@handle/ link; raiders and unclaimed lands stay plain; rows keep their own button", () => {
   const people = { "@ana": "/@ana/avatar.png", "@bo": "" };
   const lib = new Function("data", "esc", "document", [grabFn("pOf"), grabFn("avHtml"), grabFn("who"), "var openShot = -1, more = {};", grabFn("wOf"), grabFn("rules"), grabFn("nameOf"), grabFn("shotUsd"),
-    "function hhmm(){return '20:00'} function usd(n){return '$'+n} function shotHtml(){return ''}", grabFn("shotRow")].join("\n") + ";return {who:who,avHtml:avHtml,shotRow:shotRow}")({ people, rules: RULES }, esc, {});
+    "function hhmm(){return '20:00'} function usd(n){return '$'+n} function shotHtml(){return ''} function rpGap(){return ''} function rpNow(){return -1} var PLAY='', RLINK='';", grabFn("rpRes"), grabFn("shotRow")].join("\n") + ";return {who:who,avHtml:avHtml,shotRow:shotRow}")({ people, rules: RULES }, esc, {});
   const a = lib.who("@ana", "a");
   assert.equal(a, '<a class="b-who" href="/@ana/"><img class="b-av" src="/@ana/avatar.png" width="20" height="20" loading="lazy" decoding="async" alt="" data-i="A"><span class="a">@ana</span></a>', "avatar + name in one link to the profile");
   assert.equal(lib.who("@bo"), '<a class="b-who" href="/@bo/"><i class="b-av b-avi" aria-hidden="true">B</i><span>@bo</span></a>', "no photo: an initial circle");
@@ -292,9 +292,9 @@ test("leaderboard: while the results board shows (html.w-board) the replay bar a
   assert.ok(hide.includes("opacity:0;visibility:hidden;pointer-events:none;transition:opacity .15s"), "a 150 ms fade, then gone and not clickable");
   const k0 = J.indexOf("/^[123]$/.test(e.key)"), kd = J.slice(J.lastIndexOf("addEventListener('keydown'", k0), k0 + 400);
   assert.ok(kd.indexOf("contains('w-board')") > 0 && kd.indexOf("contains('w-board')") < kd.indexOf("/^[123]$/"), "F, M, 1 2 3, arrows and Space do nothing behind the board (the plugin's board handles Esc, R and S)");
-  const play = J.slice(J.indexOf("functionplay(mode,auto){"), J.indexOf("functionmine()"));
+  const play = J.slice(J.indexOf("functionplay(mode,auto,only){"), J.indexOf("functionmine()"));
   assert.ok(play.includes(N("api().boardHooks({ again: function (demo) { play(demo ? 'demo' : void 0); }, exit: function () { stopPlay(); }, add: '/#start', signedIn: function () { return !!me; } })")), "Watch again = play() in the same mode, Exit = stopPlay(), Add your city = the /world action");
-  assert.ok(play.indexOf("boardHooks") < play.indexOf("api().replay(mode"), "the hooks are in place before the replay starts");
+  assert.ok(play.indexOf("boardHooks") < play.indexOf("api().replay("), "the hooks are in place before the replay starts");
   const hud = J.slice(J.indexOf("functionhud(ph){"), J.indexOf("varpuEl=null"));
   assert.ok(hud.includes(N("if (ph.board) { menuSet(false); puDisarm(); if (playing) { clearTimeout(playing); playing = null; } }")), "the menu closes, an armed power-up disarms, and no safety-net timer takes the board away");
   assert.ok(/if \(!p2 \|\| !p2\.replay\) \{\s*stopPlay\(\)/.test(js) || J.includes("if(!p2||!p2.replay){stopPlay()"), "the poll still ends a replay that ended (Exit) through stopPlay");
@@ -322,7 +322,7 @@ test("BATTLE.md U2: mapReplay() show rule: only in the idle Battle view; not in 
   assert.ok(J.includes(N("rpEl.className = 'b-rp b-rp-map'")) && J.includes(N("rpEl.setAttribute('data-bl', 'replay')")) && J.includes(N("rpEl.setAttribute('data-bdemo', '')")), "one white pill, data-bl=replay or data-bdemo");
   assert.ok(J.includes(N("if (rpEl.hasAttribute('data-bdemo')) play('demo'); else setLayer('replay', true);")), "the click does what the card's button does");
   assert.ok(J.includes(N("running: !!startAt() && left <= 0 && !reb")), "'Battle running' as the chip says it");
-  const stop = J.slice(J.indexOf("functionstopPlay(){"), J.indexOf("functionplay(mode,auto){"));
+  const stop = J.slice(J.indexOf("functionstopPlay(){"), J.indexOf("functionplay(mode,auto,only){"));
   assert.ok(stop.startsWith(N("function stopPlay() { var had = !!hudEl;")) && stop.includes(N("if (had) { var rb = mapReplay(); if (rb) try { rb.focus({ preventScroll: true }); }")), "after End or Exit the button gets the focus");
   const css = M.BATTLE_CSS;
   assert.ok(/\.b-rp-map\{position:absolute;left:50%;bottom:14px;transform:translateX\(-50%\);z-index:7;height:44px/.test(css), "bottom centre, 44 px");
@@ -359,4 +359,25 @@ test("BATTLE.md U3/U7/U8: the progress line, the new menu rows, 2/7 paused; one 
   assert.ok(css.includes("@media (max-width:600px){.b-chip{top:52px;bottom:auto;left:12px}"), "small panes: the chip under the switch");
   assert.ok(css.includes(".c-stage.c-full .bcall{top:calc(12px + env(safe-area-inset-top,0px))}"), "full screen: the callout clears the notch");
   assert.ok(!/—/.test(js + css), "no em dashes");
+});
+
+test("a replay for each shot (Mike 11-26): a Replay pill per row, Playing state, No replay with its reason, detail Replay + Copy link, Replay all, end panel", () => {
+  const mk = (gapv, now) => new Function("data", "esc", "document", [grabFn("pOf"), grabFn("avHtml"), grabFn("who"), "var openShot = 3, more = {};", grabFn("wOf"), grabFn("rules"), grabFn("nameOf"), grabFn("shotUsd"),
+    "function hhmm(){return '20:00'} function usd(n){return '$'+n} function shotHtml(){return '<p>math</p>'} var PLAY='<svg/>', RLINK='<svg/>';",
+    "function rpNow(){return " + now + "} var rpGaps = " + JSON.stringify(gapv) + ";", grabFn("rpGap"), grabFn("rpRes"), grabFn("shotRow")].join("\n") + ";return {shotRow:shotRow}")({ people: {}, rules: RULES }, esc, {});
+  const s = ["@ana", "@bo", "rocket", 0.1, Date.now(), 0, 0, 0, null];
+  let row = mk({}, -1).shotRow(s, 3);
+  assert.ok(row.includes('class="b-srp" data-rps="3" aria-label="Replay the hit: @ana on @bo, −$500000"'), "a Replay pill with the pair and the result");
+  assert.ok(row.indexOf('data-rps="3"') > row.indexOf('class="b-r'), "the pill sits after the result, outside the handles");
+  assert.ok(row.includes('<div class="b-shotact"><button type="button" class="b-rp" data-rps="3">') && row.includes('data-rplink="3"') && row.includes("Copy link to this hit"), "the open detail starts with Replay this hit + Copy link");
+  row = mk({}, 3).shotRow(s, 3);
+  assert.ok(row.startsWith('<li class="open playing" data-si="3">') && row.includes("<span>Playing</span>") && row.includes("Playing now: @ana on @bo. Go to the map."), "the playing row");
+  row = mk({ 3: "pad" }, -1).shotRow(s, 3);
+  assert.ok(!row.includes("data-rps") && row.includes('<span class="b-norp">No <br class="b-nbr">replay</span>') && row.includes("No replay: no launch point stored."), "no launch point: a tag and the reason, no button");
+  assert.ok(mk({ 3: "tgt" }, -1).shotRow(s, 3).includes("No replay: no landing point stored."));
+  const js = M.BATTLE_CLIENT_JS, css = M.BATTLE_CSS;
+  const ix = (k) => js.search(new RegExp("closest\\([\"']\\[" + k + "\\][\"']\\)")); assert.ok(ix("data-rps") > 0 && ix("data-rps") < ix("data-shot"), "the pill acts before the row toggle");
+  for (const w of ["Replay all ", "Next hit", "Replay again", "Back to results", "hits replayed", "Link copied", "&shot=", "oneDone", "aria-disabled", "b-arrive", "w-rpend", "Escape"]) assert.ok(js.includes(w), w);
+  assert.ok(/searchParams\.get\(.shot.\)/.test(js), "a shared link plays that one hit");
+  for (const c of [".b-srp", ".b-rpall", ".b-norp", ".b-rpend", ".b-shotact", ".b-sl li.playing", "html.w-rpend .b-pu"]) assert.ok(css.includes(c), c);
 });

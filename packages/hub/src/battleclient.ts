@@ -273,16 +273,22 @@ export function battleClient() {
   function shotRow(s, i) {
     var w = wOf(s[2]), x = s[8], word = x && x.bk ? x.word : '', open = openShot === i, blk = !!s[6];
     var an = s[0].charAt(0) === '@' ? s[0] : 'Raiders', dn = nameOf(s[1]);
-    return '<li' + (open ? ' class="open"' : '') + '><div class="b-sr"><button type="button" class="b-hit0" data-shot="' + i + '" aria-expanded="' + open + '" aria-label="' + esc(an + ' fired at ' + dn + ': how the damage was worked out') + '"></button><time>' + (s[4] ? hhmm(s[4]) : '') + '</time>'
+    var res = rpRes(s), gap = rpGap(i), pl = rpNow() === i, cls = (open ? ' open' : '') + (pl ? ' playing' : '');
+    var pill = gap ? '<span class="b-norp">No <br class="b-nbr">replay</span>'
+      : pl ? '<button type="button" class="b-srp" data-rps="' + i + '" aria-label="' + esc('Playing now: ' + an + ' on ' + dn + '. Go to the map.') + '"><i class="b-dot" aria-hidden="true"></i><span>Playing</span></button>'
+      : '<button type="button" class="b-srp" data-rps="' + i + '" aria-label="' + esc('Replay the hit: ' + an + ' on ' + dn + ', ' + res) + '">' + PLAY + '<span>Replay</span></button>';
+    var act = gap ? '<p class="b-norpl">' + esc(gap) + '</p>' : '<div class="b-shotact"><button type="button" class="b-rp" data-rps="' + i + '">' + PLAY + 'Replay this hit</button><button type="button" class="b-lnk" data-rplink="' + i + '">' + RLINK + '<span role="status">Copy link to this hit</span></button></div>';
+    return '<li' + (cls ? ' class="' + cls.slice(1) + '"' : '') + ' data-si="' + i + '"><div class="b-sr"><button type="button" class="b-hit0" data-shot="' + i + '" aria-expanded="' + open + '" aria-label="' + esc(an + ' fired at ' + dn + ': how the damage was worked out' + (gap ? '. ' + gap : '')) + '"></button><time>' + (s[4] ? hhmm(s[4]) : '') + '</time>'
       + '<span class="b-p">' + who(s[0], 'a', an) + ' → ' + who(s[1], 'd', dn) + (word ? '<q>' + esc(word) + '</q>' : '') + '</span>'
-      + '<span class="b-szc">' + esc(w ? w.size : '') + '</span><span class="b-r' + (blk ? ' h' : '') + '">' + (blk ? 'Blocked ' + usd(x && x.pot != null ? x.pot : shotUsd(s)) : '−' + usd(shotUsd(s))) + '</span><span class="b-cv" aria-hidden="true">›</span></div>'
-      + (open ? '<div class="b-shot">' + shotHtml(s) + '</div>' : '') + '</li>';
+      + '<span class="b-szc">' + esc(w ? w.size : '') + '</span><span class="b-r' + (blk ? ' h' : '') + '">' + res + '</span>' + pill + '<span class="b-cv" aria-hidden="true">›</span></div>'
+      + (open ? '<div class="b-shot">' + act + shotHtml(s) + '</div>' : '') + '</li>';
   }
   function lists() {
     var S = data.shots || [], M = data.members || {}, keys = Object.keys(M), mh = me && me.h ? String(me.h).replace(/^@?/, '@') : null;
     var landed = S.filter(function (x) { return x[3] > 0; }).length, armed = keys.filter(function (k) { return M[k].usd > 0; }).sort(function (a, b) { return (M[b].usd || 0) - (M[a].usd || 0) || (a < b ? -1 : 1); });
     setText('nshots', String(S.length)); setText('narmed', armed.length + ' of ' + keys.length); setText('narmeds', String(armed.length));
-    setText('shotsum', S.length ? S.length + ' fired · ' + landed + ' landed · ' + (data.fires || 0) + ' fire' + (data.fires === 1 ? '' : 's') + ' spread. Biggest hits first. Open a shot to see how its damage was worked out.' : 'No missiles last night.');
+    setText('shotsum', S.length ? S.length + ' fired · ' + landed + ' landed · ' + (data.fires || 0) + ' fire' + (data.fires === 1 ? '' : 's') + ' spread. Biggest hits first. Open a shot to see how its damage was worked out, or replay it on the map.' : 'No missiles last night.');
+    rpGapsLoad(); var rpa = q('[data-rpall]'), nr = rpOrder().length; if (rpa) { rpa.hidden = nr < 2; rpa.setAttribute('aria-label', 'Replay all ' + nr + ' hits, biggest first'); rpa.innerHTML = PLAY + '<span>Replay all ' + nr + '</span>'; }
     var sl = q('[data-b="shotlist"]');
     if (sl) { var ord = S.map(function (s, i) { return i; }).sort(function (a, b) { return shotUsd(S[b]) - shotUsd(S[a]) || a - b; });
       sl.innerHTML = S.length ? '<ul class="b-sl">' + (more.shots ? ord : ord.slice(0, 8)).map(function (i) { return shotRow(S[i], i); }).join('') + '</ul>' + moreBtn('shots', S.length) : ''; }
@@ -445,8 +451,8 @@ export function battleClient() {
     // LEADERBOARD.md (Mike 11-21): at the end of the replay the plugin holds the clock and puts the results board up (html.w-board):
     // the bar, its menu and the power-up tray step aside (CSS below) and no key acts behind it; the board stays until a button
     if (ph.board) { menuSet(false); puDisarm(); if (playing) { clearTimeout(playing); playing = null; } }
-    var st = ph.stage, beat = st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'fall' ? 'Final strike' : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
-    var sbeat = st === 'beat' || st === 'pre' ? ph.beat + '/' + ph.beats : st === 'fall' ? 'Final' : st === 'wide' ? 'All ' + ph.beats + ' in' : beat, dm = ph.demo ? 'Demo \u00b7 ' : '', pz = ph.paused && beat ? 1 : 0; if (pz) { beat += ', paused'; sbeat += ' paused'; } var bt = dm + beat + '|' + dm + sbeat, be = hudEl.querySelector('[data-p="beat"]');
+    var st = ph.stage, beat = ph.one ? (ph.beats === 1 ? 'Hit' : 'Hit ' + ph.beat + ' of ' + ph.beats) : st === 'beat' || st === 'pre' ? 'Strike ' + ph.beat + ' of ' + ph.beats : st === 'fall' ? 'Final strike' : st === 'wide' ? 'All ' + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ' in' : st === 'rebuild' ? 'Rebuilding' : '';
+    var sbeat = ph.one ? beat : st === 'beat' || st === 'pre' ? ph.beat + '/' + ph.beats : st === 'fall' ? 'Final' : st === 'wide' ? 'All ' + ph.beats + ' in' : beat, dm = ph.demo ? 'Demo \u00b7 ' : '', pz = ph.paused && beat ? 1 : 0; if (pz) { beat += ', paused'; sbeat += ' paused'; } var bt = dm + beat + '|' + dm + sbeat, be = hudEl.querySelector('[data-p="beat"]');
     if (be.getAttribute('data-t') !== bt) { be.setAttribute('data-t', bt); be.innerHTML = '<span class="sr">' + esc(dm + beat) + '</span><span aria-hidden="true">' + esc(dm + sbeat) + '</span>'; }
     var lb = hudEl.querySelector('[data-p="label"]'); lb.textContent = ph.label || ''; lb.title = ph.label || '';
     var hs = ph.hit && !ph.demo ? nightShots(ph.night)[ph.hit.ix] : null, ht = ph.hit ? hitLine(ph.hit) + bombTail(hs) : '';
@@ -551,7 +557,9 @@ export function battleClient() {
     on = true; if (bar) bar.hidden = false; document.documentElement.classList.add('w-battle');
     if (api()) { api().layers(layers); api().view(true, data); }
     stats(); load(); mine(); chipTick(); clearInterval(chipT); chipT = setInterval(chipTick, 1000); clearInterval(pollT); pollT = setInterval(load, 600000);
-    if (layers.replay) play(replayMode, true); else maybeSummary();
+    var shotP = U && U.searchParams.get('shot'), nightP = U && U.searchParams.get('night');
+    if (layers.replay && shotP != null && /^\d+$/.test(shotP) && (data.shots || [])[+shotP] && (!nightP || nightP === data.night)) { rpGapsLoad(); rpStart([+shotP], null, true); }
+    else if (layers.replay) play(replayMode, true); else maybeSummary();
   }
   function hide() {
     on = false; stopPlay(); closeHow(); popClose(false); if (bar) bar.hidden = true; document.documentElement.classList.remove('w-battle'); if (api()) api().view(false); clearInterval(chipT); clearInterval(pollT); if (chip) { chip.remove(); chip = null; }
@@ -655,6 +663,11 @@ export function battleClient() {
       try { navigator.clipboard.writeText(u).then(done, function () { prompt('Link to last night', u); }); } catch (e3) { prompt('Link to last night', u); } return; }
     if ((b = t.closest('[data-tab]'))) { setTab(b.getAttribute('data-tab'), false, true); return; }
     if ((b = t.closest('[data-more]'))) { more[b.getAttribute('data-more')] = true; lists(); return; }
+    if ((b = t.closest('[data-rps]'))) { var ri = +b.getAttribute('data-rps'); if (rpNow() === ri) { rpToMap(); return; } rpStart([ri], b); return; }
+    if ((b = t.closest('[data-rpall]'))) { var ro = rpOrder(); if (ro.length) rpStart(ro, b); return; }
+    if ((b = t.closest('[data-rplink]'))) { var lu = location.origin + '/world?view=battle&replay=1' + (data.night ? '&night=' + encodeURIComponent(data.night) : '') + '&shot=' + b.getAttribute('data-rplink'), ll = b.querySelector('span') || b,
+        lok = function () { ll.textContent = 'Link copied'; b.classList.add('ok'); setTimeout(function () { ll.textContent = 'Copy link to this hit'; b.classList.remove('ok'); }, 2000); };
+      try { navigator.clipboard.writeText(lu).then(lok, function () { prompt('Link to this hit', lu); }); } catch (e5) { prompt('Link to this hit', lu); } return; }
     if ((b = t.closest('[data-shot]'))) { var i = +b.getAttribute('data-shot'); openShot = openShot === i ? -1 : i; lists(); var nb = q('[data-shot="' + i + '"]'); if (nb) try { nb.focus({ preventScroll: true }); } catch (e4) {} return; }
     if ((b = t.closest('[data-fly]'))) { if (api()) api().fly(b.getAttribute('data-fly')); return; }
   });
@@ -667,19 +680,62 @@ export function battleClient() {
   addEventListener('hashchange', function () { var h = location.hash.slice(1); if (TABS.indexOf(h) >= 0) setTab(h); });
   // ---------------------------------------------------------------- replay: the cinematic strike-by-strike replay (or the demo)
   var cap = q('[data-b="cap"]'), hudT = 0;
-  function stopPlay() { var had = !!hudEl; try { if (api() && api().full && api().full()) api().full(false); } catch (e) {} setTimeout(fsSync, 60); if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); document.documentElement.classList.remove('fb-hide'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); if (had) { var rb = mapReplay(); if (rb) try { rb.focus({ preventScroll: true }); } catch (e) {} } }
-  function play(mode, auto) {
+  function stopPlay() { var had = !!hudEl; try { if (api() && api().full && api().full()) api().full(false); } catch (e) {} setTimeout(fsSync, 60); if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0; document.documentElement.classList.remove('w-replay'); document.documentElement.classList.remove('fb-hide'); if (api() && api().stop) api().stop(); hudOff(); if (cap) cap.textContent = ''; var b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', 'false'); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', 'false'); layers.replay = false; chipTick(); var wasRp = rpQ; rpQ = null; rpEndOff(); if (wasRp) markPlaying(); if (had) { var rb = mapReplay(); if (rb) try { rb.focus({ preventScroll: true }); } catch (e) {} } }
+  // ---------------------------------------------------------------- a replay for each shot (Mike 11-26: "see the exact hit of each one"; design reports/2026-11-26-shot-replay/DESIGN.md)
+  var RLINK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.9.9M9.2 6.8a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.9-.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  var RAGAIN = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v2.8h2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var RGO = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var rpQ = null, rpGaps = null, rpEl = null;   // rpQ: { list: raw shot indices in play order, src: the control that started it, at: the beat playing }
+  function rpGapsLoad() { if (rpGaps) return; try { if (on && api() && api().gaps) rpGaps = api().gaps(); } catch (e) {} }
+  function rpGap(i) { var g = rpGaps && rpGaps[i]; return g === 'pad' ? 'No replay: no launch point stored.' : g ? 'No replay: no landing point stored.' : ''; }
+  function rpOrder() { var S = data.shots || []; return S.map(function (s, i) { return i; }).sort(function (a, b) { return shotUsd(S[b]) - shotUsd(S[a]) || a - b; }).filter(function (i) { return !rpGap(i); }); }
+  function rpNow() { if (!rpQ) return -1; var k = rpQ.at || 0; return rpQ.list[k] != null ? rpQ.list[k] : -1; }
+  function rmq() { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
+  function markPlaying() { var sl = q('[data-b="shotlist"]'); if (!sl) return; var was = sl.querySelector('li.playing'), wi = was ? +was.getAttribute('data-si') : -1; if (wi !== rpNow()) lists(); }
+  function rpToMap() { if (!stage) return; try { stage.scrollIntoView({ block: window.innerWidth < 700 ? 'start' : 'center', behavior: rmq() ? 'auto' : 'smooth' }); } catch (e) {} }
+  function rpStart(list, src, auto) {
+    rpEndOff(); if (rpQ || playing) stopPlay(); if (!list.length) return;
+    if (list.length === 1 && rpGap(list[0])) { rpQ = { list: list, src: src, at: 0 }; rpEndShow(rpGap(list[0]), true); return; }
+    rpQ = { list: list, src: src, at: 0 }; rpToMap(); play(undefined, !!auto, list);
+    if (!hudEl) { rpQ = null; return; }
+    if (list.length === 1) ['prev', 'skip'].forEach(function (k) { var x = hudEl.querySelector('[data-p="' + k + '"]'); if (x) x.setAttribute('aria-disabled', 'true'); });
+    markPlaying();
+  }
+  function rpTick(p) { if (!rpQ) return; if (p.oneAt >= 0) rpQ.at = p.oneAt; markPlaying(); if (p.oneDone && !rpEl) rpEndShow(); }
+  function rpEndOff() { if (rpEl) { rpEl.remove(); rpEl = null; } document.documentElement.classList.remove('w-rpend'); }
+  function rpRes(s) { var x = s[8]; return s[6] ? 'Blocked ' + usd(x && x.pot != null ? x.pot : shotUsd(s)) : '−' + usd(shotUsd(s)); }
+  function rpEndShow(why, gapOnly) {
+    if (!stage || !rpQ) return; rpEndOff(); var S = data.shots || [], L = rpQ.list, one = L.length === 1, s = S[L[0]], sum;
+    if (why) sum = why; else if (one) sum = (s[0].charAt(0) === '@' ? s[0] : 'Raiders') + ' → ' + nameOf(s[1]) + ' · ' + rpRes(s);
+    else sum = L.length + ' hits replayed · −' + usd(L.reduce(function (t, i) { return t + (S[i][6] ? 0 : shotUsd(S[i])); }, 0)) + ' in all';
+    var ord = rpOrder(), nx = one && !gapOnly && ord.indexOf(L[0]) >= 0 ? ord[ord.indexOf(L[0]) + 1] : undefined;
+    rpEl = document.createElement('div'); rpEl.className = 'b-rpend'; rpEl.setAttribute('role', 'group'); rpEl.setAttribute('aria-labelledby', 'b-rpend-t');
+    rpEl.innerHTML = '<p id="b-rpend-t" role="status">' + esc(sum) + '</p><div class="b-rpend-b">' + (nx != null ? '<button type="button" class="b-rp nx" data-rpe="next">Next hit' + RGO + '</button>' : '')
+      + (gapOnly ? '' : '<button type="button" data-rpe="again">' + RAGAIN + 'Replay again</button>') + '<button type="button" data-rpe="back">Back to results</button></div>';
+    rpEl.addEventListener('click', function (e) { var b = e.target.closest('[data-rpe]'); if (!b) return; var k = b.getAttribute('data-rpe'), Q = rpQ;
+      if (k === 'next' && nx != null) rpStart([nx], Q && Q.src); else if (k === 'again' && Q) rpStart(Q.list, Q.src); else if (k === 'back') rpBack(); });
+    rpEl.addEventListener('keydown', function (e) { if (e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); var src = rpQ && rpQ.src; stopPlay(); if (src && src.isConnected) try { src.focus({ preventScroll: true }); } catch (e2) {} });
+    stage.appendChild(rpEl); document.documentElement.classList.add('w-rpend'); var f = rpEl.querySelector('button'); if (f) try { f.focus({ preventScroll: true }); } catch (e) {}
+  }
+  function rpBack() {
+    var L = rpQ ? rpQ.list : [], last = L.length > 1 ? L[L.length - 1] : L[0];
+    stopPlay(); setTab('shots', false, true); if (last == null) return;
+    var S = data.shots || [], ord = S.map(function (s, i) { return i; }).sort(function (a, b) { return shotUsd(S[b]) - shotUsd(S[a]) || a - b; }); if (ord.indexOf(last) >= 8) more.shots = true; lists();
+    var li = q('li[data-si="' + last + '"]'); if (!li) return; try { li.scrollIntoView({ block: 'center', behavior: rmq() ? 'auto' : 'smooth' }); } catch (e) {}
+    var h = li.querySelector('.b-hit0'); if (h) try { h.focus({ preventScroll: true }); } catch (e) {} li.classList.add('b-arrive'); setTimeout(function () { li.classList.remove('b-arrive'); }, 1600);
+  }
+  function play(mode, auto, only) {
     if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0;
     closeHow();
     // the results board's buttons (LEADERBOARD.md): Replay again = play() in the same mode, Exit = stopPlay(), Add your city = /#start
     if (api() && api().boardHooks) api().boardHooks({ again: function (demo) { play(demo ? 'demo' : undefined); }, exit: function () { stopPlay(); }, add: '/#start', signedIn: function () { return !!me; } });
-    var n = on && api() && api().replay ? api().replay(mode, { speed: speed, auto: !!auto }) : 0;
+    var n = on && api() && api().replay ? api().replay(only ? 'shots' : mode, { speed: speed, auto: !!auto, only: only }) : 0;
     if (!n) { if (cap) cap.textContent = mode === 'demo' ? 'The demo needs two cities with repo towers on the map.' : 'No battle to replay. Watch a demo battle instead.'; playing = setTimeout(stopPlay, 3500); return; }
     var ph = api().phase(), b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', String(mode !== 'demo')); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', String(mode === 'demo')); layers.replay = mode !== 'demo';
     if (cap) cap.textContent = (mode === 'demo' ? 'Demo: a sample battle between the biggest cities on the map, synthetic shots. ' : 'Replay: ') + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ', ' + n + ' missile' + (n === 1 ? '' : 's') + ', about ' + Math.round(ph.dur / 1000 / (ph.speed || 1)) + ' s at ' + BSPD.label(ph.speed || 1) + '. Scroll, pinch or drag to look around; Fit shows the whole map; Next or the right arrow key goes to the next strike.';
     chipTick(); hud(ph); document.documentElement.classList.add('w-replay'); document.documentElement.classList.add('fb-hide');   // the feedback-hub widgets hide while the replay runs (html.fb-hide, any device)
     if (stage && window.innerWidth >= 700) { var r = stage.getBoundingClientRect(); if (r.top < 0 || r.bottom > window.innerHeight) { try { stage.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } catch (e) {} } }
-    hudT = setInterval(function () { try { var p2 = api() && api().phase ? api().phase() : null; if (!p2 || !p2.replay) { stopPlay(); return; } hud(p2); } catch (e) { stopPlay(); } }, 200);
+    hudT = setInterval(function () { try { var p2 = api() && api().phase ? api().phase() : null; if (!p2 || !p2.replay) { stopPlay(); return; } hud(p2); rpTick(p2); } catch (e) { stopPlay(); } }, 200);
     playing = setTimeout(stopPlay, 900000);   // a safety net: the poll above ends the replay when it ends, a paused one may wait
   }
 
@@ -1819,6 +1875,70 @@ html.b-sum-on{overflow:hidden}
 .b-work{grid-template-columns:1fr}.b-work .w2{text-align:left}
 }
 
+/* a replay for each shot (Mike 11-26; reports/2026-11-26-shot-replay/DESIGN.md) */
+/* shots tab head */
+.b-shothead{display:flex;align-items:center;justify-content:space-between;gap:6px 12px;flex-wrap:wrap}
+.b-shothead .b-tabhint{flex:1 1 280px;min-width:0}
+.b-rpall,.b-srp{-webkit-appearance:none;appearance:none;position:relative;z-index:1;pointer-events:auto;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;margin:0;padding:0 12px 0 10px;border-radius:15px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font:600 12.5px/1 var(--ui);white-space:nowrap;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background-color .18s ease-out,color .18s ease-out,border-color .18s ease-out}
+.b-rpall svg,.b-srp svg{width:12px;height:12px;flex:none;fill:currentColor}
+.b-rpall::after,.b-srp::after{content:"";position:absolute;left:-4px;right:-4px;top:50%;height:44px;transform:translateY(-50%)}
+.b-rpall:hover,.b-rpall:focus-visible,.b-srp:hover,.b-srp:focus-visible{background:#F4F6FA;border-color:#F4F6FA;color:#0B0D13}
+.b-rpall:active,.b-srp:active{transform:translateY(1px)}
+.b-deck .b-rpall:focus-visible,.b-deck .b-srp:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+/* row grid with the Replay column (>= 900) */
+.b-sr{grid-template-columns:52px minmax(0,1fr) 34px 110px auto 18px;min-height:44px}
+/* no landing point */
+.b-norp{justify-self:center;padding:3px 8px;border:1px dashed var(--line);border-radius:12px;font:600 11px/1.15 var(--ui);color:var(--ink3);text-align:center;white-space:nowrap}
+.b-nbr{display:none}
+.b-norpl{margin:0 0 8px;font-size:12px;color:var(--ink2)}
+/* detail action line */
+.b-shotact{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:4px 0 10px}
+.b-lnk{-webkit-appearance:none;appearance:none;display:inline-flex;align-items:center;gap:6px;min-height:36px;margin:0;padding:0 4px;border:0;background:none;color:var(--ink);font:600 12.5px var(--ui);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.b-lnk svg{width:14px;height:14px;flex:none}.b-lnk.ok{color:var(--up);text-decoration:none}
+.b-lnk:focus-visible{outline:2px solid var(--cy);outline-offset:2px;border-radius:4px}
+/* playing row */
+.b-sl li.playing>.b-sr{background:rgba(61,242,255,.06);box-shadow:inset 3px 0 0 var(--cy)}
+.b-sl li.playing .b-srp{border-color:rgba(61,242,255,.55);color:var(--cy);background:rgba(61,242,255,.1)}
+.b-sl li.playing .b-srp:hover,.b-sl li.playing .b-srp:focus-visible{background:#F4F6FA;color:#0B0D13}
+.b-dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none;animation:b-dot 1.2s ease-in-out infinite}
+@keyframes b-dot{50%{opacity:.35}}
+.b-sl li.b-arrive>.b-sr{border-radius:6px;animation:b-arrive 1.6s ease-out forwards}
+/* end panel on the map */
+.b-rpend{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);z-index:8;box-sizing:border-box;width:min(420px,calc(100% - 20px));padding:10px 12px 12px;border-radius:12px;background:rgba(15,16,22,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px -12px rgba(0,0,0,.8);color:#E8EEF8;animation:b-rpend .18s ease-out}
+.b-rpend p{margin:0 0 8px;font:600 12.5px/1.35 var(--font-mono,'IBM Plex Mono',monospace);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.b-rpend-b{display:flex;gap:8px}
+.b-rpend-b button{-webkit-appearance:none;appearance:none;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;margin:0;padding:0 14px;border-radius:18px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#F4F6FA;font:600 13px/1 var(--ui,'IBM Plex Sans',sans-serif);white-space:nowrap;cursor:pointer;touch-action:manipulation}
+.b-rpend-b button svg{width:14px;height:14px;flex:none}
+.b-rpend-b .nx{background:#F4F6FA;border-color:#F4F6FA;color:#0B0D13}
+.b-rpend-b button:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+@media (hover:hover){.b-rpend-b button:hover{background:rgba(255,255,255,.12)}.b-rpend-b .nx:hover{background:#fff}}
+@keyframes b-rpend{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+html.w-rpend .b-pu{display:none}
+/* 700-899: dense (house rule 4) */
+@media (min-width:700px) and (max-width:899px){
+.b-sr{grid-template-columns:44px minmax(0,1fr) 30px 96px 28px 14px;min-height:36px}
+.b-srp{width:28px;height:28px;padding:0;border-radius:14px}.b-srp span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.b-srp::after{left:-4px;right:-4px;height:36px}
+.b-norp{padding:2px 4px;font-size:10px;border-radius:8px}.b-nbr{display:inline}
+}
+/* < 700: phones */
+@media (max-width:699px){
+.b-sr{grid-template-columns:minmax(0,1fr) 34px 44px 14px;min-height:56px}
+.b-srp{grid-row:1/3;grid-column:3;width:40px;height:40px;padding:0;border-radius:20px;justify-self:center}.b-srp svg{width:14px;height:14px}
+.b-srp span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.b-srp::after{left:-2px;right:-2px;height:44px}
+.b-norp{grid-row:1/3;grid-column:3;padding:3px 2px;font-size:10.5px;border-radius:8px;width:40px}.b-nbr{display:inline}
+.b-cv{grid-column:4}
+.b-shothead{flex-direction:column;align-items:flex-start}
+.b-rpall{height:44px;border-radius:22px;padding:0 16px 0 14px;font-size:13.5px}
+.b-shotact .b-rp,.b-lnk{min-height:44px}
+}
+@media (max-width:600px){
+.b-rpend{left:10px;right:10px;width:auto;transform:none;bottom:calc(68px + env(safe-area-inset-bottom,0px));animation-name:b-rpend-s}
+.b-rpend-b{flex-wrap:wrap}.b-rpend-b button{flex:1 1 0;height:44px;border-radius:22px;padding:0 10px}.b-rpend-b .nx{flex-basis:100%}
+@keyframes b-rpend-s{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+}
+@media (prefers-reduced-motion:reduce){.b-rpall,.b-srp{transition:none}.b-rpall:active,.b-srp:active{transform:none}.b-dot,.b-rpend,.b-sl li.b-arrive>.b-sr{animation:none}}
 `;
 
 /** The deck under the map (PAGE.md 5): the Tonight and Last night cards, then one tab panel. The cards are filled by battleClient. */
@@ -1830,7 +1950,7 @@ export function battleMarkup(): string {
 <button type="button" role="tab" id="b-tab-shots" data-tab="shots" aria-controls="shots" aria-selected="true"><span class="b-tl">Shot by shot</span><span class="b-ts">Shots</span> <small data-b="nshots">0</small></button>
 <button type="button" role="tab" id="b-tab-season" data-tab="season" aria-controls="season" aria-selected="false" tabindex="-1"><span class="b-tl">Season ranking</span><span class="b-ts">Season</span></button>
 <button type="button" role="tab" id="b-tab-arsenals" data-tab="arsenals" aria-controls="arsenals" aria-selected="false" tabindex="-1"><span class="b-tl">Arming today</span><span class="b-ts">Arming</span> <small><span class="b-tl" data-b="narmed">0</span><span class="b-ts" data-b="narmeds">0</span></small></button></div>
-<div class="b-panel" role="tabpanel" id="shots" aria-labelledby="b-tab-shots"><p class="b-tabhint" data-b="shotsum"></p><div data-b="shotlist"></div><button type="button" class="b-more" data-bhow aria-haspopup="dialog" aria-expanded="false">How battles work</button></div>
+<div class="b-panel" role="tabpanel" id="shots" aria-labelledby="b-tab-shots"><div class="b-shothead"><p class="b-tabhint" data-b="shotsum"></p><button type="button" class="b-rpall" data-rpall hidden></button></div><div data-b="shotlist"></div><button type="button" class="b-more" data-bhow aria-haspopup="dialog" aria-expanded="false">How battles work</button></div>
 <div class="b-panel" role="tabpanel" id="season" aria-labelledby="b-tab-season" hidden><div class="b-sea" data-b="seasonhead"></div><p class="b-tabhint" data-b="seasonsum"></p><div data-b="board"></div></div>
 <div class="b-panel" role="tabpanel" id="arsenals" aria-labelledby="b-tab-arsenals" hidden><p class="b-tabhint" data-b="armsum"></p><div data-b="arsenals"></div></div>
 </section></div>`;
