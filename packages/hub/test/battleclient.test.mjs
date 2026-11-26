@@ -379,5 +379,7 @@ test("a replay for each shot (Mike 11-26): a Replay pill per row, Playing state,
   const ix = (k) => js.search(new RegExp("closest\\([\"']\\[" + k + "\\][\"']\\)")); assert.ok(ix("data-rps") > 0 && ix("data-rps") < ix("data-shot"), "the pill acts before the row toggle");
   for (const w of ["Replay all ", "Next hit", "Replay again", "Back to results", "hits replayed", "Link copied", "&shot=", "oneDone", "aria-disabled", "b-arrive", "w-rpend", "Escape"]) assert.ok(js.includes(w), w);
   assert.ok(/searchParams\.get\(.shot.\)/.test(js), "a shared link plays that one hit");
+  const src = M.battleClient.toString(), blk = src.slice(src.indexOf("function rpGapsLoad("), src.indexOf("function play(mode, auto, only)"));
+  assert.ok(blk.length > 500 && !/\brpEl\b/.test(blk), "the end panel has its own variable: rpEl is the map's Replay button, and mapReplay() hides it");
   for (const c of [".b-srp", ".b-rpall", ".b-norp", ".b-rpend", ".b-shotact", ".b-sl li.playing", "html.w-rpend .b-pu"]) assert.ok(css.includes(c), c);
 });

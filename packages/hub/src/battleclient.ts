@@ -685,7 +685,7 @@ export function battleClient() {
   var RLINK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.9.9M9.2 6.8a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.9-.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
   var RAGAIN = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v2.8h2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var RGO = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  var rpQ = null, rpGaps = null, rpEl = null;   // rpQ: { list: raw shot indices in play order, src: the control that started it, at: the beat playing }
+  var rpQ = null, rpGaps = null, rpEnd = null;   // rpQ: { list: raw shot indices in play order, src: the control that started it, at: the beat playing }
   function rpGapsLoad() { if (rpGaps) return; try { if (on && api() && api().gaps) rpGaps = api().gaps(); } catch (e) {} }
   function rpGap(i) { var g = rpGaps && rpGaps[i]; return g === 'pad' ? 'No replay: no launch point stored.' : g ? 'No replay: no landing point stored.' : ''; }
   function rpOrder() { var S = data.shots || []; return S.map(function (s, i) { return i; }).sort(function (a, b) { return shotUsd(S[b]) - shotUsd(S[a]) || a - b; }).filter(function (i) { return !rpGap(i); }); }
@@ -701,21 +701,21 @@ export function battleClient() {
     if (list.length === 1) ['prev', 'skip'].forEach(function (k) { var x = hudEl.querySelector('[data-p="' + k + '"]'); if (x) x.setAttribute('aria-disabled', 'true'); });
     markPlaying();
   }
-  function rpTick(p) { if (!rpQ) return; if (p.oneAt >= 0) rpQ.at = p.oneAt; markPlaying(); if (p.oneDone && !rpEl) rpEndShow(); }
-  function rpEndOff() { if (rpEl) { rpEl.remove(); rpEl = null; } document.documentElement.classList.remove('w-rpend'); }
+  function rpTick(p) { if (!rpQ) return; if (p.oneAt >= 0) rpQ.at = p.oneAt; markPlaying(); if (p.oneDone && !rpEnd) rpEndShow(); }
+  function rpEndOff() { if (rpEnd) { rpEnd.remove(); rpEnd = null; } document.documentElement.classList.remove('w-rpend'); }
   function rpRes(s) { var x = s[8]; return s[6] ? 'Blocked ' + usd(x && x.pot != null ? x.pot : shotUsd(s)) : '−' + usd(shotUsd(s)); }
   function rpEndShow(why, gapOnly) {
     if (!stage || !rpQ) return; rpEndOff(); var S = data.shots || [], L = rpQ.list, one = L.length === 1, s = S[L[0]], sum;
     if (why) sum = why; else if (one) sum = (s[0].charAt(0) === '@' ? s[0] : 'Raiders') + ' → ' + nameOf(s[1]) + ' · ' + rpRes(s);
     else sum = L.length + ' hits replayed · −' + usd(L.reduce(function (t, i) { return t + (S[i][6] ? 0 : shotUsd(S[i])); }, 0)) + ' in all';
     var ord = rpOrder(), nx = one && !gapOnly && ord.indexOf(L[0]) >= 0 ? ord[ord.indexOf(L[0]) + 1] : undefined;
-    rpEl = document.createElement('div'); rpEl.className = 'b-rpend'; rpEl.setAttribute('role', 'group'); rpEl.setAttribute('aria-labelledby', 'b-rpend-t');
-    rpEl.innerHTML = '<p id="b-rpend-t" role="status">' + esc(sum) + '</p><div class="b-rpend-b">' + (nx != null ? '<button type="button" class="b-rp nx" data-rpe="next">Next hit' + RGO + '</button>' : '')
+    rpEnd = document.createElement('div'); rpEnd.className = 'b-rpend'; rpEnd.setAttribute('role', 'group'); rpEnd.setAttribute('aria-labelledby', 'b-rpend-t');
+    rpEnd.innerHTML = '<p id="b-rpend-t" role="status">' + esc(sum) + '</p><div class="b-rpend-b">' + (nx != null ? '<button type="button" class="b-rp nx" data-rpe="next">Next hit' + RGO + '</button>' : '')
       + (gapOnly ? '' : '<button type="button" data-rpe="again">' + RAGAIN + 'Replay again</button>') + '<button type="button" data-rpe="back">Back to results</button></div>';
-    rpEl.addEventListener('click', function (e) { var b = e.target.closest('[data-rpe]'); if (!b) return; var k = b.getAttribute('data-rpe'), Q = rpQ;
+    rpEnd.addEventListener('click', function (e) { var b = e.target.closest('[data-rpe]'); if (!b) return; var k = b.getAttribute('data-rpe'), Q = rpQ;
       if (k === 'next' && nx != null) rpStart([nx], Q && Q.src); else if (k === 'again' && Q) rpStart(Q.list, Q.src); else if (k === 'back') rpBack(); });
-    rpEl.addEventListener('keydown', function (e) { if (e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); var src = rpQ && rpQ.src; stopPlay(); if (src && src.isConnected) try { src.focus({ preventScroll: true }); } catch (e2) {} });
-    stage.appendChild(rpEl); document.documentElement.classList.add('w-rpend'); var f = rpEl.querySelector('button'); if (f) try { f.focus({ preventScroll: true }); } catch (e) {}
+    rpEnd.addEventListener('keydown', function (e) { if (e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); var src = rpQ && rpQ.src; stopPlay(); if (src && src.isConnected) try { src.focus({ preventScroll: true }); } catch (e2) {} });
+    stage.appendChild(rpEnd); document.documentElement.classList.add('w-rpend'); var f = rpEnd.querySelector('button'); if (f) try { f.focus({ preventScroll: true }); } catch (e) {}
   }
   function rpBack() {
     var L = rpQ ? rpQ.list : [], last = L.length > 1 ? L[L.length - 1] : L[0];
