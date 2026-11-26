@@ -2602,7 +2602,9 @@ else if(s.state!=='waiting'){clearInterval(t);box.textContent='That code expired
       if (req.method === "GET") {
         try {
           const camp = url.searchParams.get("utm_campaign") || "";
-          if (/^caldera_[a-z_]{1,30}$/.test(camp)) mail.learnClick({ program: camp, token: url.searchParams.get("lt"), member: () => memberOf(req), ip: ipOf(req), ua: String(req.headers["user-agent"] || "") });
+          const lp = url.searchParams.get("lp") || "";   // click-only programs (11-26); an unsubscribe is not a click
+          if (/^caldera_[a-z_]{1,30}$/.test(lp) && !p.startsWith("/u/")) mail.learnClick({ program: lp, token: url.searchParams.get("lt"), member: () => null, ip: ipOf(req), ua: String(req.headers["user-agent"] || "") });
+          else if (/^caldera_[a-z_]{1,30}$/.test(camp)) mail.learnClick({ program: camp, token: url.searchParams.get("lt"), member: () => memberOf(req), ip: ipOf(req), ua: String(req.headers["user-agent"] || "") });
           if (mail.learnPending() && /(^|;\s*)(cal_own|cal_s)=/.test(String(req.headers.cookie || "")) && !/^\/(v1|assets|t)\//.test(p) && !/\.(js|css|png|svg|jpe?g|webp|ico|json|txt|xml|woff2?)$/i.test(p)) {
             const me = memberOf(req); if (me) mail.learnGoal(me, "visit");
           }

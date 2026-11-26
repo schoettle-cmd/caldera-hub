@@ -25,7 +25,7 @@ import { homeNight, type HomeBattle } from "./homebattle";
 import { ARMORY, bombOf, armoryNow, armoryStore, armoryPrefs, alertDue, alertText, armoryEmail, checkWord, cleanTz, clockIn, openAlertAt, remindAt, type BombKind } from "./armory";
 
 type Q = (sql: string) => { run: (...a: any[]) => any; get: (...a: any[]) => any; all: (...a: any[]) => any[] };
-export interface BattleMail { to: string; subject: string; html: string; text: string; headers?: Record<string, string>; src?: string; kind?: string }
+export interface BattleMail { to: string; subject: string; html: string; text: string; headers?: Record<string, string>; src?: string; kind?: string; learnProgram?: string }
 export interface BattleHubCtx {
   q: Q; hub: string; postal: string;
   growth: { sim: () => { sims: Map<string, SimOut>; events: GEvent[]; ai: Map<string, Map<string, number>> }; onTick: (fn: () => void | Promise<void>) => void;
@@ -551,7 +551,7 @@ export function battleHub(c: BattleHubCtx) {
       if (due.kind === "open" && mailOn && pr.mail) {
         const to = c.emailOf(m.id); if (!to || !claimAddr(to, due.night)) continue;
         const un = `${c.hub.replace(/\/$/, "")}/u/armory?t=${pr.token}`, mail = armoryEmail({ name: m.name || m.handle, lock: w.lock, tz: pr.tz, balance: bal, reward, hub: c.hub, unsubArmory: un, unsubAll: c.unsubAll?.(m.id) || un, postal: c.postal });
-        await c.send({ to, subject: mail.subject, html: mail.html, text: mail.text, src: "armory-open", kind: "armory", headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }).catch((e: any) => console.error("[armory] send", e?.message));
+        await c.send({ to, subject: mail.subject, html: mail.html, text: mail.text, src: "armory-open", kind: "armory", learnProgram: "caldera_armory_open", headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }).catch((e: any) => console.error("[armory] send", e?.message));
       }
     }
     return { sent };
@@ -650,7 +650,7 @@ var body={};body[b.dataset.k==='armory-open'?'armoryOpen':'armoryRemind']=on;fet
       if (o.dry || !c.emailOn()) { out.push({ h: m.handle, dry: true, weekly: k.weekly, subject: mail.subject, text: mail.text }); continue; }
       try { if (k.weekly) await weekCardFor(n, m.id); else await cardFor(n, k.quiet ? null : m.id); } catch (e: any) { console.error("[battle] card", e?.message); }   // the picture exists before the mail does
       const un = unsubUrl(opt.token), tr = BT.wrap(mail.html, [un]);   // open pixel + click redirects (not the unsubscribe link)
-      const ok = await c.send({ to, subject: mail.subject, html: tr.html, text: mail.text, src: "battle-report", kind: k.weekly ? "weekly" : "daily", headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }).catch((e: any) => { console.error("[battle] send", e?.message); return false; });
+      const ok = await c.send({ to, subject: mail.subject, html: tr.html, text: mail.text, src: "battle-report", kind: k.weekly ? "weekly" : "daily", learnProgram: "caldera_battle_report", headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }).catch((e: any) => { console.error("[battle] send", e?.message); return false; });
       // freq in the row: "daily", "weekly" (chose weekly) or "weekly-quiet" (a daily member's weekly mail after a quiet Sunday)
       const tf = !k.weekly ? "daily" : freq === "weekly" ? "weekly" : "weekly-quiet";
       if (ok !== false) { try { BT.record({ token: tr.token, night: day, profile: m.id, freq: tf, links: tr.links }); } catch (e: any) { console.error("[battle] track", e?.message); }

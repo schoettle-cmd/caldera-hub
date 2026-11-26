@@ -123,7 +123,7 @@ export function featureMail(ctx: FeatureCtx) {
         if (!Number(q("INSERT OR IGNORE INTO feature_sends VALUES (?,?,?)").run(p.hash, ed.edition, new Date(now()).toISOString()).changes)) { skip("already_sent"); continue; }
         const un = unsubUrl(p.hash), body = fillSlots(ed, un);
         try {
-          const r = await ctx.send({ to: p.to, subject: ed.subject, html: body.html, text: body.text, src: FEATURE_SRC, kind: "marketing", raw: true,
+          const r = await ctx.send({ to: p.to, subject: ed.subject, html: body.html, text: body.text, src: FEATURE_SRC, kind: "marketing", raw: true, learnProgram: "caldera_feature_weekly",
             idempotencyKey: `${FEATURE_SRC}:${ed.edition}:${p.id}`,
             headers: { "List-Unsubscribe": `<${un}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } });
           if (r === false) { q("DELETE FROM feature_sends WHERE hash=? AND edition=?").run(p.hash, ed.edition); skip("guard"); continue; }

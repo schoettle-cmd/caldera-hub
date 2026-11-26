@@ -33,7 +33,7 @@ export interface GiftCtx {
   /** the Armory email switch and time zone of a member, and their unsubscribe token */ prefs: (id: string) => { tz: string; mail: boolean; token: string };
   mailOn: () => boolean;
   handle: (id: string) => string; nameOf: (id: string) => string;
-  send: (m: { to: string; subject: string; html: string; text: string; src: string; kind: string; headers: Record<string, string> }) => Promise<unknown>;
+  send: (m: { to: string; subject: string; html: string; text: string; src: string; kind: string; headers: Record<string, string>; learnProgram?: string }) => Promise<unknown>;
   unsubAll?: (id: string) => string | null;
   fmtUsd: (n: number) => string;
   png?: (svg: string, width: number) => Promise<Buffer>;
@@ -81,7 +81,7 @@ export function giftMail(c: GiftCtx) {
         bombs: mine.map(b => ({ k: b.kind, name: bombOf(b.kind)!.name, line: bombOf(b.kind)!.line, word: b.word })), start, now: c.now(),
         tz: r.tz, battle: link(t, "/world?view=battle"), gif: `${hub}/email/countdown.gif?b=${night}&t=${t}`, unsubArmory: u.armory, unsubAll: u.all, postal: c.postal });
       try {
-        const ok = await c.send({ to: r.to, subject: m.subject, html: m.html, text: m.text, src: "armory-gift-1", kind: "armory", headers: { "List-Unsubscribe": `<${u.armory}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } });
+        const ok = await c.send({ to: r.to, subject: m.subject, html: m.html, text: m.text, src: "armory-gift-1", kind: "armory", learnProgram: "caldera_armory_gift", headers: { "List-Unsubscribe": `<${u.armory}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } });
         mark(t, ok === false ? "held" : "sent"); if (ok !== false) n++;
       } catch (e: any) { mark(t, "failed"); console.error("[gift] email 1", e?.message); }
     }
@@ -112,7 +112,7 @@ export function giftMail(c: GiftCtx) {
         const m = giftEmail2({ to: greet(rcpt), stacked: top ? top[1] : null, towers: hit ? hit[1].towers : null, usd: hit ? c.fmtUsd(hit[1].f) : null,
           rankStacked: top ? s.top.indexOf(top) + 1 : null, aimed, post: link(t, `/feed/p/${s.postId}`), pixel: `${hub}/email/o.gif?t=${t}`, unsubArmory: u.armory, unsubAll: u.all, postal: c.postal });
         try {
-          const ok = await c.send({ to: r.to, subject: m.subject, html: m.html, text: m.text, src: "armory-gift-2", kind: "armory", headers: { "List-Unsubscribe": `<${u.armory}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } });
+          const ok = await c.send({ to: r.to, subject: m.subject, html: m.html, text: m.text, src: "armory-gift-2", kind: "armory", learnProgram: "caldera_armory_gift", headers: { "List-Unsubscribe": `<${u.armory}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } });
           mark(t, ok === false ? "held" : "sent"); if (ok !== false) n++;
         } catch (e: any) { mark(t, "failed"); console.error("[gift] email 2", e?.message); }
       }

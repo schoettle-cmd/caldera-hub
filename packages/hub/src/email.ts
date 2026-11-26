@@ -19,12 +19,16 @@ export interface Mail { to: string; subject: string; html: string; text: string;
   learn?: { program: string; arm: string };
   /** extra query params for every link back to our own site, next to src= (utm_campaign, utm_content, and our opaque lt token) */
   utm?: Record<string, string>;
+  /** a click-only learning program (LEARN_PROGRAMS): send() asks for the arm, tells the guard, and adds lp + lt to our links */
+  learnProgram?: string;
   /** the content is final (Growth Engine's feature mail): leave its links as they are (no src=/utm tags added here) */
   raw?: boolean;
   /** Resend Idempotency-Key: a retry with the same key within 24 h is not sent twice */
   idempotencyKey?: string }
 /** The learning programs this hub sends (registered with the learning service, LEARN_URL + /learn/*). Arm "a" is always our own copy. */
-export const LEARN_PROGRAMS = { daily: "caldera_daily", newMember: "caldera_new_member" } as const;
+export const LEARN_PROGRAMS = { daily: "caldera_daily", newMember: "caldera_new_member",
+  // click-only programs (Growth Engine 11-26: the clicks of these mails readable; control arm "a" only, so no word changes)
+  armoryOpen: "caldera_armory_open", feature: "caldera_feature_weekly", battle: "caldera_battle_report", gift: "caldera_armory_gift" } as const;
 export const LEARN_GOALS: Record<string, string> = { caldera_daily: "return_visit", caldera_new_member: "follow" };
 export interface DigestData {
   handle: string; name: string; hosted: boolean;
@@ -151,13 +155,14 @@ export function youTiles(d: DigestData): { n: string; label: string; accent?: bo
  *  account links (unsubscribe, confirm, sign-in, /v1 API) and legal pages are left alone; other sites are never touched. */
 const NO_TAG = /^\/(v1\/|start\/confirm|signin|auth\/|privacy|terms)/;
 export function tagLinks(body: string, hub: string, src: string, html: boolean, extra?: Record<string, string>): string {
-  if (!src) return body;
+  if (!src && !extra) return body;
   const more = Object.entries(extra || {}).filter(([k, v]) => /^[a-z_]{1,20}$/.test(k) && v).map(([k, v]) => (html ? "&amp;" : "&") + k + "=" + encodeURIComponent(v)).join("");
   const base = hub.replace(/\/$/, ""), re = new RegExp(base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(/[^\\s\"'<>()\\]]*|(?![\\w.-]))", "g");
   return body.replace(re, (whole: string, path = "") => {
     const trail = /[.,;:!?]+$/.exec(path)?.[0] || "", p0 = path.slice(0, path.length - trail.length) || "/";
     if (NO_TAG.test(p0) || /[?&](amp;)?src=/.test(p0)) return whole;
     const hashAt = p0.indexOf("#"), pathq = hashAt < 0 ? p0 : p0.slice(0, hashAt), hash = hashAt < 0 ? "" : p0.slice(hashAt);
+    if (!src) return more ? base + pathq + (pathq.includes("?") ? (html ? "&amp;" : "&") : "?") + more.replace(/^&(amp;)?/, "") + hash + trail : whole;
     return base + pathq + (pathq.includes("?") ? (html ? "&amp;" : "&") : "?") + "src=" + encodeURIComponent(src) + more + hash + trail;
   });
 }
@@ -207,7 +212,9 @@ export function emailer(ctx: EmailCtx) {
   const dismissPrompt = (owner: string) => q("INSERT OR REPLACE INTO email_prompt VALUES (?,?)").run(owner, new Date().toISOString());
 
   async function send(m0: Mail) {
-    const m: Mail = m0.src && !m0.raw ? { ...m0, html: tagLinks(m0.html, hub, m0.src, true, m0.utm), text: tagLinks(m0.text, hub, m0.src, false, m0.utm) } : { ...m0 };
+    if (m0.learnProgram && !m0.learn) m0 = await learnTag(m0);
+    const m: Mail = m0.raw && m0.utm?.lp ? { ...m0, html: tagLinks(m0.html, hub, "", true, { lp: m0.utm.lp, lt: m0.utm.lt }), text: tagLinks(m0.text, hub, "", false, { lp: m0.utm.lp, lt: m0.utm.lt }) }
+      : m0.src && !m0.raw ? { ...m0, html: tagLinks(m0.html, hub, m0.src, true, m0.utm), text: tagLinks(m0.text, hub, m0.src, false, m0.utm) } : { ...m0 };
     if (ctx.send) return ctx.send(m);
     if (!ctx.resendKey) throw new Error("email is not set up on this hub");
     const g = await guardOk(m);
@@ -289,6 +296,18 @@ export function emailer(ctx: EmailCtx) {
     const base = learnBase(); if (!base) return;
     try { post(`${base}/learn/event`, body).catch(() => {}); } catch { /* never throws */ }
   }
+  try { q("ALTER TABLE learn_sends ADD COLUMN addr TEXT").run(); } catch { /* already there: the sealed address of a click-only send */ }
+  /** a click-only program's send: the arm (sticky per person; "a" if the API has no answer), the guard's learn tag, and an opaque
+   *  token on our links (lp = program, lt = token) that maps back to the sealed address here. Words, times and caps stay as they are. */
+  async function learnTag(m0: Mail): Promise<Mail> {
+    try {
+      const program = String(m0.learnProgram); if (!learnBase() || !(Object.values(LEARN_PROGRAMS) as string[]).includes(program) || !m0.to) return m0;
+      const a = await learnArm(program, m0.to, {}), arm = a && a.learn ? a.learn.arm : "a";
+      const lt = crypto.randomBytes(12).toString("base64url");
+      q("INSERT OR IGNORE INTO learn_sends (token, program, arm, owner, target, ts, goal_at, addr) VALUES (?,?,?,?,NULL,?,NULL,?)").run(lt, program, arm, "", new Date().toISOString(), ctx.seal(m0.to));
+      return { ...m0, learn: { program, arm }, utm: { ...(m0.utm || {}), lp: program, lt } };
+    } catch { return m0; }
+  }
   const LEARN_WINDOW = 2 * DAY;   // a goal counts when it happens within 48 h of the send
   let pendingAt = 0, pendingVal = false;
   /** Is any learning send waiting for its goal? (cached 60 s, so pages only look up the member when it matters) */
@@ -302,9 +321,10 @@ export function emailer(ctx: EmailCtx) {
   function learnClick(o: { program: string; token?: string | null; member?: () => string | null; ip: string; ua: string }) {
     try {
       if (!learnBase() || !(Object.values(LEARN_PROGRAMS) as string[]).includes(o.program)) return;
-      const t = o.token && /^[\w-]{8,64}$/.test(o.token) ? q("SELECT owner FROM learn_sends WHERE token=? AND program=?").get(o.token, o.program) as any : null;
-      const owner = t?.owner || o.member?.() || null; if (!owner) return;
-      const r = row(owner), to = r && r.confirmed ? addr(r) : ""; if (!to) return;
+      const t = o.token && /^[\w-]{8,64}$/.test(o.token) ? q("SELECT owner, addr FROM learn_sends WHERE token=? AND program=?").get(o.token, o.program) as any : null;
+      let to = ""; if (t?.addr) try { to = ctx.unseal(t.addr); } catch { to = ""; }
+      if (!to) { const owner = t?.owner || o.member?.() || null; if (!owner) return; const r = row(owner); to = r && r.confirmed ? addr(r) : ""; }
+      if (!to) return;
       learnEvent({ program: o.program, to, type: "click", ip: o.ip, ua: String(o.ua || "").slice(0, 300) });
     } catch { /* best effort */ }
   }
@@ -556,7 +576,7 @@ ${tiles}<tr><td class="cd-pad" style="padding:16px 20px 0">${H.join("\n")}</td><
       try {
         // blocked by the mail guard: not sent, so last_sent stays put and the next run covers this window (11-05: 33 blocked digests were counted as sent)
         if ((await send({ ...m, to, kind: "daily" })) === false) { skipped++; continue; }
-        if (lt && m.learn) q("INSERT OR IGNORE INTO learn_sends VALUES (?,?,?,?,?,?,NULL)").run(lt, m.learn.program, m.learn.arm, r.owner, meet ? meet[1] : null, new Date().toISOString());
+        if (lt && m.learn) q("INSERT OR IGNORE INTO learn_sends (token, program, arm, owner, target, ts, goal_at) VALUES (?,?,?,?,?,?,NULL)").run(lt, m.learn.program, m.learn.arm, r.owner, meet ? meet[1] : null, new Date().toISOString());
         q("UPDATE email_subs SET last_sent=?, last_links=?, last_quiet=COALESCE(?, last_quiet) WHERE owner=?").run(new Date().toISOString(), totalLinks, active ? null : new Date().toISOString(), r.owner);
         sent++;
       } catch (e: any) { errors++; console.error("digest", r.owner, e?.message); }

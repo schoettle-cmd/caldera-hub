@@ -148,7 +148,7 @@ test("a learning API that never answers: the digest goes after the 2 s timeout, 
 test("new-member email: the goal is following the member it introduced", async () => {
   const S = await setup();
   try {
-    S.hub.db.prepare("INSERT INTO learn_sends VALUES (?,?,?,?,?,?,NULL)").run("tok-newmember-1", "caldera_new_member", "b", S.ann.id, "bo", new Date().toISOString());
+    S.hub.db.prepare("INSERT INTO learn_sends (token, program, arm, owner, target, ts, goal_at) VALUES (?,?,?,?,?,?,NULL)").run("tok-newmember-1", "caldera_new_member", "b", S.ann.id, "bo", new Date().toISOString());
     const before = S.E.calls.length;
     const r = await S.real(`${S.base}/v1/friend/bo`, { method: "POST", headers: { ...UA, cookie: S.ownCookie, origin: "http://hub.test", "content-type": "application/json" }, body: "{}" });
     assert.equal(r.status, 200, await r.text());
@@ -166,5 +166,31 @@ test("provider refuses the send: the guard check is released, so it doesn't coun
     assert.equal(S.E.calls.find(c => c.path === "/mailguard/release").body.id, S.E.calls.findLastIndex(c => c.path === "/mailguard/check") + 1);
     assert.ok(chk >= 1);
     assert.equal(S.hub.db.prepare("SELECT COUNT(*) n FROM learn_sends").get().n, 0, "no token stored for a mail that never went");
+  } finally { S.done(); }
+});
+
+test("click-only programs (GE 11-26): the arm is asked, the guard gets learn, own links get lp + lt (raw mails too, words untouched); a click reports the address; unsubscribe is no click", async () => {
+  const S = await setup();
+  try {
+    S.E.set("unknown");   // a program the API does not know yet: arm "a", the mail still goes
+    const html = `<p>Hi</p><a href="http://hub.test/world?utm_campaign=feature_weekly_caldera">World</a> <a href="http://hub.test/u/armory?t=UN">Turn off</a>`;
+    await S.hub.mail.sendRaw({ to: "zed@realmail.org", subject: "What's new", html, text: "See http://hub.test/world", src: "feature_weekly", kind: "marketing", raw: true, learnProgram: "caldera_feature_weekly" });
+    const m = S.sent.at(-1); assert.ok(m, "sent");
+    const g = S.E.calls.filter(c => c.path === "/mailguard/check").at(-1).body;
+    assert.deepEqual(g.learn, { program: "caldera_feature_weekly", arm: "a" });
+    assert.equal(S.E.calls.filter(c => c.path === "/learn/arm").at(-1).body.program, "caldera_feature_weekly");
+    const w = new URL(m.html.match(/href="(http:\/\/hub\.test\/world[^"]*)"/)[1].replace(/&amp;/g, "&"));
+    assert.equal(w.searchParams.get("utm_campaign"), "feature_weekly_caldera", "the raw mail keeps its own utm"); assert.equal(w.searchParams.get("lp"), "caldera_feature_weekly");
+    assert.ok(!w.searchParams.has("src"), "raw: no src added"); assert.ok(/>World<\/a>/.test(m.html) && m.subject === "What's new", "words untouched");
+    const lt = w.searchParams.get("lt"); assert.match(lt, /^[\w-]{16}$/);
+    const b = S.E.calls.length;
+    await S.real(`${S.base}/feed?lp=caldera_feature_weekly&lt=${lt}`, { headers: UA });
+    assert.ok(await until(() => S.E.calls.slice(b).some(c => c.path === "/learn/event")));
+    const ev = S.E.calls.slice(b).find(c => c.path === "/learn/event").body;
+    assert.equal(ev.program, "caldera_feature_weekly"); assert.equal(ev.type, "click"); assert.equal(ev.to, "zed@realmail.org"); assert.ok(ev.ip);
+    const b2 = S.E.calls.length;
+    await S.real(`${S.base}/u/armory?t=UN&lp=caldera_feature_weekly&lt=${lt}`, { headers: UA });
+    await new Promise(r => setTimeout(r, 150));
+    assert.equal(S.E.calls.slice(b2).filter(c => c.path === "/learn/event").length, 0, "an unsubscribe is not a click");
   } finally { S.done(); }
 });
