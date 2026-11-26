@@ -1929,7 +1929,7 @@ html.w-rpend .b-pu{display:none}
 .b-srp::after{left:-2px;right:-2px;height:44px}
 .b-norp{grid-row:1/3;grid-column:3;padding:3px 2px;font-size:10.5px;border-radius:8px;width:40px}.b-nbr{display:inline}
 .b-cv{grid-column:4}
-.b-shothead{flex-direction:column;align-items:flex-start}
+.b-shothead{flex-direction:column;align-items:flex-start}.b-shothead .b-tabhint{flex:none}
 .b-rpall{height:44px;border-radius:22px;padding:0 16px 0 14px;font-size:13.5px}
 .b-shotact .b-rp,.b-lnk{min-height:44px}
 }
