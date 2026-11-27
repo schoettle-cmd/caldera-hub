@@ -293,7 +293,7 @@ test("leaderboard: while the results board shows (html.w-board) the replay bar a
   const k0 = J.indexOf("/^[123]$/.test(e.key)"), kd = J.slice(J.lastIndexOf("addEventListener('keydown'", k0), k0 + 400);
   assert.ok(kd.indexOf("contains('w-board')") > 0 && kd.indexOf("contains('w-board')") < kd.indexOf("/^[123]$/"), "F, M, 1 2 3, arrows and Space do nothing behind the board (the plugin's board handles Esc, R and S)");
   const play = J.slice(J.indexOf("functionplay(mode,auto,only){"), J.indexOf("functionmine()"));
-  assert.ok(play.includes(N("api().boardHooks({ again: function (demo) { play(demo ? 'demo' : void 0); }, exit: function () { stopPlay(); }, add: '/#start', signedIn: function () { return !!me; } })")), "Watch again = play() in the same mode, Exit = stopPlay(), Add your city = the /world action");
+  assert.ok(play.includes(N("api().boardHooks({ again: function (demo) { play(demo ? 'demo' : void 0); }, exit: function () { stopPlay(); }, add: '/#start', join: '/join?tp=replay_end', signedIn: function () { return !!me; } })")), "Watch again = play() in the same mode, Exit = stopPlay(), Add your city = the /world action");
   assert.ok(play.indexOf("boardHooks") < play.indexOf("api().replay("), "the hooks are in place before the replay starts");
   const hud = J.slice(J.indexOf("functionhud(ph){"), J.indexOf("varpuEl=null"));
   assert.ok(hud.includes(N("if (ph.board) { menuSet(false); puDisarm(); if (playing) { clearTimeout(playing); playing = null; } }")), "the menu closes, an armed power-up disarms, and no safety-net timer takes the board away");
@@ -382,4 +382,18 @@ test("a replay for each shot (Mike 11-26): a Replay pill per row, Playing state,
   const src = M.battleClient.toString(), blk = src.slice(src.indexOf("function rpGapsLoad("), src.indexOf("function play(mode, auto, only)"));
   assert.ok(blk.length > 500 && !/\brpEl\b/.test(blk), "the end panel has its own variable: rpEl is the map's Replay button, and mapReplay() hides it");
   for (const c of [".b-srp", ".b-rpall", ".b-norp", ".b-rpend", ".b-shotact", ".b-sl li.playing", "html.w-rpend .b-pu"]) assert.ok(css.includes(c), c);
+});
+
+test("replay end join (11-27, caldera-replay-end-join): signed-out viewers get 'Put your city in tonight's battle' at the end of a replay, tagged tp=replay_end and counted", async () => {
+  const js = M.BATTLE_CLIENT_JS, css = M.BATTLE_CSS, src = M.battleClient.toString();
+  const end = src.slice(src.indexOf("function rpEndShow("), src.indexOf("function rpBack(")).replace(/\\"/g, '"').replace(/"/g, "'");
+  assert.ok(end.includes("(me ? '' :") && end.includes("href='/join?tp=replay_end'") && end.includes("Put your city in tonight") && end.includes("Free. Your GitHub becomes a city."), "the panel: members see nothing new; visitors get the join link");
+  assert.ok(/nx == null \? ' class='pri''/.test(end), "primary only when there is no Next hit");
+  assert.ok(/body: ["']replay_end:shown["']/.test(src) && /p2\.board && !p2\.demo && !me\) joinShown\(\)/.test(src), "shown counted once, on the board and the panel");
+  for (const c of [".b-rpend-j{", ".b-rpend-j a.pri", "@media (max-width:600px){.b-rpend-j"]) assert.ok(css.includes(c), c);
+  const J = await import("../dist/server.js").catch(() => null);
+  const jt = await import("../src/join.ts").catch(() => null);
+  const join = jt || J; if (join && join.okTp) { assert.equal(join.okTp("replay_end"), "replay_end"); assert.equal(join.okTp("battle"), "battle"); }
+  const jsrc = (await import("node:fs")).readFileSync(new URL("../src/join.ts", import.meta.url), "utf8");
+  assert.ok(jsrc.includes('"replay_end"') && jsrc.includes("cal_tp=([a-z0-9_-]+)"), "the touchpoint is counted and its cookie keeps the underscore");
 });

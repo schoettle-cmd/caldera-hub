@@ -15,7 +15,7 @@ import { BOT_UA, funnelDay } from "./funnel";
 
 /** every touchpoint we place; anything else is ignored */
 export const TOUCHPOINTS = ["header", "home-designer", "home-business", "home", "profile-blur", "follow", "message", "kudos", "comment", "reply", "help", "post", "join",
-  "gift", "invite", "people-blur", "bar-feed", "bar-people", "bar-world", "bar-city", "bar-gardens", "bar-group", "world-card", "people-cta", "link-messages", "link-install", "link-github", "messages", "signin-page", "direct"] as const;
+  "gift", "invite", "people-blur", "bar-feed", "bar-people", "bar-world", "bar-city", "bar-gardens", "bar-group", "world-card", "people-cta", "link-messages", "link-install", "link-github", "messages", "signin-page", "battle", "replay_end", "direct"] as const;   // battle: the home battle block; replay_end: the end of the battle replay (11-27)
 export const okTp = (v: unknown) => (TOUCHPOINTS as readonly string[]).includes(String(v)) ? String(v) : "";
 export const EVENTS = ["shown", "click", "door", "signup"] as const;
 export type Door = "google" | "code" | "obsidian" | "designer" | "business" | "email";
@@ -66,7 +66,7 @@ export function joinModule(c: JoinCtx) {
     const t = okTp(tp); if (!t || isBot(req)) return;
     try { const day = funnelDay(); q("INSERT OR IGNORE INTO gate_events VALUES (?,?,?,?,?)").run(day, vidOf(req, day), t, ev, new Date().toISOString()); } catch { /* counting never breaks a page */ }
   }
-  const cookieTp = (req: http.IncomingMessage) => okTp((String(req.headers.cookie || "").match(/(?:^|;\s*)cal_tp=([a-z0-9-]+)/) || [])[1]);
+  const cookieTp = (req: http.IncomingMessage) => okTp((String(req.headers.cookie || "").match(/(?:^|;\s*)cal_tp=([a-z0-9_-]+)/) || [])[1]);
   /** a new profile was created: credit the touchpoint that brought them (or "direct") */
   function signup(req: http.IncomingMessage) { record(req, cookieTp(req) || "direct", "signup"); }
 

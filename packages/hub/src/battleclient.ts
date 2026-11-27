@@ -711,12 +711,17 @@ export function battleClient() {
     var ord = rpOrder(), nx = one && !gapOnly && ord.indexOf(L[0]) >= 0 ? ord[ord.indexOf(L[0]) + 1] : undefined;
     rpEnd = document.createElement('div'); rpEnd.className = 'b-rpend'; rpEnd.setAttribute('role', 'group'); rpEnd.setAttribute('aria-labelledby', 'b-rpend-t');
     rpEnd.innerHTML = '<p id="b-rpend-t" role="status">' + esc(sum) + '</p><div class="b-rpend-b">' + (nx != null ? '<button type="button" class="b-rp nx" data-rpe="next">Next hit' + RGO + '</button>' : '')
-      + (gapOnly ? '' : '<button type="button" data-rpe="again">' + RAGAIN + 'Replay again</button>') + '<button type="button" data-rpe="back">Back to results</button></div>';
+      + (gapOnly ? '' : '<button type="button" data-rpe="again">' + RAGAIN + 'Replay again</button>') + '<button type="button" data-rpe="back">Back to results</button></div>'
+      + (me ? '' : '<div class="b-rpend-j"><a href="/join?tp=replay_end" rel="nofollow" data-jn="panel"' + (nx == null ? ' class="pri"' : '') + ' aria-describedby="b-rpend-js"><i aria-hidden="true"></i>Put your city in tonight\u2019s battle</a><span id="b-rpend-js">Free. Your GitHub becomes a city.</span></div>');
+    if (!me) joinShown();
     rpEnd.addEventListener('click', function (e) { var b = e.target.closest('[data-rpe]'); if (!b) return; var k = b.getAttribute('data-rpe'), Q = rpQ;
       if (k === 'next' && nx != null) rpStart([nx], Q && Q.src); else if (k === 'again' && Q) rpStart(Q.list, Q.src); else if (k === 'back') rpBack(); });
     rpEnd.addEventListener('keydown', function (e) { if (e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); var src = rpQ && rpQ.src; stopPlay(); if (src && src.isConnected) try { src.focus({ preventScroll: true }); } catch (e2) {} });
     stage.appendChild(rpEnd); document.documentElement.classList.add('w-rpend'); var f = rpEnd.querySelector('button'); if (f) try { f.focus({ preventScroll: true }); } catch (e) {}
   }
+  // 11-27 (caldera-replay-end-join): count that a signed-out viewer saw the join button at the end of a replay, once per page (the funnel's base for tp=replay_end)
+  var jnSent = false;
+  function joinShown() { if (jnSent) return; jnSent = true; try { fetch('/v1/gate/ev', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: 'replay_end:shown', keepalive: true }).catch(function () {}); } catch (e) {} }
   function rpBack() {
     var L = rpQ ? rpQ.list : [], last = L.length > 1 ? L[L.length - 1] : L[0];
     stopPlay(); setTab('shots', false, true); if (last == null) return;
@@ -728,14 +733,14 @@ export function battleClient() {
     if (playing) { clearTimeout(playing); playing = null; } clearInterval(hudT); hudT = 0;
     closeHow();
     // the results board's buttons (LEADERBOARD.md): Replay again = play() in the same mode, Exit = stopPlay(), Add your city = /#start
-    if (api() && api().boardHooks) api().boardHooks({ again: function (demo) { play(demo ? 'demo' : undefined); }, exit: function () { stopPlay(); }, add: '/#start', signedIn: function () { return !!me; } });
+    if (api() && api().boardHooks) api().boardHooks({ again: function (demo) { play(demo ? 'demo' : undefined); }, exit: function () { stopPlay(); }, add: '/#start', join: '/join?tp=replay_end', signedIn: function () { return !!me; } });
     var n = on && api() && api().replay ? api().replay(only ? 'shots' : mode, { speed: speed, auto: !!auto, only: only }) : 0;
     if (!n) { if (cap) cap.textContent = mode === 'demo' ? 'The demo needs two cities with repo towers on the map.' : 'No battle to replay. Watch a demo battle instead.'; playing = setTimeout(stopPlay, 3500); return; }
     var ph = api().phase(), b = q('[data-bl="replay"]'); if (b) b.setAttribute('aria-pressed', String(mode !== 'demo')); var d = q('[data-bdemo]'); if (d) d.setAttribute('aria-pressed', String(mode === 'demo')); layers.replay = mode !== 'demo';
     if (cap) cap.textContent = (mode === 'demo' ? 'Demo: a sample battle between the biggest cities on the map, synthetic shots. ' : 'Replay: ') + ph.beats + ' strike' + (ph.beats === 1 ? '' : 's') + ', ' + n + ' missile' + (n === 1 ? '' : 's') + ', about ' + Math.round(ph.dur / 1000 / (ph.speed || 1)) + ' s at ' + BSPD.label(ph.speed || 1) + '. Scroll, pinch or drag to look around; Fit shows the whole map; Next or the right arrow key goes to the next strike.';
     chipTick(); hud(ph); document.documentElement.classList.add('w-replay'); document.documentElement.classList.add('fb-hide');   // the feedback-hub widgets hide while the replay runs (html.fb-hide, any device)
     if (stage && window.innerWidth >= 700) { var r = stage.getBoundingClientRect(); if (r.top < 0 || r.bottom > window.innerHeight) { try { stage.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } catch (e) {} } }
-    hudT = setInterval(function () { try { var p2 = api() && api().phase ? api().phase() : null; if (!p2 || !p2.replay) { stopPlay(); return; } hud(p2); rpTick(p2); } catch (e) { stopPlay(); } }, 200);
+    hudT = setInterval(function () { try { var p2 = api() && api().phase ? api().phase() : null; if (!p2 || !p2.replay) { stopPlay(); return; } hud(p2); rpTick(p2); if (p2.board && !p2.demo && !me) joinShown(); } catch (e) { stopPlay(); } }, 200);
     playing = setTimeout(stopPlay, 900000);   // a safety net: the poll above ends the replay when it ends, a paused one may wait
   }
 
@@ -1939,6 +1944,17 @@ html.w-rpend .b-pu{display:none}
 @keyframes b-rpend-s{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 }
 @media (prefers-reduced-motion:reduce){.b-rpall,.b-srp{transition:none}.b-rpall:active,.b-srp:active{transform:none}.b-dot,.b-rpend,.b-sl li.b-arrive>.b-sr{animation:none}}
+/* 11-27 join button in the shot replay end panel (Fable reports/2026-11-27-replay-end-join/DESIGN.md) */
+.b-rpend-j{display:grid;gap:5px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.12)}
+.b-rpend-j a{box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border-radius:18px;border:1px solid rgba(185,166,255,.6);background:rgba(139,108,246,.22);color:#F4F6FA;font:600 13px/1 var(--ui,'IBM Plex Sans',sans-serif);white-space:nowrap;text-decoration:none;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background-color .15s ease-out,border-color .15s ease-out}
+.b-rpend-j a i{flex:none;width:7px;height:7px;background:#B9A6FF;transform:rotate(45deg)}
+.b-rpend-j a.pri{background:#F4F6FA;border-color:#F4F6FA;color:#0B0D13}
+.b-rpend-j a.pri i{background:#8B6CF6}
+.b-rpend-j a:focus-visible{outline:2px solid #3DF2FF;outline-offset:2px}
+.b-rpend-j span{font:500 11.5px/1.3 var(--ui,'IBM Plex Sans',sans-serif);color:rgba(232,238,248,.78);text-align:center}
+@media (hover:hover){.b-rpend-j a:hover{background:rgba(139,108,246,.38);border-color:#B9A6FF}.b-rpend-j a.pri:hover{background:#fff}}
+@media (max-width:600px){.b-rpend-j{margin-top:8px;padding-top:8px}.b-rpend-j a{height:44px;border-radius:22px}.b-rpend-j span{display:none}}
+@media (prefers-reduced-motion:reduce){.b-rpend-j a{transition:none}}
 `;
 
 /** The deck under the map (PAGE.md 5): the Tonight and Last night cards, then one tab panel. The cards are filled by battleClient. */
