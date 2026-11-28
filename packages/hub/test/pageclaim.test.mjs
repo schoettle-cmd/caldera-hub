@@ -14,7 +14,7 @@ async function boot({ flag = { obsidian: true } } = {}) {
   const d = __mkdtemp(path.join(os.tmpdir(), "caldera-claim-")); fs.writeFileSync(path.join(d, "google-oauth.json"), JSON.stringify({ client_id: "cid", client_secret: "s" }));
   if (flag) fs.writeFileSync(path.join(d, "google-first.json"), JSON.stringify(flag));
   const st = { claims: {} }; const fake = async u => String(u).includes("oauth2.googleapis.com/token") ? J({ id_token: jwt(st.claims) }) : J({}, 404);
-  const pub = "http://hub.test", h = createHub({ dataDir: d, publicUrl: pub, githubFetch: fake, limits: { newProfilesPerDay: 100 }, email: { send: async () => {} } });
+  const pub = "http://hub.test", h = createHub({ dataDir: d, publicUrl: pub, githubFetch: fake, limits: { newProfilesPerDay: 100 }, email: { send: async m => { st.mails.push(m); } } }); st.mails = [];
   return { h, d, st, pub, base: "http://127.0.0.1:" + await h.listen(0) };
 }
 const stop = b => { b.h.server.closeAllConnections?.(); b.h.server.close(); };
@@ -75,4 +75,26 @@ test("the claim says which photo to bring, only when there is one", async () => 
   const d0 = db(b), id = d0.prepare("SELECT profile_id p FROM email_accounts WHERE handle='hal-photo'").get().p; d0.close();
   const dir = path.join(b.d, "uploads", "email", id.replace(/[^A-Za-z0-9]/g, "_")); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "photo.png"), "x");
   const two = await issue(b, own); assert.equal((await (await post(b, "/v1/page/claim", two.code)).json()).page.photoExt, "png");
+} finally { stop(b); } });
+
+// daily feature caldera-obsidian-connect-on (11-28): email pages get their own "Use Obsidian?" card; one Obsidian action per screen
+async function emailPage(b, email, name) {
+  const form = (p, body) => fetch(b.base + p, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", origin: b.pub }, body: new URLSearchParams(body).toString() });
+  await form("/start", { text: `name: ${name}\nheadline: I make tools\nabout: Ten years of kitchens.\nprojects:\n- Menu | a planner`, email });
+  const t = b.st.mails[b.st.mails.length - 1].text.match(/start\/confirm\?t=(\S+)/)[1];
+  const c = await form("/start/confirm", { t: new URL(b.base + "/start/confirm?t=" + t).searchParams.get("t") });
+  return (c.headers.getSetCookie?.() || [c.headers.get("set-cookie")]).map(x => x.split(";")[0]).join("; ");
+}
+test("switch on: email pages get the Use Obsidian? card and a working code; Google pages keep one row, no card", async () => { const b = await boot(); try {
+  const own = await emailPage(b, "e@example.com", "Eve Mail"), page = await (await fetch(b.base + "/settings", { headers: { cookie: own } })).text();
+  assert.match(page, /id="obsidian"><h2>Use Obsidian\?<\/h2>/); assert.equal((page.match(/action="\/settings\/obsidian"/g) || []).length, 1);
+  assert.doesNotMatch(page, /Use GitHub or Obsidian\? Connecting them later/, "the old 'later' line goes when the card shows");
+  const r = await issue(b, own); assert.match(r.code, /^CAL-P-/); assert.match(r.text, /obsidian\.md\/download/); assert.match(r.text, /Community plugins &gt; Browse/);
+  const g = (await google(b, "g@example.com", "Gus Goo")).own, gp = await (await fetch(b.base + "/settings", { headers: { cookie: g } })).text();
+  assert.match(gp, /id="richer"/); assert.doesNotMatch(gp, /id="obsidian"/); assert.equal((gp.match(/action="\/settings\/obsidian"/g) || []).length, 1);
+  assert.match(gp, /It moves into your vault; you edit it there/); assert.doesNotMatch(gp, /flex-wrap:nowrap/, "rows wrap on a phone");
+} finally { stop(b); } });
+test("switch off: email pages keep the old line and no card", async () => { const b = await boot({ flag: { on: true } }); try {
+  const own = await emailPage(b, "f@example.com", "Fay Off"), page = await (await fetch(b.base + "/settings", { headers: { cookie: own } })).text();
+  assert.doesNotMatch(page, /id="obsidian"|Connect Obsidian/); assert.match(page, /Use GitHub or Obsidian\? Connecting them later/);
 } finally { stop(b); } });
